@@ -414,6 +414,52 @@ describe.each<[string, () => SyncStore]>([
     expect(asc).toEqual(['3', '1', '2']); // 1, 2, then null LAST
     expect(desc).toEqual(['1', '3', '2']); // 2, 1, then null still LAST
   });
+
+  it('where: { x: null } matches an explicit-null field, not a missing one', () => {
+    store.put('items', { id: 'has-null', x: null, tag: 'a' });
+    store.put('items', { id: 'missing', tag: 'b' }); // x absent
+    store.put('items', { id: 'has-value', x: 5, tag: 'c' });
+    const matched = store
+      .list<{ id: string }>('items', { where: { x: null } })
+      .map((r) => r.id)
+      .sort();
+    expect(matched).toEqual(['has-null']); // only the explicit null; missing/valued excluded
+    expect(store.count('items', { where: { x: null } })).toBe(1);
+  });
+
+  it('dotted field name in where is one TOP-LEVEL key, not a nested path', () => {
+    store.put('items', { id: 'flat', 'a.b': 1 }); // top-level key literally "a.b"
+    store.put('items', { id: 'nested', a: { b: 1 } }); // nested a → b
+    const matched = store
+      .list<{ id: string }>('items', { where: { 'a.b': 1 } })
+      .map((r) => r.id);
+    expect(matched).toEqual(['flat']); // the nested doc must NOT match
+  });
+
+  it('dotted field name in sortBy is one TOP-LEVEL key, not a nested path', () => {
+    store.put('items', { id: 'x', 'a.b': 3, a: { b: 1 } });
+    store.put('items', { id: 'y', 'a.b': 1, a: { b: 3 } });
+    store.put('items', { id: 'z', 'a.b': 2, a: { b: 2 } });
+    // Ordering must follow the top-level "a.b" key (1,2,3 → y,z,x), NOT nested a.b.
+    const ids = store
+      .list<{ id: string }>('items', { sortBy: 'a.b' })
+      .map((r) => r.id);
+    expect(ids).toEqual(['y', 'z', 'x']);
+  });
+
+  it('hostile field names are bound, not injected (no SQL injection)', () => {
+    // A field name carrying a single quote + a classic injection payload. Inlined
+    // into the SQL string the `'` breaks out of the literal; bound as a value (the
+    // only correct way) it is inert — it just names a weird top-level key.
+    const evil = `x') OR 1=1 --`;
+    store.put('items', { id: 'match', [evil]: 7 });
+    store.put('items', { id: 'other', other: 1 });
+    // Matches ONLY the doc with that literal key. If it injected (`OR 1=1`) this
+    // would return both rows; if it broke the SQL it would throw. Neither happens.
+    const where = store.list<{ id: string }>('items', { where: { [evil]: 7 } }).map((r) => r.id);
+    expect(where).toEqual(['match']);
+    expect(() => store.list('items', { sortBy: evil })).not.toThrow();
+  });
 });
 
 describe('SqliteAdapter — one connection serves kv + vector', () => {

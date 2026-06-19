@@ -10,7 +10,7 @@ import type {
   VectorSearchOptions,
   Vector,
 } from "./types.js";
-import { cosineSimilarity, assertDimensions } from "./cosine.js";
+import { cosineSimilarity, assertDimensions, isUsableVector } from "./cosine.js";
 
 export interface InMemoryVectorStoreOptions {
   /** Embedding dimensions. All vectors must match this length. */
@@ -76,12 +76,17 @@ export class InMemoryVectorStore implements VectorStore {
     if (!coll) return [];
     const scored: VectorSearchResult<M>[] = [];
     for (const doc of coll.values()) {
+      // A zero / non-finite stored vector has no cosine direction — exclude it, so
+      // this backend matches the sqlite adapter (both JS and vec0 paths exclude them).
+      if (!isUsableVector(doc.vector)) continue;
       const score = cosineSimilarity(query, doc.vector);
       if (!Number.isFinite(score)) continue;
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ id: doc.id, score, metadata: doc.metadata as M | undefined });
     }
-    scored.sort((a, b) => b.score - a.score);
+    // `|| a.id.localeCompare(b.id)` breaks score ties deterministically by id — the
+    // same tiebreak the sqlite adapter applies, so equal-score results order alike.
+    scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     return scored.slice(0, topK);
   }
 
