@@ -31,5 +31,6 @@ export {
   vectorToBuffer,
   bufferToVector,
   assertDimensions,
+  isUsableVector,
 } from './vector/cosine.js';
 export { InMemoryVectorStore } from './vector/memory.js';
