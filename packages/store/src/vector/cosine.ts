@@ -40,6 +40,21 @@ export function bufferToVector(buf: Buffer | Uint8Array): Vector {
   return out;
 }
 
+/** A vector is usable for cosine similarity only if it is all-finite and has a
+ *  non-zero magnitude. A zero / non-finite vector has no cosine direction, so it is
+ *  EXCLUDED from search results on EVERY backend (in-memory, sqlite JS path, and
+ *  sqlite's vec0 path) — that keeps the backends in parity (vec0 would otherwise
+ *  return a zero vector with a null distance). Shared so the rule lives in one place. */
+export function isUsableVector(v: Vector): boolean {
+  let nonZero = false;
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i] ?? 0;
+    if (!Number.isFinite(x)) return false;
+    if (x !== 0) nonZero = true;
+  }
+  return nonZero;
+}
+
 /** Throw if a vector's length doesn't match the store's configured dimensions.
  *  Shared by every backend so the check and its message live in one place. */
 export function assertDimensions(vector: Vector, dimensions: number): void {

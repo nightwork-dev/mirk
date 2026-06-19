@@ -145,6 +145,31 @@ function suite(name: string, make: () => Promise<Made>): void {
       const res = store.search("docs", v(1, 0, 0, 0), { minScore: -1 });
       expect(res.map((r) => r.id)).toEqual(["good"]);
     });
+
+    it("excludes a stored ZERO vector from results (directionless)", () => {
+      store.upsert("docs", { id: "good", vector: v(1, 0, 0, 0) });
+      store.upsert("docs", { id: "zero", vector: v(0, 0, 0, 0) });
+      // minScore at the floor so a zero vector (cosine 0) could only be excluded
+      // by the directionless gate, not by a score filter.
+      const res = store.search("docs", v(1, 0, 0, 0), { minScore: -1 });
+      expect(res.map((r) => r.id)).toEqual(["good"]);
+    });
+
+    it("excludes a stored NON-FINITE (Infinity) vector from results", () => {
+      store.upsert("docs", { id: "good", vector: v(1, 0, 0, 0) });
+      store.upsert("docs", { id: "inf", vector: v(Infinity, 0, 0, 0) });
+      const res = store.search("docs", v(1, 0, 0, 0), { minScore: -1 });
+      expect(res.map((r) => r.id)).toEqual(["good"]);
+    });
+
+    it("breaks score ties deterministically by id (insertion order independent)", () => {
+      // Insert out of id-order; all share an identical vector → identical score.
+      store.upsert("docs", { id: "c", vector: v(1, 1, 0, 0) });
+      store.upsert("docs", { id: "a", vector: v(1, 1, 0, 0) });
+      store.upsert("docs", { id: "b", vector: v(1, 1, 0, 0) });
+      const ids = store.search("docs", v(1, 1, 0, 0), { topK: 3 }).map((r) => r.id);
+      expect(ids).toEqual(["a", "b", "c"]); // id tiebreak, NOT insertion order
+    });
   });
 }
 
@@ -221,6 +246,18 @@ suite("SqliteAdapter.vector (forced JS cosine)", async () => {
   return { store: adapter.vector, cleanup: () => adapter.close() };
 });
 
+// Whether the optional sqlite-vec peer actually loaded in this environment. The
+// forced-JS-cosine parity tests run regardless; only the assertion that the accel
+// PATH is live is environment-dependent, so it guards on this.
+const ACCELERATED = (() => {
+  const probe = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
+  try {
+    return probe.vector.meta.accelerated;
+  } finally {
+    probe.close();
+  }
+})();
+
 describe("vec0 acceleration", () => {
   // Non-normalized vectors (varied magnitudes) — where L2 ranking != cosine ranking,
   // so this catches any regression to vec0's default L2 metric instead of cosine.
@@ -240,11 +277,13 @@ describe("vec0 acceleration", () => {
     }
   }
 
-  it("sqlite-vec is loaded — meta.accelerated true by default, false when forced off", () => {
+  it("meta.accelerated reflects the loaded peer, and is always false when forced off", () => {
     const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     const forced = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
     try {
-      expect(accel.vector.meta.accelerated).toBe(true);
+      // sqlite-vec is an OPTIONAL peer — accel is true only when it actually loaded
+      // in this environment. Forcing JS cosine is environment-independent: always false.
+      expect(accel.vector.meta.accelerated).toBe(ACCELERATED);
       expect(forced.vector.meta.accelerated).toBe(false);
     } finally {
       accel.close();
