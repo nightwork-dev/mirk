@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360"
+     font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0e1a"/><stop offset="1" stop-color="#0c1322"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="900" height="360" rx="14" fill="url(#bg)"/>
+
+  <!-- two facet cards: w=250 h=120 y=66 ; .kv x=180 (cx=305), .vector x=470 (cx=595) -->
+  <g>
+    <rect x="180" y="66" width="250" height="120" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="180" y="66" width="250" height="4" rx="2" fill="#2bd4ff"/>
+    <text x="305" y="108" text-anchor="middle" font-size="20" font-weight="700" fill="#eaf1ff">.kv</text>
+    <text x="305" y="134" text-anchor="middle" font-size="13" fill="#9ce8ff">SyncStore</text>
+    <text x="305" y="155" text-anchor="middle" font-size="12.5" fill="#8aa0c4">key-value + collections</text>
+  </g>
+  <g>
+    <rect x="470" y="66" width="250" height="120" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="470" y="66" width="250" height="4" rx="2" fill="#2bd4ff"/>
+    <text x="595" y="108" text-anchor="middle" font-size="20" font-weight="700" fill="#eaf1ff">.vector</text>
+    <text x="595" y="134" text-anchor="middle" font-size="13" fill="#9ce8ff">VectorStore</text>
+    <text x="595" y="155" text-anchor="middle" font-size="12.5" fill="#8aa0c4">cosine · vec0-accelerated</text>
+  </g>
+
+  <!-- both facets ride one connection: thin cyan rules from foundation (y=240) up to card bottoms (y=186) -->
+  <line x1="305" y1="186" x2="305" y2="240" stroke="#2bd4ff" stroke-width="2" opacity="0.8"/>
+  <line x1="595" y1="186" x2="595" y2="240" stroke="#2bd4ff" stroke-width="2" opacity="0.8"/>
+
+  <!-- foundation: the one native connection (fire = the heavy/native thing) ; w=600 h=72 y=240 cx=450 -->
+  <g>
+    <rect x="150" y="240" width="600" height="72" rx="13" fill="#0e1626" stroke="#3a2415" stroke-width="1.5"/>
+    <rect x="150" y="240" width="600" height="4" rx="2" fill="#ff7a18"/>
+    <text x="450" y="276" text-anchor="middle" font-size="19" font-weight="700" fill="#ffd9b8">SqliteAdapter</text>
+    <text x="450" y="298" text-anchor="middle" font-size="12.5" fill="#caa183">one better-sqlite3 connection · the only native dependency</text>
+  </g>
+
+  <text x="450" y="342" text-anchor="middle" font-size="13" fill="#6f84a8">The same SyncStore / VectorStore ports are implemented zero-native by the in-memory backends.</text>
+</svg>

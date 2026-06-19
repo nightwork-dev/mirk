@@ -1,0 +1,99 @@
+{
+  "name": "@mirk/store",
+  "version": "0.4.1",
+  "type": "module",
+  "description": "Code-split storage ports + source adapters under one namespace. KV + collection store and vector similarity store as interface subpaths; the sqlite source-adapter implements both over one connection.",
+  "license": "Apache-2.0",
+  "author": "David Robinson <dr@monetise.io>",
+  "keywords": [
+    "storage",
+    "key-value",
+    "collection-store",
+    "vector",
+    "vector-search",
+    "similarity",
+    "cosine",
+    "sqlite",
+    "sqlite-vec",
+    "embeddings"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/store"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/store#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./kv": {
+      "import": "./src/kv.ts",
+      "types": "./src/kv.ts"
+    },
+    "./vector": {
+      "import": "./src/vector.ts",
+      "types": "./src/vector.ts"
+    },
+    "./sqlite": {
+      "import": "./src/adapters/sqlite.ts",
+      "types": "./src/adapters/sqlite.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsup src/index.ts src/kv.ts src/vector.ts src/adapters/sqlite.ts --format esm --dts --external better-sqlite3 --external sqlite-vec"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0 || ^12.0.0",
+    "sqlite-vec": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "sqlite-vec": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "better-sqlite3": "^11.0.0",
+    "sqlite-vec": "0.1.9",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "tsup": "^8.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      },
+      "./kv": {
+        "import": "./dist/kv.js",
+        "types": "./dist/kv.d.ts"
+      },
+      "./vector": {
+        "import": "./dist/vector.js",
+        "types": "./dist/vector.d.ts"
+      },
+      "./sqlite": {
+        "import": "./dist/adapters/sqlite.js",
+        "types": "./dist/adapters/sqlite.d.ts"
+      }
+    }
+  }
+}
