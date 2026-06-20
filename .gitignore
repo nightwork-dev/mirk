@@ -5,3 +5,6 @@ dist/
 **/.agents/memory/
 *.tgz
 .npmrc
+
+# Local working docs / scratch — never version-controlled
+*.local/
