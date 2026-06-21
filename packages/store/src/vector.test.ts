@@ -1,6 +1,8 @@
 // ─── @mirk/store/vector tests ───────────────────────────────────────────────
 // One suite, run against InMemory and SQLite (in-memory db) backends, plus a
 // SQLite persistence test proving vectors survive a close + reopen.
+// FR-1 (AsyncVectorStore), FR-3a (has()), and FR-3b (where/whereNot) are covered
+// in dedicated describe blocks at the bottom of this file.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { tmpdir } from "node:os";
@@ -8,9 +10,11 @@ import { join } from "node:path";
 import { rmSync } from "node:fs";
 
 import type { VectorStore, Vector } from "./vector/types.js";
+import type { AsyncVectorStore } from "./vector/types.js";
 import { InMemoryVectorStore } from "./vector/memory.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
 import { cosineSimilarity, vectorToBuffer, bufferToVector } from "./vector/cosine.js";
+import { toAsyncVector } from "./vector/to-async-vector.js";
 
 const DIMS = 4;
 function v(...nums: number[]): Vector {
@@ -51,6 +55,73 @@ function suite(name: string, make: () => Promise<Made>): void {
       store.upsert("docs", { id: "a", vector: v(0, 1, 0, 0) });
       expect(Array.from(store.get("docs", "a")!.vector)).toEqual([0, 1, 0, 0]);
       expect(store.count("docs")).toBe(1);
+    });
+
+    it("has returns true for present docs, false for absent", () => {
+      store.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+      expect(store.has("docs", "a")).toBe(true);
+      expect(store.has("docs", "ghost")).toBe(false);
+      expect(store.has("other", "a")).toBe(false);
+    });
+
+    it("has returns false after remove", () => {
+      store.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+      store.remove("docs", "a");
+      expect(store.has("docs", "a")).toBe(false);
+    });
+
+    it("search where filters to matching metadata only", () => {
+      store.upsertMany("docs", [
+        { id: "cat-a", vector: v(1, 0, 0, 0), metadata: { type: "cat" } },
+        { id: "dog-a", vector: v(1, 0, 0, 0), metadata: { type: "dog" } },
+        { id: "cat-b", vector: v(0.9, 0.1, 0, 0), metadata: { type: "cat" } },
+      ]);
+      const res = store.search("docs", v(1, 0, 0, 0), { where: { type: "cat" } });
+      expect(res.map((r) => r.id).sort()).toEqual(["cat-a", "cat-b"]);
+    });
+
+    it("search whereNot excludes matching metadata", () => {
+      store.upsertMany("docs", [
+        { id: "cat-a", vector: v(1, 0, 0, 0), metadata: { type: "cat" } },
+        { id: "dog-a", vector: v(1, 0, 0, 0), metadata: { type: "dog" } },
+        { id: "cat-b", vector: v(0.9, 0.1, 0, 0), metadata: { type: "cat" } },
+      ]);
+      const res = store.search("docs", v(1, 0, 0, 0), { whereNot: { type: "cat" } });
+      expect(res.map((r) => r.id)).toEqual(["dog-a"]);
+    });
+
+    it("search where + whereNot can be combined", () => {
+      store.upsertMany("docs", [
+        { id: "a", vector: v(1, 0, 0, 0), metadata: { type: "cat", color: "black" } },
+        { id: "b", vector: v(1, 0, 0, 0), metadata: { type: "cat", color: "white" } },
+        { id: "c", vector: v(1, 0, 0, 0), metadata: { type: "dog", color: "black" } },
+      ]);
+      const res = store.search("docs", v(1, 0, 0, 0), {
+        where: { type: "cat" },
+        whereNot: { color: "black" },
+      });
+      expect(res.map((r) => r.id)).toEqual(["b"]);
+    });
+
+    it("search where excludes docs with no metadata", () => {
+      store.upsertMany("docs", [
+        { id: "has-meta", vector: v(1, 0, 0, 0), metadata: { type: "cat" } },
+        { id: "no-meta", vector: v(1, 0, 0, 0) },
+      ]);
+      const res = store.search("docs", v(1, 0, 0, 0), { where: { type: "cat" } });
+      expect(res.map((r) => r.id)).toEqual(["has-meta"]);
+    });
+
+    it("search where + topK applies topK to the post-filter set", () => {
+      store.upsertMany("docs", [
+        { id: "cat-1", vector: v(1, 0, 0, 0), metadata: { type: "cat" } },
+        { id: "cat-2", vector: v(0.9, 0.1, 0, 0), metadata: { type: "cat" } },
+        { id: "cat-3", vector: v(0.8, 0.2, 0, 0), metadata: { type: "cat" } },
+        { id: "dog-1", vector: v(1, 0, 0, 0), metadata: { type: "dog" } },
+      ]);
+      const res = store.search("docs", v(1, 0, 0, 0), { where: { type: "cat" }, topK: 2 });
+      expect(res.length).toBe(2);
+      expect(res.every((r) => r.id.startsWith("cat-"))).toBe(true);
     });
 
     it("remove deletes and reports prior existence", () => {
@@ -426,5 +497,69 @@ describe("vec0 acceleration", () => {
       accel.close();
       fb.close();
     }
+  });
+});
+
+// ── FR-1: AsyncVectorStore + toAsyncVector ───────────────────────────────────
+
+describe("AsyncVectorStore (toAsyncVector over InMemoryVectorStore)", () => {
+  let async: AsyncVectorStore;
+
+  beforeEach(() => {
+    async = toAsyncVector(new InMemoryVectorStore({ dimensions: DIMS }));
+  });
+
+  it("meta is delegated synchronously", () => {
+    expect(async.meta.backend).toBe("memory");
+    expect(async.meta.dimensions).toBe(DIMS);
+  });
+
+  it("upsert + get round-trips via Promise", async () => {
+    await async.upsert("docs", { id: "a", vector: v(1, 0, 0, 0), metadata: { x: 1 } });
+    const got = await async.get("docs", "a");
+    expect(got).not.toBeNull();
+    expect(Array.from(got!.vector)).toEqual([1, 0, 0, 0]);
+    expect(got!.metadata).toEqual({ x: 1 });
+  });
+
+  it("get returns null for a missing id", async () => {
+    expect(await async.get("docs", "ghost")).toBeNull();
+  });
+
+  it("has returns true for present, false for absent", async () => {
+    await async.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+    expect(await async.has("docs", "a")).toBe(true);
+    expect(await async.has("docs", "missing")).toBe(false);
+  });
+
+  it("upsertMany + search work via Promise", async () => {
+    await async.upsertMany("docs", [
+      { id: "near", vector: v(1, 0.1, 0, 0) },
+      { id: "far", vector: v(0, 1, 0, 0) },
+    ]);
+    const res = await async.search("docs", v(1, 0, 0, 0));
+    expect(res[0]!.id).toBe("near");
+    expect(res[1]!.id).toBe("far");
+  });
+
+  it("remove returns true when it existed, false when it didn't", async () => {
+    await async.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+    expect(await async.remove("docs", "a")).toBe(true);
+    expect(await async.remove("docs", "a")).toBe(false);
+  });
+
+  it("count returns the number of documents", async () => {
+    await async.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+    await async.upsert("docs", { id: "b", vector: v(0, 1, 0, 0) });
+    expect(await async.count("docs")).toBe(2);
+  });
+
+  it("search passes where/whereNot through to the sync backend", async () => {
+    await async.upsertMany("docs", [
+      { id: "cat", vector: v(1, 0, 0, 0), metadata: { type: "cat" } },
+      { id: "dog", vector: v(1, 0, 0, 0), metadata: { type: "dog" } },
+    ]);
+    const res = await async.search("docs", v(1, 0, 0, 0), { where: { type: "cat" } });
+    expect(res.map((r) => r.id)).toEqual(["cat"]);
   });
 });

@@ -25,6 +25,7 @@ import type {
   VectorSearchOptions,
   Vector,
 } from '../vector/types.js';
+import { matchesWhere } from '../vector/filter.js';
 import {
   cosineSimilarity,
   vectorToBuffer,
@@ -405,6 +406,14 @@ class SqliteVectorFacet implements VectorStore {
     };
   }
 
+  has(collection: string, id: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM vectors WHERE collection = ? AND id = ?`)
+        .get(collection, id) !== undefined
+    );
+  }
+
   remove(collection: string, id: string): boolean {
     if (this.accelerated) {
       const row = this.db
@@ -437,16 +446,21 @@ class SqliteVectorFacet implements VectorStore {
     this.requireDims(query);
     const topK = opts?.topK ?? 10;
     const minScore = opts?.minScore;
+    const hasFilters = !!(opts?.where || opts?.whereNot);
+    // When pre-KNN filters are present, use the JS path: metadata lives on the main
+    // `vectors` table (not in vec0), so the accelerated path can't apply them before
+    // scoring. The JS path fetches all rows and filters first — correct semantics,
+    // identical results to the in-memory backend.
     // A zero / non-finite query has no cosine direction (vec0's behavior there is
-    // backend-defined) — use the deterministic JS path.
-    if (this.accelerated && isUsableVector(query)) {
+    // backend-defined) — also use the deterministic JS path in that case.
+    if (this.accelerated && isUsableVector(query) && !hasFilters) {
       try {
         return this.searchVec<M>(collection, query, topK, minScore);
       } catch {
         // Any vec runtime error → fall through to the exact JS path (same result).
       }
     }
-    return this.searchJs<M>(collection, query, topK, minScore);
+    return this.searchJs<M>(collection, query, topK, minScore, opts?.where, opts?.whereNot);
   }
 
   private searchVec<M extends Record<string, unknown>>(
@@ -488,22 +502,24 @@ class SqliteVectorFacet implements VectorStore {
     query: Vector,
     topK: number,
     minScore: number | undefined,
+    where?: Record<string, unknown>,
+    whereNot?: Record<string, unknown>,
   ): VectorSearchResult<M>[] {
     const rows = this.db
       .prepare(`SELECT id, vec, metadata FROM vectors WHERE collection = ?`)
       .all(collection) as VectorRow[];
     const scored: VectorSearchResult<M>[] = [];
     for (const row of rows) {
+      const meta = row.metadata === null ? undefined : (JSON.parse(row.metadata) as M);
+      // Pre-KNN metadata filters — applied before scoring.
+      if (where && !matchesWhere(meta, where)) continue;
+      if (whereNot && matchesWhere(meta, whereNot)) continue;
       const vec = bufferToVector(row.vec);
       if (!isUsableVector(vec)) continue; // directionless — excluded (matches the vec0 path)
       const score = cosineSimilarity(query, vec);
       if (!Number.isFinite(score)) continue;
       if (minScore !== undefined && score < minScore) continue;
-      scored.push({
-        id: row.id,
-        score,
-        metadata: row.metadata === null ? undefined : (JSON.parse(row.metadata) as M),
-      });
+      scored.push({ id: row.id, score, metadata: meta });
     }
     scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     return scored.slice(0, topK);

@@ -21,6 +21,7 @@ export { InMemoryStore as InMemoryKv } from './backends/memory.js';
 export type {
   Vector,
   VectorStore,
+  AsyncVectorStore,
   VectorStoreMeta,
   VectorDocument,
   VectorSearchResult,
@@ -34,3 +35,4 @@ export {
   isUsableVector,
 } from './vector/cosine.js';
 export { InMemoryVectorStore } from './vector/memory.js';
+export { toAsyncVector } from './vector/to-async-vector.js';

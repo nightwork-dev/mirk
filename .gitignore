@@ -8,3 +8,4 @@ dist/
 
 # Local working docs / scratch — never version-controlled
 *.local/
+.gonk/
