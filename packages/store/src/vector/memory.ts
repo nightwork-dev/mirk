@@ -10,6 +10,7 @@ import type {
   VectorSearchOptions,
   Vector,
 } from "./types.js";
+import { matchesWhere } from "./filter.js";
 import { cosineSimilarity, assertDimensions, isUsableVector } from "./cosine.js";
 
 export interface InMemoryVectorStoreOptions {
@@ -56,6 +57,10 @@ export class InMemoryVectorStore implements VectorStore {
     return (doc ?? null) as VectorDocument<M> | null;
   }
 
+  has(collection: string, id: string): boolean {
+    return this.collections.get(collection)?.has(id) ?? false;
+  }
+
   remove(collection: string, id: string): boolean {
     return this.collections.get(collection)?.delete(id) ?? false;
   }
@@ -76,6 +81,10 @@ export class InMemoryVectorStore implements VectorStore {
     if (!coll) return [];
     const scored: VectorSearchResult<M>[] = [];
     for (const doc of coll.values()) {
+      // Pre-KNN metadata filters — applied before scoring so topK is out of the
+      // passing set only.
+      if (opts?.where && !matchesWhere(doc.metadata, opts.where)) continue;
+      if (opts?.whereNot && matchesWhere(doc.metadata, opts.whereNot)) continue;
       // A zero / non-finite stored vector has no cosine direction — exclude it, so
       // this backend matches the sqlite adapter (both JS and vec0 paths exclude them).
       if (!isUsableVector(doc.vector)) continue;
