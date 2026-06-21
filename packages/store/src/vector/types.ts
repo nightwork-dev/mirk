@@ -3,8 +3,10 @@
 //
 // Sync by design: the embedded backends (in-memory, sqlite) are synchronous —
 // better-sqlite3 is synchronous, and forcing async on a local call buys nothing.
-// A remote/async backend (e.g. Qdrant) would add a parallel async interface; it
-// is deliberately deferred until a remote consumer is real.
+// AsyncVectorStore is the Promise-returning twin for remote backends (e.g. Qdrant).
+// Hand-written rather than derived via a mapped type because per-method generics
+// (`search<M>`, `get<M>`, …) collapse to `unknown` under inference — same reason as
+// the KV AsyncStore twin in src/types.ts.
 
 /** An embedding. Float32Array — compact, and the on-disk encoding is little-endian
  *  float32 so vectors stay portable across backends. */
@@ -44,6 +46,13 @@ export interface VectorSearchOptions {
   topK?: number;
   /** Minimum cosine similarity; results below are excluded. Default: no floor. */
   minScore?: number;
+  /** Pre-KNN filter: only consider documents whose metadata satisfies ALL of these
+   *  exact-match conditions. Applied before scoring, so topK is out of the passing
+   *  set only. `where` and `whereNot` are independent — both may be provided. */
+  where?: Record<string, unknown>;
+  /** Pre-KNN filter: exclude documents whose metadata satisfies ANY of these
+   *  exact-match conditions. Applied before scoring. */
+  whereNot?: Record<string, unknown>;
 }
 
 /** A synchronous vector similarity store with per-collection documents.
@@ -72,16 +81,57 @@ export interface VectorStore {
     id: string,
   ): VectorDocument<M> | null;
 
+  /** Check whether a document exists by (collection, id). */
+  has(collection: string, id: string): boolean;
+
   /** Remove a document by id. Returns true if it existed. */
   remove(collection: string, id: string): boolean;
 
   /** Number of documents in a collection. */
   count(collection: string): number;
 
-  /** k-nearest-neighbour search by cosine similarity, highest score first. */
+  /** k-nearest-neighbour search by cosine similarity, highest score first.
+   *  Supports pre-KNN filtering via opts.where / opts.whereNot. */
   search<M extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
     query: Vector,
     opts?: VectorSearchOptions,
   ): VectorSearchResult<M>[];
+}
+
+/** The async face of the same vector store. Remote backends (e.g. Qdrant) implement
+ *  this natively; sync backends reach it via {@link toAsyncVector}.
+ *
+ *  Hand-written rather than derived from VectorStore via a mapped type: per-method
+ *  generics (`get<M>`, `search<M>`, …) collapse to `unknown` under inference — same
+ *  constraint as the KV AsyncStore twin in src/types.ts. */
+export interface AsyncVectorStore {
+  readonly meta: VectorStoreMeta;
+
+  upsert<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    doc: VectorDocument<M>,
+  ): Promise<void>;
+
+  upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    docs: ReadonlyArray<VectorDocument<M>>,
+  ): Promise<void>;
+
+  get<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    id: string,
+  ): Promise<VectorDocument<M> | null>;
+
+  has(collection: string, id: string): Promise<boolean>;
+
+  remove(collection: string, id: string): Promise<boolean>;
+
+  count(collection: string): Promise<number>;
+
+  search<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    query: Vector,
+    opts?: VectorSearchOptions,
+  ): Promise<VectorSearchResult<M>[]>;
 }
