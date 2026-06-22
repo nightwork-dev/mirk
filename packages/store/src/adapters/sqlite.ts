@@ -33,6 +33,7 @@ import {
   assertDimensions,
   isUsableVector,
 } from '../vector/cosine.js';
+import { buildWhereClause, buildOrderBy, buildLimitOffset, hashName } from '../sql.js';
 import { createRequire } from 'node:module';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -526,73 +527,6 @@ class SqliteVectorFacet implements VectorStore {
   }
 }
 
-// ─── SQL building (KV collections) ───────────────────────────────────────────
-
-/** A field name is ONE top-level JSON key, never a nested path. Build the JSON path
- *  `$."field"` (with `"` in the field doubled per SQLite JSON-path quoting) so a
- *  dotted name (`"a.b"`) resolves to the single top-level key `a.b`, matching the
- *  in-memory reference's `record[key]` lookup — not the nested path `$.a.b`. Returned
- *  as a value to BIND, never interpolated into SQL: field names are caller-supplied,
- *  so inlining them would be a SQL-injection vector. */
-function jsonPath(field: string): string {
-  return `$."${field.replace(/"/g, '""')}"`;
-}
-
-function buildWhereClause(filter?: StoreFilter): { clause: string; params: unknown[] } {
-  if (!filter?.where || Object.keys(filter.where).length === 0) {
-    return { clause: '', params: [] };
-  }
-  const conditions: string[] = [];
-  const params: unknown[] = [];
-  for (const [key, value] of Object.entries(filter.where)) {
-    const path = jsonPath(key);
-    if (value === null) {
-      // The in-memory reference matches a field whose value IS null, not a missing
-      // field (`record[key] !== null` is false only for an explicit null). `= NULL`
-      // never matches in SQL, so test the JSON type: json_type is `'null'` ONLY for
-      // an explicit JSON null, and SQL NULL (not 'null') for a missing path.
-      conditions.push(`json_type(data, ?) = 'null'`);
-      params.push(path);
-    } else {
-      const bound = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-      conditions.push(`json_extract(data, ?) = ?`);
-      params.push(path, bound as string | number);
-    }
-  }
-  return { clause: ` WHERE ${conditions.join(' AND ')}`, params };
-}
-
-function buildOrderBy(filter?: StoreFilter): { clause: string; params: unknown[] } {
-  if (!filter?.sortBy) return { clause: '', params: [] };
-  const dir = filter.sortDir === 'desc' ? 'DESC' : 'ASC';
-  const path = jsonPath(filter.sortBy);
-  // `... IS NULL` first puts null/missing fields LAST in BOTH directions, matching
-  // the in-memory reference (which pushes undefined/null after defined values).
-  return {
-    clause: ` ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ${dir}`,
-    params: [path, path],
-  };
-}
-
-/** Deterministic 32-bit FNV-1a hash → base36. Used to make collection table names
- *  injective (distinct collection names never alias to one physical table). */
-function hashName(s: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
-}
-
-function buildLimitOffset(filter?: StoreFilter): string {
-  let sql = '';
-  if (filter?.limit !== undefined) {
-    sql += ` LIMIT ${Math.max(0, Math.floor(filter.limit))}`;
-  }
-  if (filter?.offset !== undefined && filter.offset > 0) {
-    if (!sql.includes('LIMIT')) sql += ' LIMIT -1';
-    sql += ` OFFSET ${Math.max(0, Math.floor(filter.offset))}`;
-  }
-  return sql;
-}
+// SQL building (jsonPath / buildWhereClause / buildOrderBy / buildLimitOffset /
+// hashName) lives in ../sql.ts — shared verbatim with @mirk/store-libsql so the
+// two SQLite-dialect adapters can't drift in filter semantics. See that module.

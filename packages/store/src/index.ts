@@ -36,3 +36,4 @@ export {
 } from './vector/cosine.js';
 export { InMemoryVectorStore } from './vector/memory.js';
 export { toAsyncVector } from './vector/to-async-vector.js';
+export { matchesWhere } from './vector/filter.js';
