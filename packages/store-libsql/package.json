@@ -1,6 +1,6 @@
 {
   "name": "@mirk/store-libsql",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "libSQL / Turso source adapter for @mirk/store's async ports. KV + collection store and native-vector similarity store over one libSQL connection (remote, file:, or :memory:).",
   "license": "Apache-2.0",
