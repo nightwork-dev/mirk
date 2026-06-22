@@ -17,7 +17,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 
 | ID | Title | Pkg | Horizon | Status | Ref |
 | --- | --- | --- | --- | --- | --- |
-| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | designed | DL graph FR |
+| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | designed | FR-5 |
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 
@@ -27,7 +27,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 
 ### MR-01 · Graph primitive — edge model + traversal
 
-**Pkg:** @mirk/store/graph · **Horizon:** near · **Status:** designed (not built) · **Ref:** DL graph FR
+**Pkg:** @mirk/store/graph · **Horizon:** near · **Status:** designed (not built) · **Ref:** FR-5 (deadletters)
 
 The fourth code-split primitive next to key-value / collections / vector. A graph **primitive** — edge
 model + traversal — explicitly **not** graphRAG.
@@ -49,7 +49,9 @@ model + traversal — explicitly **not** graphRAG.
 - **Plan.** Take DL's `getNeighbors` reference impl + edge-type taxonomy; **dry-season pilot** by
   porting `@gonk/memory`'s `TripleStore` onto it (it already has the parity harness) and proving it
   green before opening breadth. Not a DL `#10` blocker — DL keeps its graph-service over the
-  vector+kv ports until this ships, then swaps cleanly.
+  vector+kv ports until this ships, then swaps cleanly. DL's `#10` store rebuild extracts a
+  graph-service (graphSearch + computeDerivedEdges + traversal) that is the concrete
+  consumer-in-waiting — it plugs straight into this primitive the moment it lands.
 
 ---
 
