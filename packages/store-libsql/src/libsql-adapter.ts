@@ -11,7 +11,7 @@
 // NOT lifted from a sync impl via toAsync: libSQL is a network/file client whose
 // every call is already a Promise.
 
-import { createClient, type Client, type InValue } from "@libsql/client";
+import { createClient, type Client } from "@libsql/client";
 
 import type { AsyncStore, StoreMeta, StoreFilter } from "@mirk/store";
 import type {
@@ -28,23 +28,11 @@ import {
   bufferToVector,
   assertDimensions,
   isUsableVector,
+  matchesWhere,
 } from "@mirk/store";
-
-// matchesWhere is not exported from @mirk/store — it is an internal helper of the
-// vector subpath. Re-implemented here (small, pure, no I/O) rather than refactoring
-// gonk's package to export it. Semantics match @mirk/store/vector/filter exactly.
-function matchesWhere(
-  metadata: Record<string, unknown> | undefined,
-  filter: Record<string, unknown>,
-): boolean {
-  if (!metadata) return false;
-  for (const [key, expected] of Object.entries(filter)) {
-    const actual = metadata[key];
-    if (actual === expected) continue;
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) return false;
-  }
-  return true;
-}
+// Pure SQL-string builders shared with @mirk/store/sqlite — one definition so the
+// two SQLite-dialect adapters can't drift in filter semantics.
+import { buildWhereClause, buildOrderBy, buildLimitOffset, hashName } from "@mirk/store/sql";
 
 export interface LibsqlAdapterOptions {
   /** libSQL connection URL: `libsql://…` (remote/Turso), `file:./db.sqlite`, or `:memory:`. */
@@ -568,65 +556,3 @@ function blobValueToVector(value: unknown): Vector {
 // with the sqlite adapter's encoding path even though libSQL takes the JSON form.
 void vectorToBuffer;
 
-// ─── SQL building (KV collections) — copied from @mirk/store/sqlite ───────────
-// Pure SQL helpers. Duplicated here (not imported) because they are internal to
-// @mirk/store's sqlite subpath and not part of its public surface. Acceptable
-// duplication for an additive contribution — see the package README.
-
-/** A field name is ONE top-level JSON key, never a nested path. */
-function jsonPath(field: string): string {
-  return `$."${field.replace(/"/g, '""')}"`;
-}
-
-function buildWhereClause(filter?: StoreFilter): { clause: string; params: InValue[] } {
-  if (!filter?.where || Object.keys(filter.where).length === 0) {
-    return { clause: "", params: [] };
-  }
-  const conditions: string[] = [];
-  const params: InValue[] = [];
-  for (const [key, value] of Object.entries(filter.where)) {
-    const path = jsonPath(key);
-    if (value === null) {
-      conditions.push(`json_type(data, ?) = 'null'`);
-      params.push(path);
-    } else {
-      const bound = typeof value === "boolean" ? (value ? 1 : 0) : value;
-      conditions.push(`json_extract(data, ?) = ?`);
-      params.push(path, bound as InValue);
-    }
-  }
-  return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
-}
-
-function buildOrderBy(filter?: StoreFilter): { clause: string; params: InValue[] } {
-  if (!filter?.sortBy) return { clause: "", params: [] };
-  const dir = filter.sortDir === "desc" ? "DESC" : "ASC";
-  const path = jsonPath(filter.sortBy);
-  return {
-    clause: ` ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ${dir}`,
-    params: [path, path],
-  };
-}
-
-/** Deterministic 32-bit FNV-1a hash → base36. Makes collection table names
- *  injective (distinct collection names never alias to one physical table). */
-function hashName(s: string): string {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(36);
-}
-
-function buildLimitOffset(filter?: StoreFilter): string {
-  let sql = "";
-  if (filter?.limit !== undefined) {
-    sql += ` LIMIT ${Math.max(0, Math.floor(filter.limit))}`;
-  }
-  if (filter?.offset !== undefined && filter.offset > 0) {
-    if (!sql.includes("LIMIT")) sql += " LIMIT -1";
-    sql += ` OFFSET ${Math.max(0, Math.floor(filter.offset))}`;
-  }
-  return sql;
-}
