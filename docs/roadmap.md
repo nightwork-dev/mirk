@@ -17,9 +17,10 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 
 | ID | Title | Pkg | Horizon | Status | Ref |
 | --- | --- | --- | --- | --- | --- |
-| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped (0.5.0) | FR-5 |
+| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped · adopted by DL | FR-5 |
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
+| MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
 
 ---
 
@@ -33,8 +34,11 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 over the `AsyncStore` collection port; flat `{id,from,to,type,…}` edge records; policy via a
 caller-supplied `edgeFilter`; not graphRAG). Independently reviewed (annika: SHIP — cycle-safe,
 correct depth/direction semantics, policy pruned at load, port-agnostic so sqlite/libsql get it
-free). 22 tests. **Remaining:** validate the at-scale batching against DL's `getNeighbors` reference,
-and the dry-season pilot — port `@gonk/memory`'s TripleStore onto it before opening breadth.
+free). 22 tests + a locked full-record-preservation contract. **Adopted** — DL's `getNeighbors` now runs
+on `traverse()` (Annika-fuzzed at 50k vs the old BFS); the full-record + id-opaque + edgeFilter-at-load
+contracts all held in the wild. **Remaining:** the at-scale fast-path is now **MR-04** (a port IN/batch-match
+capability — `traverse`'s load-once is a full edge scan per call, fine at current scale but
+`O(total_edges × hits)` for graphSearch); plus the dry-season pilot — port `@gonk/memory`'s TripleStore onto it.
 
 The fourth code-split primitive next to key-value / collections / vector. A graph **primitive** — edge
 model + traversal — explicitly **not** graphRAG.
@@ -59,6 +63,20 @@ model + traversal — explicitly **not** graphRAG.
   vector+kv ports until this ships, then swaps cleanly. DL's `#10` store rebuild extracts a
   graph-service (graphSearch + computeDerivedEdges + traversal) that is the concrete
   consumer-in-waiting — it plugs straight into this primitive the moment it lands.
+
+### MR-04 · Batch/IN match on the collection port — the graph fast-path's prerequisite
+
+**Pkg:** @mirk/store · **Horizon:** near · **Status:** designed (not started) · **Ref:** FR-5 / MR-01
+
+MR-01's at-scale `traverse` fast-path is **not** just a libsql override — it needs a **new port capability**.
+`StoreFilter.where` is exact-match only, so a start-anchored / frontier-IN prefilter
+(`WHERE from_id IN (frontier) OR to_id IN (frontier)`) **cannot be expressed through `list()`** — even a
+smarter traverse can't reach it. The fix: an IN / array-match on `StoreFilter` (or a dedicated batch-edge
+query), pushed into each **per-level** `WHERE … IN (…)` with the `edgeFilter` policy preserved (else the
+at-scale path diverges from load-once). Measured by DL's adopted `getNeighbors`: load-once does one full
+`list("edges")` scan per call, so graphSearch is `O(total_edges × hits)` — invisible at DL's corpus, and the
+swap is internal (no DL change). Design against DL's `getEdgesBatch` (indexed `idx_edges_from`/`idx_edges_to`).
+Load-once stays the correct default; the IN-path is the indexed override behind the same signature.
 
 ---
 
