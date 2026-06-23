@@ -17,7 +17,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 
 | ID | Title | Pkg | Horizon | Status | Ref |
 | --- | --- | --- | --- | --- | --- |
-| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | designed | FR-5 |
+| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped (0.5.0) | FR-5 |
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 
@@ -27,7 +27,14 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 
 ### MR-01 · Graph primitive — edge model + traversal
 
-**Pkg:** @mirk/store/graph · **Horizon:** near · **Status:** designed (not built) · **Ref:** FR-5 (deadletters)
+**Pkg:** @mirk/store/graph · **Horizon:** near · **Status:** shipped (@mirk/store@0.5.0) · **Ref:** FR-5 (deadletters)
+
+**Shipped** — `@mirk/store/graph` exports `neighbors` + `traverse` (pure, load-once fanout-free BFS
+over the `AsyncStore` collection port; flat `{id,from,to,type,…}` edge records; policy via a
+caller-supplied `edgeFilter`; not graphRAG). Independently reviewed (annika: SHIP — cycle-safe,
+correct depth/direction semantics, policy pruned at load, port-agnostic so sqlite/libsql get it
+free). 22 tests. **Remaining:** validate the at-scale batching against DL's `getNeighbors` reference,
+and the dry-season pilot — port `@gonk/memory`'s TripleStore onto it before opening breadth.
 
 The fourth code-split primitive next to key-value / collections / vector. A graph **primitive** — edge
 model + traversal — explicitly **not** graphRAG.
