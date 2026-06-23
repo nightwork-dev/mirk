@@ -8,6 +8,13 @@ and vector today (`@mirk/store`), with a libSQL/Turso source adapter (`@mirk/sto
 for a new primitive is **scope discipline**: a genuinely generic, substrate-level shape with ≥2 real
 consumers — never a domain framework dressed up as substrate.
 
+As of `@mirk/store@0.5.0`, **`@gonk/store`** (the gonk harness's substrate store) backs its
+KV / blob / log / vector stores onto **`@mirk/store/sqlite`** through a `MirkStoreBackend` adapter —
+so nearly every gonk storage consumer (jobs, work-items, rlm, handoff, comms, curator, reflector,
+self-model-reflector) now runs on mirk, with a self-migrating carry-forward from the old filesystem
+backend. That broad adoption is what surfaced **MR-05** (knowledge's full-text gap) and **MR-06**
+(sqlite-adapter ergonomics) below — both real-consumer-driven, not speculative.
+
 ## How this roadmap works
 
 Every item has a **stable `MR-NN` ID** (never renumbered or reused, so a reference survives), plus
@@ -21,6 +28,8 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
+| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store | near | identified | @gonk/store adoption |
+| MR-06 | SqliteAdapter: expose connection / lazy vector dimensions | @mirk/store/sqlite | near | identified | @gonk/store adoption |
 
 ---
 
@@ -38,7 +47,9 @@ free). 22 tests + a locked full-record-preservation contract. **Adopted** — DL
 on `traverse()` (Annika-fuzzed at 50k vs the old BFS); the full-record + id-opaque + edgeFilter-at-load
 contracts all held in the wild. **Remaining:** the at-scale fast-path is now **MR-04** (a port IN/batch-match
 capability — `traverse`'s load-once is a full edge scan per call, fine at current scale but
-`O(total_edges × hits)` for graphSearch); plus the dry-season pilot — port `@gonk/memory`'s TripleStore onto it.
+`O(total_edges × hits)` for graphSearch); plus the **graph-specific** pilot — port `@gonk/memory`'s `TripleStore` onto `@mirk/store/graph`
+(distinct from the broad `@gonk/store` → sqlite adoption noted in the intro, which covers
+KV/collections/vector but not graph).
 
 The fourth code-split primitive next to key-value / collections / vector. A graph **primitive** — edge
 model + traversal — explicitly **not** graphRAG.
@@ -77,6 +88,33 @@ at-scale path diverges from load-once). Measured by DL's adopted `getNeighbors`:
 `list("edges")` scan per call, so graphSearch is `O(total_edges × hits)` — invisible at DL's corpus, and the
 swap is internal (no DL change). Design against DL's `getEdgesBatch` (indexed `idx_edges_from`/`idx_edges_to`).
 Load-once stays the correct default; the IN-path is the indexed override behind the same signature.
+
+### MR-05 · Full-text search primitive — the one thing blocking knowledge
+
+**Pkg:** @mirk/store (a `/search` subpath or an FTS facet on the sqlite adapter) · **Horizon:** near ·
+**Status:** identified (real consumer, not started) · **Ref:** @gonk/store adoption
+
+Every `@gonk/store` consumer now runs on `@mirk/store/sqlite` **except `@gonk/knowledge`** — and it is
+blocked on exactly one thing. Knowledge does sqlite **FTS5 + bm25 keyword ranking** over title+body;
+`@mirk/store/sql`'s `StoreFilter.where` is exact-match only (no `MATCH`, no ranking), so it cannot
+express keyword search. The requirement: a substrate **full-text** primitive — FTS5 with bm25 ranking
+and a query/score API, optional native acceleration (the vec0/sqlite-vec pattern), behind the same
+port + cross-backend parity contract as the other primitives. **Consumer:** `@gonk/knowledge`
+(`search()`). Note: knowledge ALSO wants a supersession/correction **audit trail** (append-only version
+history) — that is an append-log concern closer to **MR-03**, not this primitive; keep MR-05 scoped to
+full-text + ranking.
+
+### MR-06 · SqliteAdapter ergonomics — expose connection or lazy vector dimensions
+
+**Pkg:** @mirk/store/sqlite · **Horizon:** near · **Status:** identified (small) · **Ref:** @gonk/store adoption
+
+`@gonk/store`'s `MirkStoreBackend` (which puts gonk's KV/blob/log/vector stores on the sqlite adapter)
+hit one friction point: the `.vector` facet needs `dimensions` at `SqliteAdapter` construction, but the
+consuming SPI only learns the dimension at the first `upsert(id, vector)`. To build the vector facet
+lazily over the SAME connection, the backend had to reach into the adapter's **private `db` field** via
+a cast — fragile coupling to mirk internals. Fix, either: (a) expose the underlying `better-sqlite3`
+connection (a public getter), or (b) let `.vector` accept `dimensions` lazily / be re-initialized
+post-construction. Small, but it removes a private-field reach in a real shipped consumer.
 
 ---
 
