@@ -273,6 +273,32 @@ describe("graph — traverse", () => {
     expect(result.map((e) => e.id).sort()).toEqual(["e_ab", "e_ad", "e_ax"]);
   });
 
+  it("full edge record preserved — extra fields (from_type, to_type, weight) survive round-trip", async () => {
+    // Contract that deadletters gates on: graph functions never project edge records
+    // down to {id,from,to,type}. Every stored field must be present on returned edges.
+    const richEdge = {
+      id: "e_ft",
+      from: "a",
+      to: "b",
+      type: "ref",
+      from_type: "doc",
+      to_type: "term",
+      weight: 3,
+    };
+    const s = toAsync(new InMemoryKv());
+    await s.put("rich", richEdge);
+
+    // neighbors: full record returned, not just the four structural fields
+    const nbrs = await neighbors(s, "rich", { from: "a" });
+    expect(nbrs).toHaveLength(1);
+    expect(nbrs[0]).toEqual(richEdge);
+
+    // traverse: edge record in `edges` carries all extra fields
+    const trv = await traverse(s, "rich", { start: "a", depth: 1 });
+    expect(trv.edges).toHaveLength(1);
+    expect(trv.edges[0]).toEqual(richEdge);
+  });
+
   it("both-direction depth 2 over directed chain a→b→c starting from b reaches a and c", async () => {
     // Fresh graph: a→b→c only. Starting from b with direction "both":
     // hop 1: e_ab (b is `to`, neighbor = a) and e_bc (b is `from`, neighbor = c) → reach a, c

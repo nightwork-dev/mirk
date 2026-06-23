@@ -68,6 +68,9 @@ function withWhere(
  * `opts.edgeFilter` (a StoreFilter on edge fields) is applied at the store level;
  * `opts.edgeTypes`, if given, is applied in-memory afterward (the port's `where`
  * is exact-match only and cannot express "type IN [...]").
+ *
+ * Returns the full stored edge record untouched — no projection. All extra fields
+ * (e.g. `from_type`, `to_type`, `weight`) are present on every returned edge.
  */
 export async function neighbors(
   store: AsyncStore,
@@ -122,6 +125,9 @@ export async function neighbors(
  * (the parity test relies on this). depth ≤ 0 → `{ nodes: [], edges: [] }`.
  *
  * "both" adjacency: an edge {from:a,to:b} makes a→b AND b→a reachable.
+ *
+ * Returns the full stored edge record untouched — no projection. All extra fields
+ * (e.g. `from_type`, `to_type`, `weight`) are present on every returned edge.
  */
 export async function traverse(
   store: AsyncStore,
