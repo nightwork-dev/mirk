@@ -39,6 +39,10 @@
       "import": "./dist/vector.js",
       "types": "./dist/vector.d.ts"
     },
+    "./search": {
+      "import": "./dist/search.js",
+      "types": "./dist/search.d.ts"
+    },
     "./graph": {
       "import": "./dist/graph.js",
       "types": "./dist/graph.d.ts"
@@ -59,7 +63,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && tsup src/index.ts src/kv.ts src/vector.ts src/graph.ts src/sql.ts src/adapters/sqlite.ts --format esm --dts --external better-sqlite3 --external sqlite-vec"
+    "build": "rm -rf dist && tsup src/index.ts src/kv.ts src/vector.ts src/search.ts src/graph.ts src/sql.ts src/adapters/sqlite.ts --format esm --dts --external better-sqlite3 --external sqlite-vec"
   },
   "peerDependencies": {
     "better-sqlite3": "^11.0.0 || ^12.0.0",

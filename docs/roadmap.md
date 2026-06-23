@@ -28,7 +28,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
-| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store | near | identified | @gonk/store adoption |
+| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · knowledge adoption pending | @gonk/store adoption |
 | MR-06 | SqliteAdapter: expose connection / lazy vector dimensions | @mirk/store/sqlite | near | identified | @gonk/store adoption |
 
 ---
