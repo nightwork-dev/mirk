@@ -91,18 +91,25 @@ Load-once stays the correct default; the IN-path is the indexed override behind 
 
 ### MR-05 · Full-text search primitive — the one thing blocking knowledge
 
-**Pkg:** @mirk/store (a `/search` subpath or an FTS facet on the sqlite adapter) · **Horizon:** near ·
-**Status:** identified (real consumer, not started) · **Ref:** @gonk/store adoption
+**Pkg:** @mirk/store/search · **Horizon:** near · **Status:** **shipped** (`@mirk/store@0.6.0`) ·
+knowledge adoption **opt-in** (not default) · **Ref:** @gonk/store adoption
 
-Every `@gonk/store` consumer now runs on `@mirk/store/sqlite` **except `@gonk/knowledge`** — and it is
-blocked on exactly one thing. Knowledge does sqlite **FTS5 + bm25 keyword ranking** over title+body;
-`@mirk/store/sql`'s `StoreFilter.where` is exact-match only (no `MATCH`, no ranking), so it cannot
-express keyword search. The requirement: a substrate **full-text** primitive — FTS5 with bm25 ranking
-and a query/score API, optional native acceleration (the vec0/sqlite-vec pattern), behind the same
-port + cross-backend parity contract as the other primitives. **Consumer:** `@gonk/knowledge`
-(`search()`). Note: knowledge ALSO wants a supersession/correction **audit trail** (append-only version
-history) — that is an append-log concern closer to **MR-03**, not this primitive; keep MR-05 scoped to
-full-text + ranking.
+**Shipped** — `@mirk/store/search`: a `SearchStore` port (index/indexMany/remove/search) with an
+in-memory bm25 reference (FTS5 defaults k1=1.2, b=0.75) and a `.search` FTS5 facet on `SqliteAdapter`
+(same connection as `.kv`/`.vector`); cross-backend parity test asserts ranking order. `@gonk/knowledge`
+has a `MirkKnowledgeIndex` over `.kv` (pages) + `.search` (FTS), parity-tested against its sqlite index,
+**opt-in** behind `mirkKnowledgeIndexFactory` (sqlite stays the default — see the follow-up).
+
+The original gap: knowledge did sqlite FTS5 + bm25 over title+body, which `@mirk/store/sql`'s exact-match
+`StoreFilter.where` can't express. Now solved. Note: knowledge's supersession/correction **audit trail**
+(append-only version history) is an append-log concern closer to **MR-03**, not here.
+
+**Follow-up — weighted multi-field FTS (the reason knowledge stays opt-in).** `@gonk/knowledge`'s sqlite
+index uses `fts5(title, body)` — TWO columns, so `bm25()` weights title matches above body matches.
+`@mirk/store/search` indexes ONE text field, so the adoption concatenates title+body and loses the
+title boost — a real ranking-quality regression for knowledge. Until `/search` supports multiple
+weighted fields (`index(collection, { fields: { title, body }, weights })` → column-weighted bm25),
+knowledge stays on its sqlite default. This is the concrete next step on the search primitive.
 
 ### MR-06 · SqliteAdapter ergonomics — expose connection or lazy vector dimensions
 
