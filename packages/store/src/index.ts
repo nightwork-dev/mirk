@@ -37,3 +37,13 @@ export {
 export { InMemoryVectorStore } from './vector/memory.js';
 export { toAsyncVector } from './vector/to-async-vector.js';
 export { matchesWhere } from './vector/filter.js';
+
+// Search port + in-memory reference + shared tokenization helpers
+export type {
+  SearchStore,
+  SearchDocument,
+  SearchOptions,
+  SearchResult,
+} from './search/types.js';
+export { InMemorySearchStore } from './search/memory.js';
+export { tokenize, sanitizeFtsQuery } from './search/tokenize.js';

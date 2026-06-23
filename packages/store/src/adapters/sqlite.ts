@@ -33,6 +33,13 @@ import {
   assertDimensions,
   isUsableVector,
 } from '../vector/cosine.js';
+import type {
+  SearchStore,
+  SearchDocument,
+  SearchResult,
+  SearchOptions,
+} from '../search/types.js';
+import { sanitizeFtsQuery } from '../search/tokenize.js';
 import { buildWhereClause, buildOrderBy, buildLimitOffset, hashName } from '../sql.js';
 import { createRequire } from 'node:module';
 
@@ -80,6 +87,7 @@ export class SqliteAdapter {
   private readonly db: Database.Database;
   readonly kv!: SyncStore;
   readonly vector!: VectorStore;
+  readonly search!: SearchStore;
 
   constructor(opts: SqliteAdapterOptions) {
     const ownsDb = opts.db === undefined;
@@ -88,6 +96,7 @@ export class SqliteAdapter {
       this.db.pragma('journal_mode = WAL');
       this.kv = new SqliteKvFacet(this.db);
       this.vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions, opts.forceJsCosine);
+      this.search = new SqliteSearchFacet(this.db);
     } catch (err) {
       // A facet constructor can throw (e.g. dimension mismatch). Don't leak the
       // connection we opened — but never close a db handle the caller passed in.
@@ -524,6 +533,123 @@ class SqliteVectorFacet implements VectorStore {
     }
     scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     return scored.slice(0, topK);
+  }
+}
+
+// ─── Search facet (SearchStore) ─────────────────────────────────────────────
+//
+// FTS5 + bm25 over the same connection as .kv/.vector. Per collection: a docs
+// table {id, text, meta_json} as the FTS5 external-content source, with triggers
+// keeping the index in lockstep (the same pattern @gonk/knowledge uses). search
+// runs `MATCH ? ORDER BY bm25(fts)`, maps bm25 (lower=better) to score=-bm25
+// (higher=better), and applies the meta `filter` in JS via matchesWhere — the
+// identical semantics to the in-memory reference.
+
+interface SearchMatchRow {
+  id: string;
+  meta_json: string | null;
+  bm: number;
+}
+
+class SqliteSearchFacet implements SearchStore {
+  private readonly ensured = new Set<string>();
+
+  constructor(private readonly db: Database.Database) {}
+
+  private baseTable(collection: string): string {
+    return `search_docs_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}_${hashName(collection)}`;
+  }
+
+  private ftsTable(collection: string): string {
+    return `search_fts_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}_${hashName(collection)}`;
+  }
+
+  private ensure(collection: string): { docs: string; fts: string } {
+    const docs = this.baseTable(collection);
+    const fts = this.ftsTable(collection);
+    if (this.ensured.has(docs)) return { docs, fts };
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ${docs} (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        meta_json TEXT
+      );
+      CREATE VIRTUAL TABLE IF NOT EXISTS ${fts} USING fts5(
+        text, content='${docs}', content_rowid='rowid', tokenize='unicode61'
+      );
+      CREATE TRIGGER IF NOT EXISTS ${docs}_ai AFTER INSERT ON ${docs} BEGIN
+        INSERT INTO ${fts}(rowid, text) VALUES (new.rowid, new.text);
+      END;
+      CREATE TRIGGER IF NOT EXISTS ${docs}_ad AFTER DELETE ON ${docs} BEGIN
+        INSERT INTO ${fts}(${fts}, rowid, text) VALUES('delete', old.rowid, old.text);
+      END;
+      CREATE TRIGGER IF NOT EXISTS ${docs}_au AFTER UPDATE ON ${docs} BEGIN
+        INSERT INTO ${fts}(${fts}, rowid, text) VALUES('delete', old.rowid, old.text);
+        INSERT INTO ${fts}(rowid, text) VALUES (new.rowid, new.text);
+      END;
+    `);
+    this.ensured.add(docs);
+    return { docs, fts };
+  }
+
+  index<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    doc: SearchDocument<M>,
+  ): void {
+    const { docs } = this.ensure(collection);
+    const metaJson = doc.meta === undefined ? null : JSON.stringify(doc.meta);
+    this.db
+      .prepare(
+        `INSERT INTO ${docs}(id, text, meta_json) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET text = excluded.text, meta_json = excluded.meta_json`,
+      )
+      .run(doc.id, doc.text, metaJson);
+  }
+
+  indexMany<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    docs: ReadonlyArray<SearchDocument<M>>,
+  ): void {
+    const tx = this.db.transaction((items: ReadonlyArray<SearchDocument<M>>) => {
+      for (const doc of items) this.index(collection, doc);
+    });
+    tx(docs);
+  }
+
+  remove(collection: string, id: string): boolean {
+    const { docs } = this.ensure(collection);
+    return this.db.prepare(`DELETE FROM ${docs} WHERE id = ?`).run(id).changes > 0;
+  }
+
+  search<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    query: string,
+    opts?: SearchOptions,
+  ): SearchResult<M>[] {
+    const { docs, fts } = this.ensure(collection);
+    const sanitized = sanitizeFtsQuery(query);
+    if (sanitized.length === 0) return [];
+    // Fetch ALL matches ordered by bm25 (lower=better), then apply the meta
+    // filter in JS (matching the in-memory reference) and limit — so filter is
+    // applied before limit, consistent with /vector's pre-KNN filtering.
+    const rows = this.db
+      .prepare(
+        `SELECT d.id AS id, d.meta_json AS meta_json, bm25(${fts}) AS bm
+         FROM ${fts}
+         JOIN ${docs} d ON d.rowid = ${fts}.rowid
+         WHERE ${fts} MATCH ?
+         ORDER BY bm, d.id`,
+      )
+      .all(sanitized) as SearchMatchRow[];
+    const limit = opts?.limit ?? 10;
+    const where = opts?.filter?.where;
+    const out: SearchResult<M>[] = [];
+    for (const r of rows) {
+      const meta = (r.meta_json === null ? {} : JSON.parse(r.meta_json)) as M;
+      if (where && !matchesWhere(meta, where)) continue;
+      out.push({ id: r.id, score: -r.bm, meta });
+    }
+    return out.slice(0, limit);
   }
 }
 
