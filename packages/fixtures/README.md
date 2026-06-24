@@ -139,12 +139,12 @@ Missing targets become diagnostics and unresolved graph nodes, not late runtime 
 The loader works over a small source interface: list entries, read entry. Source helpers adapt the
 places authored data commonly lives.
 
-| Source | Use it for |
-| --- | --- |
-| `@mirk/fixtures/memory` | tests, examples, generated packs |
-| `@mirk/fixtures/filesystem` | local directories and CLI workflows |
-| `@mirk/fixtures/package` | defaults shipped with a package |
-| `@mirk/fixtures/store` | durable packs backed by `@mirk/store/kv` |
+| Source | Use it for | Status |
+| --- | --- | --- |
+| `@mirk/fixtures/memory` | tests, examples, generated packs | implemented |
+| `@mirk/fixtures/store` | durable packs backed by `@mirk/store/kv` | implemented |
+| `@mirk/fixtures/filesystem` | local directories and CLI workflows | planned |
+| `@mirk/fixtures/package` | defaults shipped with a package | planned |
 
 Everything above the source boundary is shared: parsing, validation, layering, patching, reference
 resolution, materialization, diagnostics, and provenance.
@@ -200,14 +200,14 @@ The store package stays focused on storage ports. Fixture rules live here.
 
 Root imports stay dependency-light and runtime-neutral.
 
-| Import | What you get | Node-only modules |
-| --- | --- | --- |
-| `@mirk/fixtures` | registry, type definitions, loader, refs, diagnostics | no |
-| `@mirk/fixtures/memory` | in-memory source | no |
-| `@mirk/fixtures/store` | store source and seeding helpers | no |
-| `@mirk/fixtures/filesystem` | filesystem source | yes |
-| `@mirk/fixtures/package` | package/resource source | maybe |
-| `@mirk/fixtures/cli` | CLI helpers | yes |
+| Import | What you get | Node-only modules | Status |
+| --- | --- | --- | --- |
+| `@mirk/fixtures` | registry, type definitions, loader, refs, diagnostics | no | implemented |
+| `@mirk/fixtures/memory` | in-memory source | no | implemented |
+| `@mirk/fixtures/store` | store source and seeding helpers | no | implemented |
+| `@mirk/fixtures/filesystem` | filesystem source | yes | planned |
+| `@mirk/fixtures/package` | package/resource source | maybe | planned |
+| `@mirk/fixtures/cli` | CLI helpers | yes | planned |
 
 The root entry does not pull filesystem APIs, parser bundles, database bindings, or CLI code into a
 browser or edge bundle.
@@ -236,5 +236,4 @@ It is the reusable boundary between raw authored data and application state.
 
 Draft specification. Not yet published.
 
-See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design and
-[`../../docs/roadmap.md`](../../docs/roadmap.md) for the roadmap entry.
+See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design.

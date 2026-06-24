@@ -131,8 +131,8 @@ pnpm -r typecheck
 
 Pre-1.0. The public API should be considered unstable until the first tagged release.
 
-Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The draft `@mirk/fixtures` authored-data primitive
-spec lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README draft at
+Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
+lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at
 [`packages/fixtures/README.md`](packages/fixtures/README.md).
 
 ## License

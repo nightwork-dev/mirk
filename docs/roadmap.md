@@ -30,7 +30,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
 | MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · knowledge adoption pending | @gonk/store adoption |
 | MR-06 | SqliteAdapter: expose connection / lazy vector dimensions | @mirk/store/sqlite | near | identified | @gonk/store adoption |
-| MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | specified | package audit |
+| MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | core + store slice implemented | package audit |
 
 ---
 
@@ -126,7 +126,7 @@ post-construction. Small, but it removes a private-field reach in a real shipped
 
 ### MR-07 · Authored data / fixture loader primitive
 
-**Pkg:** @mirk/fixtures · **Horizon:** near · **Status:** specified · **Ref:** package audit
+**Pkg:** @mirk/fixtures · **Horizon:** near · **Status:** core + store slice implemented · **Ref:** package audit
 
 A generic authored-data loader for content packs, configuration fragments, templates, lookup tables,
 and test fixtures that need schema validation, deterministic layering, patch overlays, references,
@@ -138,9 +138,10 @@ seed ordinary store collections as a sink. Core stays parser-injected and Standa
 root imports stay dependency-light and domain-neutral.
 
 Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). README draft: [`packages/fixtures/README.md`](../packages/fixtures/README.md).
-First implementation slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader
-surface, patch/merge core, and tests that prove root imports stay free of Node-only helpers. Store,
-filesystem, package-resource, materialization, reference graph, and CLI follow as separate slices.
+Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader surface,
+patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
+the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
+parser plugins, and broader export-map/browser smoke tests.
 
 ---
 
