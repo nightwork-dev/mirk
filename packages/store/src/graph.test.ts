@@ -4,9 +4,10 @@
 // guarantees (direction, depth, cycles, policy) carry to those adapters for free.
 
 import { describe, it, expect, beforeEach } from "vitest";
-import type { AsyncStore } from "./types.js";
+import type { AsyncStore, AsyncStoreInQuery, StoreFilter } from "./types.js";
 import { InMemoryKv, toAsync } from "./kv.js";
-import { neighbors, traverse, type Edge } from "./graph.js";
+import { SqliteAdapter } from "./adapters/sqlite.js";
+import { neighbors, traverse, traverseFrontierBatched, type Edge } from "./graph.js";
 
 const COLLECTION = "edges";
 
@@ -35,6 +36,65 @@ const EDGES: Edge[] = [
   edge("e_de", "d", "e", "follows"),
   edge("e_ax", "a", "x", "follows", false), // unpublished — policy-pruned
 ];
+
+function matchesWhere(edge: Edge, where: Record<string, unknown> | undefined): boolean {
+  if (!where) return true;
+  for (const [field, value] of Object.entries(where)) {
+    if (edge[field] !== value) return false;
+  }
+  return true;
+}
+
+function batchOnlyStore(edges: Edge[]): {
+  store: AsyncStore & AsyncStoreInQuery;
+  queries: Array<{ field: string; values: readonly unknown[]; filter?: StoreFilter }>;
+} {
+  const queries: Array<{ field: string; values: readonly unknown[]; filter?: StoreFilter }> = [];
+  const store: AsyncStore & AsyncStoreInQuery = {
+    meta: { backend: "batch-probe" },
+    async get<T>(): Promise<T | null> {
+      throw new Error("unused");
+    },
+    async set(): Promise<void> {
+      throw new Error("unused");
+    },
+    async has(): Promise<boolean> {
+      throw new Error("unused");
+    },
+    async delete(): Promise<boolean> {
+      throw new Error("unused");
+    },
+    async keys(): Promise<string[]> {
+      throw new Error("unused");
+    },
+    async list<T>(): Promise<T[]> {
+      throw new Error("traverseFrontierBatched must not call list() when listWhereIn exists");
+    },
+    async listWhereIn<T>(
+      _collection: string,
+      field: string,
+      values: readonly unknown[],
+      filter?: StoreFilter,
+    ): Promise<T[]> {
+      queries.push({ field, values: [...values], filter });
+      const set = new Set(values);
+      return edges.filter((e) => set.has(e[field]) && matchesWhere(e, filter?.where)) as T[];
+    },
+    async getById<T>(): Promise<T | null> {
+      throw new Error("unused");
+    },
+    async put<T extends { id: string }>(_: string, item: T): Promise<T> {
+      return item;
+    },
+    async remove(): Promise<boolean> {
+      throw new Error("unused");
+    },
+    async count(): Promise<number> {
+      throw new Error("unused");
+    },
+  };
+  return { store, queries };
+}
 
 describe("graph — neighbors", () => {
   let store: AsyncStore;
@@ -313,5 +373,44 @@ describe("graph — traverse", () => {
     });
     expect(result.nodes).toEqual(["a", "c"]); // sorted by id
     expect(result.edges.map((e) => e.id)).toEqual(["e_ab", "e_bc"]);
+  });
+
+  it("frontier-batched traversal uses listWhereIn instead of list and pushes edgeFilter into each query", async () => {
+    const { store: s, queries } = batchOnlyStore([
+      ...EDGES,
+      edge("noise", "unrelated", "sink", "follows"),
+    ]);
+    const result = await traverseFrontierBatched(s, COLLECTION, {
+      start: "a",
+      depth: 2,
+      edgeFilter: { where: { published: true } },
+    });
+
+    expect(result.nodes).toEqual(["b", "c", "d", "e"]);
+    expect(result.edges.map((e) => e.id)).toEqual(["e_ab", "e_ad", "e_bc", "e_de"]);
+    expect(queries.map((q) => q.field)).toEqual(["from", "from"]);
+    expect(queries.map((q) => q.values)).toEqual([["a"], ["b", "d"]]);
+    expect(queries.every((q) => q.filter?.where?.published === true)).toBe(true);
+  });
+
+  it("frontier-batched traversal reads through the sqlite provider and matches load-once semantics", async () => {
+    const adapter = new SqliteAdapter({ path: ":memory:" });
+    try {
+      const s = toAsync(adapter.kv);
+      for (const e of EDGES) await s.put(COLLECTION, e);
+      await s.put(COLLECTION, edge("noise", "unrelated", "sink", "follows"));
+
+      const opts = {
+        start: "a",
+        depth: 5,
+        direction: "both" as const,
+        edgeFilter: { where: { published: true } },
+      };
+      await expect(traverseFrontierBatched(s, COLLECTION, opts)).resolves.toEqual(
+        await traverse(s, COLLECTION, opts),
+      );
+    } finally {
+      adapter.close();
+    }
   });
 });

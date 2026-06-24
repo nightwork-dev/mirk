@@ -26,6 +26,29 @@ export interface StoreFilter {
   offset?: number;
 }
 
+/** Optional collection capability for adapters that can push `field IN (...)`
+ *  down to the backing store while preserving the normal StoreFilter semantics.
+ *  Graph frontier traversal uses this when present and falls back to plain
+ *  `list()` when absent. */
+export interface SyncStoreInQuery {
+  listWhereIn<T>(
+    collection: string,
+    field: string,
+    values: readonly unknown[],
+    filter?: StoreFilter,
+  ): T[];
+}
+
+/** Async twin of SyncStoreInQuery for remote-capable stores. */
+export interface AsyncStoreInQuery {
+  listWhereIn<T>(
+    collection: string,
+    field: string,
+    values: readonly unknown[],
+    filter?: StoreFilter,
+  ): Promise<T[]>;
+}
+
 /**
  * A typed key-value + collection store. **Synchronous.**
  *

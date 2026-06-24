@@ -2,9 +2,9 @@
 // Reference implementation. Map-based. Synchronous. Zero dependencies.
 // For tests and lightweight local use.
 
-import type { SyncStore, StoreMeta, StoreFilter } from '../types.js';
+import type { SyncStore, SyncStoreInQuery, StoreMeta, StoreFilter } from '../types.js';
 
-export class InMemoryStore implements SyncStore {
+export class InMemoryStore implements SyncStore, SyncStoreInQuery {
   readonly meta: StoreMeta = {
     backend: 'memory',
   };
@@ -56,6 +56,22 @@ export class InMemoryStore implements SyncStore {
     let items = [...col.values()] as T[];
     items = applyFilter(items, filter);
     return items;
+  }
+
+  listWhereIn<T>(
+    collection: string,
+    field: string,
+    values: readonly unknown[],
+    filter?: StoreFilter,
+  ): T[] {
+    if (values.length === 0) return [];
+    const set = new Set(values);
+    const col = this.ensureCollection(collection);
+    const items = [...col.values()].filter((item) => {
+      if (typeof item !== 'object' || item === null) return false;
+      return set.has((item as Record<string, unknown>)[field]);
+    }) as T[];
+    return applyFilter(items, filter);
   }
 
   getById<T>(collection: string, id: string): T | null {

@@ -4,6 +4,13 @@
 // (e.g. @mirk/store/sqlite) implement these interfaces; they are NOT re-exported
 // here.
 
-export type { SyncStore, AsyncStore, StoreFilter, StoreMeta } from "./types.js";
+export type {
+  SyncStore,
+  AsyncStore,
+  SyncStoreInQuery,
+  AsyncStoreInQuery,
+  StoreFilter,
+  StoreMeta,
+} from "./types.js";
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
