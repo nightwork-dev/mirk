@@ -16,7 +16,7 @@
 
 import Database from 'better-sqlite3';
 
-import type { SyncStore, StoreMeta, StoreFilter } from '../types.js';
+import type { SyncStore, SyncStoreInQuery, StoreMeta, StoreFilter } from '../types.js';
 import type {
   VectorStore,
   VectorStoreMeta,
@@ -40,7 +40,14 @@ import type {
   SearchOptions,
 } from '../search/types.js';
 import { sanitizeFtsQuery } from '../search/tokenize.js';
-import { buildWhereClause, buildOrderBy, buildLimitOffset, hashName } from '../sql.js';
+import {
+  buildWhereClause,
+  buildOrderBy,
+  buildLimitOffset,
+  hashName,
+  jsonPath,
+  type SqlParam,
+} from '../sql.js';
 import { createRequire } from 'node:module';
 
 const nodeRequire = createRequire(import.meta.url);
@@ -67,6 +74,41 @@ function tryLoadSqliteVec(db: Database.Database): boolean {
   } catch {
     return false;
   }
+}
+
+function sqlParam(value: unknown): SqlParam {
+  if (value === null) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+    return value;
+  }
+  throw new Error('Store IN queries only support JSON scalar values.');
+}
+
+function buildJsonInWhere(
+  field: string,
+  values: readonly unknown[],
+  hasPriorWhere: boolean,
+): { clause: string; params: SqlParam[] } {
+  const path = jsonPath(field);
+  const params: SqlParam[] = [];
+  const nonNull = values.filter((value) => value !== null).map(sqlParam);
+  const hasNull = values.some((value) => value === null);
+  const parts: string[] = [];
+
+  if (nonNull.length > 0) {
+    parts.push(`json_extract(data, ?) IN (${nonNull.map(() => '?').join(', ')})`);
+    params.push(path, ...nonNull);
+  }
+  if (hasNull) {
+    parts.push(`json_type(data, ?) = 'null'`);
+    params.push(path);
+  }
+
+  return {
+    clause: `${hasPriorWhere ? ' AND' : ' WHERE'} (${parts.join(' OR ')})`,
+    params,
+  };
 }
 
 export interface SqliteAdapterOptions {
@@ -119,7 +161,7 @@ export class SqliteAdapter {
 
 // ─── KV facet (SyncStore) ────────────────────────────────────────────────────
 
-class SqliteKvFacet implements SyncStore {
+class SqliteKvFacet implements SyncStore, SyncStoreInQuery {
   readonly meta: StoreMeta = { backend: 'sqlite' };
   private readonly initializedTables = new Set<string>();
 
@@ -206,6 +248,25 @@ class SqliteKvFacet implements SyncStore {
     const rows = this.db.prepare(sql).all(...where.params, ...orderBy.params) as {
       data: string;
     }[];
+    return rows.map((r) => JSON.parse(r.data) as T);
+  }
+
+  listWhereIn<T>(
+    collection: string,
+    field: string,
+    values: readonly unknown[],
+    filter?: StoreFilter,
+  ): T[] {
+    if (values.length === 0) return [];
+    const table = this.ensureTable(collection);
+    const where = buildWhereClause(filter);
+    const inWhere = buildJsonInWhere(field, values, where.clause.length > 0);
+    const orderBy = buildOrderBy(filter);
+    const limitOffset = buildLimitOffset(filter);
+    const sql = `SELECT data FROM ${table}${where.clause}${inWhere.clause}${orderBy.clause}${limitOffset}`;
+    const rows = this.db
+      .prepare(sql)
+      .all(...where.params, ...inWhere.params, ...orderBy.params) as { data: string }[];
     return rows.map((r) => JSON.parse(r.data) as T);
   }
 

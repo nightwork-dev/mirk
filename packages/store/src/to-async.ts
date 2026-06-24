@@ -1,11 +1,33 @@
-import type { SyncStore, AsyncStore, StoreMeta, StoreFilter } from './types.js';
+import type {
+  SyncStore,
+  SyncStoreInQuery,
+  AsyncStore,
+  AsyncStoreInQuery,
+  StoreMeta,
+  StoreFilter,
+} from './types.js';
+
+function hasListWhereIn(store: SyncStore): store is SyncStore & SyncStoreInQuery {
+  return typeof (store as Partial<SyncStoreInQuery>).listWhereIn === 'function';
+}
 
 // Adapter: present a synchronous store through the AsyncStore interface by
 // resolving every result. This is the one-way bridge — a sync store can serve an
 // async consumer, but an async store can never be made sync (you cannot block on
 // a network round-trip). Method shorthand keeps each method's generics intact.
-class AsyncStoreAdapter implements AsyncStore {
-  constructor(private readonly sync: SyncStore) {}
+class AsyncStoreAdapter implements AsyncStore, Partial<AsyncStoreInQuery> {
+  readonly listWhereIn?: AsyncStoreInQuery['listWhereIn'];
+
+  constructor(private readonly sync: SyncStore) {
+    if (hasListWhereIn(sync)) {
+      this.listWhereIn = async <T>(
+        collection: string,
+        field: string,
+        values: readonly unknown[],
+        filter?: StoreFilter,
+      ): Promise<T[]> => sync.listWhereIn<T>(collection, field, values, filter);
+    }
+  }
 
   get meta(): StoreMeta {
     return this.sync.meta;
@@ -45,7 +67,9 @@ class AsyncStoreAdapter implements AsyncStore {
 }
 
 /** Lift a synchronous store to the {@link AsyncStore} interface. The bridge only
- *  goes this direction — sync ⊂ async. */
+ *  goes this direction — sync ⊂ async. Optional sync capabilities are lifted too. */
+export function toAsync(store: SyncStore & SyncStoreInQuery): AsyncStore & AsyncStoreInQuery;
+export function toAsync(store: SyncStore): AsyncStore;
 export function toAsync(store: SyncStore): AsyncStore {
   return new AsyncStoreAdapter(store);
 }
