@@ -11,7 +11,7 @@
 // and it is applied at load. graphRAG composes this primitive with @mirk/store/vector;
 // it does not live here.
 
-import type { AsyncStore, StoreFilter } from "./types.js";
+import type { AsyncStore, AsyncStoreInQuery, StoreFilter } from "./types.js";
 
 /**
  * A directed edge stored as a flat collection record. `from`/`to` are node ids,
@@ -56,6 +56,37 @@ function withWhere(
   override: Record<string, unknown>,
 ): StoreFilter {
   return { ...filter, where: { ...filter?.where, ...override } };
+}
+
+function withoutWhereField(filter: StoreFilter | undefined, field: string): StoreFilter | undefined {
+  if (!filter?.where || !(field in filter.where)) return filter;
+  const where = { ...filter.where };
+  delete where[field];
+  return { ...filter, where };
+}
+
+function hasListWhereIn(store: AsyncStore): store is AsyncStore & AsyncStoreInQuery {
+  return typeof (store as Partial<AsyncStoreInQuery>).listWhereIn === "function";
+}
+
+async function frontierEdges(
+  store: AsyncStore & AsyncStoreInQuery,
+  collection: string,
+  frontier: readonly string[],
+  direction: Direction,
+  edgeFilter?: StoreFilter,
+): Promise<Edge[]> {
+  if (direction === "out") {
+    return store.listWhereIn<Edge>(collection, "from", frontier, withoutWhereField(edgeFilter, "from"));
+  }
+  if (direction === "in") {
+    return store.listWhereIn<Edge>(collection, "to", frontier, withoutWhereField(edgeFilter, "to"));
+  }
+  const [out, inc] = await Promise.all([
+    store.listWhereIn<Edge>(collection, "from", frontier, withoutWhereField(edgeFilter, "from")),
+    store.listWhereIn<Edge>(collection, "to", frontier, withoutWhereField(edgeFilter, "to")),
+  ]);
+  return dedupById([...out, ...inc]);
 }
 
 /**
@@ -202,6 +233,87 @@ export async function traverse(
   }
 
   // ── Deterministic ordering for cross-backing parity. ──
+  reached.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  traversedEdges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  return { nodes: reached, edges: traversedEdges };
+}
+
+/**
+ * Frontier-IN batched BFS to `depth` hops from `start`.
+ *
+ * When the store exposes the optional `listWhereIn` capability, traversal fetches
+ * only edges adjacent to the current BFS frontier at each depth level:
+ *
+ * - "out": `from IN (frontier)`
+ * - "in": `to IN (frontier)`
+ * - "both": both queries, deduped by edge id
+ *
+ * `edgeFilter.where` is still pushed down into the same store query; the
+ * structural frontier field (`from`/`to`) overrides any same-named caller filter,
+ * matching `neighbors()`. `edgeTypes` remains in-memory because the base port has
+ * exact-match filters, not `type IN (...)`.
+ *
+ * Stores without `listWhereIn` fall back to `traverse()`'s load-once strategy.
+ */
+export async function traverseFrontierBatched(
+  store: AsyncStore,
+  collection: string,
+  opts: {
+    start: string;
+    depth: number;
+    direction?: Direction;
+    edgeTypes?: string[];
+    edgeFilter?: StoreFilter;
+  },
+): Promise<{ nodes: string[]; edges: Edge[] }> {
+  if (!hasListWhereIn(store)) {
+    return traverse(store, collection, opts);
+  }
+
+  const direction = opts.direction ?? "out";
+
+  if (!Number.isFinite(opts.depth) || opts.depth <= 0) {
+    return { nodes: [], edges: [] };
+  }
+
+  const visited = new Set<string>([opts.start]);
+  const reached: string[] = [];
+  const traversedEdges: Edge[] = [];
+  const seenEdgeIds = new Set<string>();
+
+  let frontier: string[] = [opts.start];
+  for (let hop = 0; hop < opts.depth && frontier.length > 0; hop++) {
+    const edges = filterByTypes(
+      await frontierEdges(store, collection, frontier, direction, opts.edgeFilter),
+      opts.edgeTypes,
+    );
+    const next: string[] = [];
+
+    for (const node of frontier) {
+      for (const edge of edges) {
+        const adjacent =
+          direction === "out"
+            ? edge.from === node
+            : direction === "in"
+              ? edge.to === node
+              : edge.from === node || edge.to === node;
+        if (!adjacent) continue;
+        if (!seenEdgeIds.has(edge.id)) {
+          seenEdgeIds.add(edge.id);
+          traversedEdges.push(edge);
+        }
+        const neighbor = edge.from === node ? edge.to : edge.from;
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          reached.push(neighbor);
+          next.push(neighbor);
+        }
+      }
+    }
+    frontier = next;
+  }
+
   reached.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   traversedEdges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 

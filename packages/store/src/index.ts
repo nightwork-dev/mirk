@@ -13,7 +13,14 @@
 // reachable from any sync store via toAsync. The one-way bridge: sync ⊂ async.
 
 // KV port + in-memory reference
-export type { SyncStore, AsyncStore, StoreMeta, StoreFilter } from './types.js';
+export type {
+  SyncStore,
+  AsyncStore,
+  SyncStoreInQuery,
+  AsyncStoreInQuery,
+  StoreMeta,
+  StoreFilter,
+} from './types.js';
 export { toAsync } from './to-async.js';
 export { InMemoryStore as InMemoryKv } from './backends/memory.js';
 
