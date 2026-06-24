@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420"
+     font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" role="img"
+     aria-label="Layered authored data sources flow into the fixture loader, which validates, patches, resolves references, and returns a final value with provenance.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0e1a"/>
+      <stop offset="1" stop-color="#0c1322"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2bd4ff"/>
+    </marker>
+    <style>
+      .cap { font-size:11px; font-weight:700; letter-spacing:1.8px; fill:#6f84a8; }
+      .title { font-size:19px; font-weight:800; fill:#eaf1ff; }
+      .label { font-size:14px; font-weight:700; fill:#eaf1ff; }
+      .mono { font-family:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; font-weight:650; fill:#9ce8ff; }
+      .muted { font-size:12.5px; fill:#8aa0c4; }
+      .small { font-size:11.5px; fill:#8aa0c4; }
+      .flow { stroke:#2bd4ff; stroke-width:1.9; opacity:.82; fill:none; marker-end:url(#arrow); }
+      .dash { stroke:#2bd4ff; stroke-width:1.5; opacity:.45; fill:none; stroke-dasharray:4 4; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="420" rx="14" fill="url(#bg)"/>
+
+  <text class="cap" x="44" y="43">SOURCES · PRIORITY ORDER</text>
+  <text class="cap" x="354" y="43">LOADER PIPELINE</text>
+  <text class="cap" x="664" y="43">OUTPUTS</text>
+
+  <g>
+    <rect x="44" y="66" width="210" height="72" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="44" y="66" width="210" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="149" y="98" text-anchor="middle">defaults</text>
+    <text class="muted" x="149" y="120" text-anchor="middle">base records · priority 0</text>
+  </g>
+
+  <g>
+    <rect x="44" y="158" width="210" height="72" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="44" y="158" width="210" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="149" y="190" text-anchor="middle">app layer</text>
+    <text class="muted" x="149" y="212" text-anchor="middle">replace or patch · priority 10</text>
+  </g>
+
+  <g>
+    <rect x="44" y="250" width="210" height="72" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="44" y="250" width="210" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="149" y="282" text-anchor="middle">user layer</text>
+    <text class="muted" x="149" y="304" text-anchor="middle">patch overlays · priority 20</text>
+  </g>
+
+  <path class="flow" d="M258,102 C294,102 306,116 334,136"/>
+  <path class="flow" d="M258,194 C292,194 304,194 334,194"/>
+  <path class="flow" d="M258,286 C294,286 306,272 334,252"/>
+
+  <g>
+    <rect x="334" y="78" width="252" height="232" rx="15" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="334" y="78" width="252" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="title" x="460" y="118" text-anchor="middle">@mirk/fixtures</text>
+
+    <g transform="translate(374 146)">
+      <circle cx="0" cy="0" r="4" fill="#2bd4ff"/>
+      <text class="muted" x="18" y="4">parse injected formats</text>
+      <circle cx="0" cy="34" r="4" fill="#2bd4ff"/>
+      <text class="muted" x="18" y="38">validate with Standard Schema</text>
+      <circle cx="0" cy="68" r="4" fill="#2bd4ff"/>
+      <text class="muted" x="18" y="72">choose highest-priority base</text>
+      <circle cx="0" cy="102" r="4" fill="#2bd4ff"/>
+      <text class="muted" x="18" y="106">apply higher-priority patches</text>
+      <circle cx="0" cy="136" r="4" fill="#2bd4ff"/>
+      <text class="muted" x="18" y="140">check refs · materialize</text>
+    </g>
+  </g>
+
+  <path class="flow" d="M590,146 C624,128 632,112 662,104"/>
+  <path class="flow" d="M590,242 C624,260 632,278 662,286"/>
+
+  <g>
+    <rect x="662" y="66" width="194" height="104" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="662" y="66" width="194" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="mono" x="759" y="104" text-anchor="middle">theme:dark</text>
+    <text class="muted" x="759" y="128" text-anchor="middle">final validated value</text>
+    <text class="small" x="759" y="148" text-anchor="middle">ready for application code</text>
+  </g>
+
+  <g>
+    <rect x="662" y="234" width="194" height="104" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="662" y="234" width="194" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="759" y="272" text-anchor="middle">provenance</text>
+    <text class="muted" x="759" y="296" text-anchor="middle">base · patches · refs</text>
+    <text class="small" x="759" y="316" text-anchor="middle">structured diagnostics</text>
+  </g>
+
+  <path class="dash" d="M149,338 L149,356 L759,356 L759,338"/>
+  <text class="small" x="450" y="384" text-anchor="middle">The app gets a value; tools get the reason that value won.</text>
+</svg>
