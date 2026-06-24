@@ -15,6 +15,21 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/fixtures:
+    devDependencies:
+      '@mirk/store':
+        specifier: workspace:^
+        version: link:../store
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@25.9.3)
+
   packages/store:
     devDependencies:
       '@types/better-sqlite3':

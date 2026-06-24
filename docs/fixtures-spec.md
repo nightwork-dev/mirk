@@ -598,6 +598,8 @@ Initial diagnostic codes:
 - `type-mismatch`
 - `materialization-cycle`
 - `duplicate-relative-path`
+- `unsafe-relative-path`
+- `seed-validation-failed`
 - `source-read-failed`
 - `source-list-failed`
 
