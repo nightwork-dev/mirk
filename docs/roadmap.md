@@ -25,7 +25,7 @@ uses `FR-2` / `#10`. Items that originate as a a downstream application feature 
 | ID | Title | Pkg | Horizon | Status | Ref |
 | --- | --- | --- | --- | --- | --- |
 | MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped · adopted by DL | FR-5 |
-| MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
+| MR-02 | Event primitive | an external package + an external package | med | satisfied by existing (an external project) · not a separate mirk pkg | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | shipped | FR-5/MR-01 |
 | MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · weighted-fields follow-up implemented | an external package adoption |
@@ -151,13 +151,11 @@ parser plugins, and broader browser/packaging smoke tests.
 
 ## Medium term
 
-### MR-02 · Event primitive — `@mirk/events`
+### MR-02 · Event primitive — satisfied by `an external package` + `an external package`
 
-**Pkg:** @mirk/events (new) · **Horizon:** med · **Status:** agreed, not started · **Ref:** a downstream application FR-4
+**Pkg:** an external package + an external package (an external project, not mirk) · **Horizon:** med · **Status:** satisfied by existing substrate, not a separate mirk package · **Ref:** a downstream application FR-4
 
-An agreed mirk event primitive (a downstream application **FR-4**) — the plumbing layer beneath cross-agent
-messaging and temporal concerns. Design-open; the spec lives in the a downstream application/mirk FR docs, not yet
-in this repo. Likely an external project-side consumers: `an external package` (messaging) and `an external package`. Not started.
+Originally scoped as a new `@mirk/events` package ("the plumbing layer beneath cross-agent messaging and temporal concerns"). On substrate audit (2026-06-24), the need is already met by existing an external project packages: `an external package` is the transport contract (`IChannel`/`BaseChannel`, `internal`/`websocket`/`signal` types, pluggable), `an external package` is the messaging domain (envelope, `decideDelivery` wake bit, presence directory), and `pi-comms` ships the durable inbox + HTTP front door. The genuine gap was not a bus — it was the **between-turns PUSH** (comms Slice 1 was pull-only; `decideDelivery`'s wake bit was stubbed). That is now closed by pi-comms' `WakeLoop`, which drives `an external package`'s `shouldRun` on one unref'd interval, reads the inbox + job watch set, and dispatches `pi.sendUserMessage(followUp)`. Job-wake routes through the same comms inbox (a terminal job publishes a `status` message), so a detached worker's completion surfaces through the same push path as a peer's DM — same-machine now (shared KV), cross-machine later via the channel transports. No `@mirk/events` package needed; mirk's role remains the data substrate (`@mirk/store`), not a separate event layer.
 
 ---
 
