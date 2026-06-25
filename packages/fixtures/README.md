@@ -234,6 +234,6 @@ It is the reusable boundary between raw authored data and application state.
 
 ## Status
 
-Draft specification. Not yet published.
+Implemented core + store integration slice. Filesystem, package-resource, and CLI sources remain planned.
 
-See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design.
+See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design and remaining slice plan.
