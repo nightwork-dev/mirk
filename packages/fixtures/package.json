@@ -1,0 +1,64 @@
+{
+  "name": "@mirk/fixtures",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Typed, layered, explainable authored data: schema validation, patch overlays, references, provenance, and store integration.",
+  "license": "Apache-2.0",
+  "author": "David Robinson <dr@monetise.io>",
+  "keywords": [
+    "fixtures",
+    "authored-data",
+    "configuration",
+    "content-packs",
+    "schema-validation",
+    "standard-schema",
+    "layering",
+    "patches",
+    "provenance"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/fixtures"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/fixtures#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./memory": {
+      "import": "./dist/sources/memory.js",
+      "types": "./dist/sources/memory.d.ts"
+    },
+    "./store": {
+      "import": "./dist/sources/store.js",
+      "types": "./dist/sources/store.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:exports": "node ./test/export-map-smoke.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsup src/index.ts src/sources/memory.ts src/sources/store.ts --format esm --dts && node ./test/export-map-smoke.mjs"
+  },
+  "devDependencies": {
+    "@mirk/store": "workspace:^",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "tsup": "^8.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}

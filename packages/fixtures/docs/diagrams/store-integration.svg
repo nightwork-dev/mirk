@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="390" viewBox="0 0 900 390"
+     font-family="Avenir Next, Helvetica Neue, Arial, sans-serif" role="img"
+     aria-label="Store integration for fixtures: files, packages, memory, and store-backed fixture documents feed the fixture loader, which can seed validated records into @mirk/store/kv collections.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0e1a"/>
+      <stop offset="1" stop-color="#0c1322"/>
+    </linearGradient>
+    <marker id="cyanArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2bd4ff"/>
+    </marker>
+    <marker id="orangeArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ff7a18"/>
+    </marker>
+    <style>
+      .cap { font-size:11px; font-weight:700; letter-spacing:1.8px; fill:#6f84a8; }
+      .title { font-size:19px; font-weight:800; fill:#eaf1ff; }
+      .label { font-size:14px; font-weight:700; fill:#eaf1ff; }
+      .storeLabel { font-size:18px; font-weight:800; fill:#ffd9b8; }
+      .muted { font-size:12.5px; fill:#8aa0c4; }
+      .warm { font-size:12.5px; fill:#caa183; }
+      .small { font-size:11.5px; fill:#8aa0c4; }
+      .flow { stroke:#2bd4ff; stroke-width:1.9; opacity:.84; fill:none; marker-end:url(#cyanArrow); }
+      .seed { stroke:#ff7a18; stroke-width:2.1; opacity:.88; fill:none; marker-end:url(#orangeArrow); }
+      .back { stroke:#2bd4ff; stroke-width:1.7; opacity:.55; fill:none; stroke-dasharray:5 4; marker-end:url(#cyanArrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="390" rx="14" fill="url(#bg)"/>
+
+  <text class="cap" x="56" y="42">AUTHORED SOURCES</text>
+  <text class="cap" x="354" y="42">FIXTURE SEMANTICS</text>
+  <text class="cap" x="660" y="42">STORE-BACKED PACKS</text>
+
+  <g>
+    <rect x="56" y="70" width="232" height="104" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="56" y="70" width="232" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="172" y="108" text-anchor="middle">files · packages · memory</text>
+    <text class="muted" x="172" y="132" text-anchor="middle">development packs</text>
+    <text class="small" x="172" y="152" text-anchor="middle">shipped defaults · tests</text>
+  </g>
+
+  <g>
+    <rect x="334" y="86" width="232" height="148" rx="15" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="334" y="86" width="232" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="title" x="450" y="124" text-anchor="middle">@mirk/fixtures</text>
+    <text class="muted" x="450" y="153" text-anchor="middle">validate · layer · patch</text>
+    <text class="muted" x="450" y="175" text-anchor="middle">resolve refs · materialize</text>
+    <text class="small" x="450" y="204" text-anchor="middle">authored-data semantics live here</text>
+  </g>
+
+  <g>
+    <rect x="612" y="70" width="232" height="104" rx="13" fill="#0e1626" stroke="#243250" stroke-width="1.5"/>
+    <rect x="612" y="70" width="232" height="4" rx="2" fill="#2bd4ff"/>
+    <text class="label" x="728" y="108" text-anchor="middle">store as source</text>
+    <text class="muted" x="728" y="132" text-anchor="middle">fixture docs in a collection</text>
+    <text class="small" x="728" y="152" text-anchor="middle">read through @mirk/fixtures/store</text>
+  </g>
+
+  <path class="flow" d="M292,122 C314,122 314,142 330,150"/>
+  <path class="flow" d="M608,122 C586,122 586,142 570,150"/>
+
+  <text class="small" x="318" y="115" text-anchor="middle">source</text>
+  <text class="small" x="582" y="115" text-anchor="middle">source</text>
+
+  <g>
+    <rect x="146" y="286" width="608" height="66" rx="13" fill="#0e1626" stroke="#3a2415" stroke-width="1.5"/>
+    <rect x="146" y="286" width="608" height="4" rx="2" fill="#ff7a18"/>
+    <text class="storeLabel" x="450" y="322" text-anchor="middle">@mirk/store/kv</text>
+    <text class="warm" x="450" y="343" text-anchor="middle">plain storage port · keys + collections · no fixture semantics</text>
+  </g>
+
+  <path class="seed" d="M450,238 L450,282"/>
+  <text class="warm" x="505" y="264">seed validated records</text>
+
+  <path class="back" d="M728,178 C728,238 640,254 590,286"/>
+  <text class="small" x="714" y="229" text-anchor="middle">read fixture pack</text>
+
+  <text class="small" x="450" y="374" text-anchor="middle">Fixtures can read from the store and write into the store; the store never imports fixture rules.</text>
+</svg>
