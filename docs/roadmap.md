@@ -28,7 +28,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
-| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · knowledge adoption pending | @gonk/store adoption |
+| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · weighted-fields follow-up implemented | @gonk/store adoption |
 | MR-06 | SqliteAdapter: expose connection / lazy vector dimensions | @mirk/store/sqlite | near | identified | @gonk/store adoption |
 
 ---
@@ -104,12 +104,15 @@ The original gap: knowledge did sqlite FTS5 + bm25 over title+body, which `@mirk
 `StoreFilter.where` can't express. Now solved. Note: knowledge's supersession/correction **audit trail**
 (append-only version history) is an append-log concern closer to **MR-03**, not here.
 
-**Follow-up — weighted multi-field FTS (the reason knowledge stays opt-in).** `@gonk/knowledge`'s sqlite
-index uses `fts5(title, body)` — TWO columns, so `bm25()` weights title matches above body matches.
-`@mirk/store/search` indexes ONE text field, so the adoption concatenates title+body and loses the
-title boost — a real ranking-quality regression for knowledge. Until `/search` supports multiple
-weighted fields (`index(collection, { fields: { title, body }, weights })` → column-weighted bm25),
-knowledge stays on its sqlite default. This is the concrete next step on the search primitive.
+**Follow-up — weighted multi-field FTS (implemented).** `@gonk/knowledge`'s sqlite index uses
+`fts5(title, body)` — TWO columns — while the first `/search` cut indexed ONE concatenated text field.
+That lost the ability to boost title matches over body matches, a real ranking-quality regression for
+knowledge. `/search` now keeps the old `{ text }` shorthand and adds `{ fields: { title, body } }` plus
+query-time `fieldWeights` (for example `{ title: 4, body: 1 }`). The sqlite facet persists one stable
+field schema per collection, creates matching FTS5 columns, and ranks with `bm25(fts, ...weights)`;
+the in-memory reference mirrors the same contract. Tests cover backcompat text docs, fielded docs,
+weighted title-vs-body ordering, schema mismatch rejection, invalid weights, fielded update/remove,
+and sqlite reopen persistence. Knowledge can now adopt `/search` without concatenating title+body.
 
 ### MR-06 · SqliteAdapter ergonomics — expose connection or lazy vector dimensions
 
