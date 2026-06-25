@@ -188,6 +188,25 @@ describe("fixture loading", () => {
       diagnostic: { code: "patch-ref-mismatch" },
     });
   });
+
+  it("reports unparsed files under fixture directories during validation", async () => {
+    const registry = registryWithTypes();
+    const source = createMemoryFixtureSource({
+      id: "pack",
+      files: {
+        "themes/dark.yaml": "name: dark",
+        "themes/nested/ignored.yaml": "name: ignored",
+        "other/dark.yaml": "name: ignored",
+      },
+    });
+    const loader = createFixtureLoader({ registry, sources: [source] });
+
+    const report = await loader.validate();
+    expect(report.ok).toBe(false);
+    expect(report.diagnostics).toMatchObject([
+      { code: "no-parser", source: "pack", path: "themes/dark.yaml" },
+    ]);
+  });
 });
 
 describe("references", () => {

@@ -86,6 +86,32 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     return { id, ext };
   }
 
+  function noParserDiagnosticForEntry(
+    def: FixtureTypeDefinition,
+    entry: FixtureSourceEntry,
+    sourceId: string,
+  ): Diagnostic | undefined {
+    const prefix = dirPrefix(def);
+    if (prefix && !entry.relativePath.startsWith(prefix)) return undefined;
+
+    const tail = prefix ? entry.relativePath.slice(prefix.length) : entry.relativePath;
+    if (!tail || tail.includes("/")) return undefined;
+
+    const dot = tail.lastIndexOf(".");
+    if (dot <= 0) return undefined;
+    const ext = tail.slice(dot);
+    if (parsers[ext]) return undefined;
+
+    return {
+      severity: "error",
+      code: "no-parser",
+      message: `No parser registered for "${ext}".`,
+      source: sourceId,
+      path: entry.relativePath,
+      hint: `Pass a parser for "${ext}" to createFixtureLoader().`,
+    };
+  }
+
   async function findCandidates(type: string, id: string, skipSources = new Set<string>()): Promise<FileCandidate[]> {
     const def = defOrThrow(type, `${type}:${id}`);
     const out: FileCandidate[] = [];
@@ -485,6 +511,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
 
   async function discoverRefsForValidation(diagnostics: Diagnostic[], skippedSources: Set<string>): Promise<string[]> {
     const refs = new Set<string>();
+    const seenNoParserDiagnostics = new Set<string>();
     for (const typeName of opts.registry.types()) {
       const def = opts.registry.get(typeName);
       if (!def) continue;
@@ -505,7 +532,17 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         }
         for (const entry of entries) {
           const match = matchEntry(def, entry);
-          if (match) refs.add(`${typeName}:${match.id}`);
+          if (match) {
+            refs.add(`${typeName}:${match.id}`);
+            continue;
+          }
+
+          const noParser = noParserDiagnosticForEntry(def, entry, layered.source.id);
+          if (!noParser) continue;
+          const key = `${noParser.source ?? ""}\u0000${noParser.path ?? ""}\u0000${noParser.message}`;
+          if (seenNoParserDiagnostics.has(key)) continue;
+          seenNoParserDiagnostics.add(key);
+          diagnostics.push(noParser);
         }
       }
     }

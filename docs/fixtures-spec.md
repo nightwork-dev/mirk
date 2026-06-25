@@ -643,7 +643,7 @@ Minimum tests before implementation is called done:
 5. Filesystem source path normalization and deterministic order.
 6. Filesystem source rejects symlink/path traversal outside root.
 7. Store source over `InMemoryKv`.
-8. Store source over `SqliteAdapter.kv` if the optional peer is available in dev.
+8. Store source over `LibsqlAdapter.kv` from `@mirk/store-libsql`, without adding libSQL to `@mirk/fixtures`.
 9. Store source reads by opaque locator, not by parsing `relativePath`.
 10. Store item ids containing dots, slashes, or extension-like suffixes work.
 11. Custom `relativePath` still reads the correct store item.
@@ -696,7 +696,7 @@ Minimum tests before implementation is called done:
 - `@mirk/fixtures/store` subpath.
 - Structural `KvLike` source support over `SyncStore` / `AsyncStore` collection methods.
 - Store seeding helper that writes validated fixtures into explicit target collections.
-- Tests over `InMemoryKv` and SQLite when available.
+- Tests over `InMemoryKv` and `LibsqlAdapter.kv`, with libSQL kept in `@mirk/store-libsql`'s dev surface.
 - Source cache invalidation hook.
 
 ### Slice 3 — filesystem/package sources

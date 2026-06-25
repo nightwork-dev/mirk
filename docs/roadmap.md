@@ -141,7 +141,7 @@ Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). README draft: [`packages/fixt
 Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader surface,
 patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
 the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
-parser plugins, and broader export-map/browser smoke tests.
+parser plugins, and broader browser/packaging smoke tests.
 
 ---
 
