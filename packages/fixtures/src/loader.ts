@@ -645,16 +645,7 @@ function isParserEntry(value: unknown): value is ParserEntry {
 }
 
 async function parseWith(parser: ParserEntry, content: string): Promise<unknown | PositionedParseResult> {
-  switch (parser.kind) {
-    case "plain":
-      return parser.parse(content);
-    case "async":
-      return parser.parse(content);
-    case "positioned":
-      return parser.parse(content);
-    case "async-positioned":
-      return parser.parse(content);
-  }
+  return parser.parse(content);
 }
 
 function isPositionedResult(value: unknown): value is PositionedParseResult {
