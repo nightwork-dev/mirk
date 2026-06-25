@@ -9,14 +9,22 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rmSync } from "node:fs";
+import Database from "better-sqlite3";
 
 import type { SearchStore } from "./search/types.js";
 import { InMemorySearchStore } from "./search/memory.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
+import { hashName } from "./sql.js";
 
 interface Made {
   store: SearchStore;
   cleanup?: () => void;
+}
+
+function searchTableNames(collection: string): { docs: string; fts: string } {
+  const safe = collection.replace(/[^a-zA-Z0-9_]/g, "_");
+  const hash = hashName(collection);
+  return { docs: `search_docs_${safe}_${hash}`, fts: `search_fts_${safe}_${hash}` };
 }
 
 function suite(name: string, make: () => Promise<Made>): void {
@@ -44,6 +52,81 @@ function suite(name: string, make: () => Promise<Made>): void {
     it("a query with no matching docs returns []", () => {
       store.index("docs", { id: "a", text: "hello world" });
       expect(store.search("docs", "nonexistent")).toEqual([]);
+    });
+
+    it("indexes named fields and searches across all fields", () => {
+      store.indexMany("pages", [
+        { id: "title", fields: { title: "amber lighthouse", body: "plain notes" } },
+        { id: "body", fields: { title: "plain notes", body: "amber lighthouse" } },
+        { id: "none", fields: { title: "plain notes", body: "quiet harbor" } },
+      ]);
+      expect(store.search("pages", "amber").map((r) => r.id).sort()).toEqual(["body", "title"]);
+    });
+
+    it("treats text shorthand and fields.text as the same single-field schema", () => {
+      store.index("docs", { id: "a", text: "ruby alpha" });
+      store.index("docs", { id: "b", fields: { text: "ruby beta" } });
+      expect(store.search("docs", "ruby").map((r) => r.id).sort()).toEqual(["a", "b"]);
+    });
+
+    it("uses query-time fieldWeights so title hits can outrank body hits", () => {
+      store.indexMany("pages", [
+        { id: "title-hit", fields: { title: "opal alpha", body: "plain beta" } },
+        { id: "body-hit", fields: { title: "plain beta", body: "opal alpha" } },
+        { id: "f1", fields: { title: "river stone", body: "quiet harbor" } },
+        { id: "f2", fields: { title: "forest moss", body: "desert sand" } },
+        { id: "f3", fields: { title: "ocean wave", body: "valley mist" } },
+      ]);
+      const res = store.search("pages", "opal", { fieldWeights: { title: 5, body: 1 } });
+      expect(res.map((r) => r.id)).toEqual(["title-hit", "body-hit"]);
+      expect(res[0]!.score).toBeGreaterThan(res[1]!.score);
+    });
+
+    it("supports odd field names and a literal text field in a fielded schema", () => {
+      store.indexMany("pages", [
+        {
+          id: "text-hit",
+          fields: { text: "ruby alpha", "title.with.dot": "plain beta", "emoji 🔥": "warm" },
+        },
+        {
+          id: "dot-hit",
+          fields: { text: "plain beta", "title.with.dot": "ruby alpha", "emoji 🔥": "warm" },
+        },
+        { id: "f1", fields: { text: "river", "title.with.dot": "stone", "emoji 🔥": "warm" } },
+        { id: "f2", fields: { text: "forest", "title.with.dot": "moss", "emoji 🔥": "warm" } },
+        { id: "f3", fields: { text: "ocean", "title.with.dot": "wave", "emoji 🔥": "warm" } },
+      ]);
+      const res = store.search("pages", "ruby", {
+        fieldWeights: { text: 4, "title.with.dot": 1, "emoji 🔥": 1 },
+      });
+      expect(res.map((r) => r.id)).toEqual(["text-hit", "dot-hit"]);
+    });
+
+    it("rejects documents whose field schema differs from the collection", () => {
+      store.index("pages", { id: "a", fields: { title: "one", body: "two" } });
+      expect(() => store.index("pages", { id: "b", fields: { title: "one" } })).toThrow(/fields/);
+      expect(() => store.index("pages", { id: "c", text: "one" })).toThrow(/fields/);
+    });
+
+    it("rejects invalid or unknown fieldWeights", () => {
+      store.index("pages", { id: "a", fields: { title: "opal", body: "plain" } });
+      expect(() => store.search("pages", "opal", { fieldWeights: { title: -1 } })).toThrow(/weight/);
+      expect(() => store.search("pages", "opal", { fieldWeights: { title: Number.NaN } })).toThrow(/weight/);
+      expect(() => store.search("pages", "opal", { fieldWeights: { heading: 2 } })).toThrow(/Unknown/);
+    });
+
+    it("validates bad fieldWeights even when the collection does not exist", () => {
+      expect(() => store.search("missing", "opal", { fieldWeights: { title: -1 } })).toThrow(/weight/);
+      expect(store.search("missing", "opal", { fieldWeights: { title: 2 } })).toEqual([]);
+    });
+
+    it("updates and removes fielded docs without leaving stale FTS rows", () => {
+      store.index("pages", { id: "a", fields: { title: "old moon", body: "quiet body" } });
+      store.index("pages", { id: "a", fields: { title: "new sun", body: "quiet body" } });
+      expect(store.search("pages", "moon")).toEqual([]);
+      expect(store.search("pages", "sun").map((r) => r.id)).toEqual(["a"]);
+      expect(store.remove("pages", "a")).toBe(true);
+      expect(store.search("pages", "sun")).toEqual([]);
     });
 
     it("empty/whitespace query returns []", () => {
@@ -213,6 +296,56 @@ describe("SqliteAdapter.search — persistence", () => {
       rmSync(`${path}-shm`, { force: true });
     }
   });
+
+  it("fielded schemas survive a close + reopen", () => {
+    const path = join(tmpdir(), `mirk-fielded-fts-test-${process.pid}-${Date.now()}.db`);
+    try {
+      const a = new SqliteAdapter({ path });
+      a.search.index("pages", { id: "x", fields: { title: "ruby guide", body: "plain body" } });
+      a.close();
+
+      const b = new SqliteAdapter({ path });
+      expect(b.search.search("pages", "ruby", { fieldWeights: { title: 4, body: 1 } }).map((r) => r.id)).toEqual(["x"]);
+      expect(() => b.search.index("pages", { id: "bad", text: "ruby" })).toThrow(/fields/);
+      b.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+
+  it("treats pre-schema single-text sqlite FTS tables as the default text schema", () => {
+    const path = join(tmpdir(), `mirk-legacy-fts-test-${process.pid}-${Date.now()}.db`);
+    const { docs, fts } = searchTableNames("legacy");
+    try {
+      const db = new Database(path);
+      db.exec(`
+        CREATE TABLE ${docs} (
+          id TEXT PRIMARY KEY,
+          text TEXT NOT NULL,
+          meta_json TEXT
+        );
+        CREATE VIRTUAL TABLE ${fts} USING fts5(
+          text, content='${docs}', content_rowid='rowid', tokenize='unicode61'
+        );
+        INSERT INTO ${docs}(id, text, meta_json) VALUES ('old', 'legacy moon', '{"k":2}');
+        INSERT INTO ${fts}(${fts}) VALUES('rebuild');
+      `);
+      db.close();
+
+      const adapter = new SqliteAdapter({ path });
+      expect(adapter.search.search("legacy", "moon").map((r) => r.id)).toEqual(["old"]);
+      expect(() => adapter.search.index("legacy", { id: "fielded", fields: { title: "moon" } })).toThrow(/fields/);
+      adapter.search.index("legacy", { id: "new", text: "legacy sun" });
+      expect(adapter.search.search("legacy", "sun").map((r) => r.id)).toEqual(["new"]);
+      adapter.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
 });
 
 // ── cross-backend ranking parity (the contract the spec names explicitly) ────
@@ -239,6 +372,54 @@ describe("search cross-backend ranking parity", () => {
       const sqlIds = adapter.search.search("docs", "matcha").map((r) => r.id);
       expect(memIds).toEqual(sqlIds);
       expect(memIds[0]).toBe("high");
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("both backends return the SAME weighted field ranking order", () => {
+    const mem = new InMemorySearchStore();
+    const adapter = new SqliteAdapter({ path: ":memory:" });
+    try {
+      const docs = [
+        { id: "title-hit", fields: { title: "opal alpha", body: "plain beta" } },
+        { id: "body-hit", fields: { title: "plain beta", body: "opal alpha" } },
+        { id: "f1", fields: { title: "river stone", body: "quiet harbor" } },
+        { id: "f2", fields: { title: "forest moss", body: "desert sand" } },
+        { id: "f3", fields: { title: "ocean wave", body: "valley mist" } },
+      ];
+      mem.indexMany("pages", docs);
+      adapter.search.indexMany("pages", docs);
+      const opts = { fieldWeights: { title: 5, body: 1 } };
+      const memIds = mem.search("pages", "opal", opts).map((r) => r.id);
+      const sqlIds = adapter.search.search("pages", "opal", opts).map((r) => r.id);
+      expect(memIds).toEqual(sqlIds);
+      expect(memIds).toEqual(["title-hit", "body-hit"]);
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("both backends keep the same weighted order when field lengths are highly skewed", () => {
+    const mem = new InMemorySearchStore();
+    const adapter = new SqliteAdapter({ path: ":memory:" });
+    try {
+      const longBody = Array.from({ length: 80 }, (_, i) => `body${i}`).join(" ");
+      const longTitle = Array.from({ length: 80 }, (_, i) => `title${i}`).join(" ");
+      const docs = [
+        { id: "title-short-body-long", fields: { title: "citrine", body: longBody } },
+        { id: "title-long-body-short", fields: { title: longTitle, body: "citrine" } },
+        { id: "f1", fields: { title: "river stone", body: "quiet harbor" } },
+        { id: "f2", fields: { title: "forest moss", body: "desert sand" } },
+        { id: "f3", fields: { title: "ocean wave", body: "valley mist" } },
+      ];
+      mem.indexMany("pages", docs);
+      adapter.search.indexMany("pages", docs);
+      const opts = { fieldWeights: { title: 6, body: 1 } };
+      const memIds = mem.search("pages", "citrine", opts).map((r) => r.id);
+      const sqlIds = adapter.search.search("pages", "citrine", opts).map((r) => r.id);
+      expect(memIds).toEqual(sqlIds);
+      expect(memIds[0]).toBe("title-short-body-long");
     } finally {
       adapter.close();
     }
