@@ -24,11 +24,13 @@ npm install sqlite-vec
 | `@mirk/store` | the ports + their in-memory references + `toAsync` + cosine helpers | none |
 | `@mirk/store/kv` | `SyncStore` port (key-value + collections), `InMemoryKv`, `toAsync` | none |
 | `@mirk/store/vector` | `VectorStore` port, `InMemoryVectorStore`, cosine helpers | none |
-| `@mirk/store/sqlite` | the SQLite **source adapter** — one connection, `.kv` + `.vector` facets | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
+| `@mirk/store/search` | `SearchStore` port, `InMemorySearchStore`, BM25-style keyword search | none |
+| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) | none |
+| `@mirk/store/sqlite` | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
-port subpaths never re-export them, so importing `@mirk/store`, `/kv`, or `/vector` never drags a
-native binding into a consumer bundle.
+port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
+`/graph` never drags a native binding into a consumer bundle.
 
 ## Quickstart — zero native deps
 
@@ -60,18 +62,50 @@ kv.count("posts");                               // 1
 kv.remove("posts", "p1");
 ```
 
+## Full-text search
+
+`SearchStore` indexes documents by id and returns BM25-ranked keyword matches. Use `text` for the
+single-field shorthand or `fields` for named columns with query-time weighting:
+
+```ts
+import { InMemorySearchStore } from "@mirk/store/search";
+
+const search = new InMemorySearchStore();
+search.index("pages", { id: "a", fields: { title: "Opal guide", body: "plain body" } });
+search.index("pages", { id: "b", fields: { title: "plain title", body: "Opal guide" } });
+search.search("pages", "opal", { fieldWeights: { title: 4, body: 1 } }); // [a, b]
+```
+
+The first indexed document fixes a collection's field schema; later documents must use the same
+field names. `text` and `fields: { text }` are the same single-field schema for backwards
+compatibility.
+
+## Graph helpers
+
+`@mirk/store/graph` stores edges as ordinary collection records and traverses them through the
+existing collection port. Policy stays caller-owned through `StoreFilter`.
+
+```ts
+import { traverse } from "@mirk/store/graph";
+
+const hits = traverse(kv, { start: "node:a", depth: 2, direction: "out" });
+```
+
 ## SQLite adapter — one connection, many capabilities
 
-`SqliteAdapter` opens a single `better-sqlite3` database and exposes a `.kv` facet (a `SyncStore`)
-and a `.vector` facet (a `VectorStore`) over it:
+`SqliteAdapter` opens a single `better-sqlite3` database and exposes `.kv` (`SyncStore`), `.vector`
+(`VectorStore`), and `.search` (`SearchStore`) facets over it:
 
 ```ts
 import { SqliteAdapter } from "@mirk/store/sqlite";
 
-// `dimensions` is required to use the .vector facet; .kv works without it.
-const db = new SqliteAdapter({ path: "data.db", dimensions: 768 });
+// .kv and .search work immediately; vector dimensions infer on first write.
+const db = new SqliteAdapter({ path: "data.db" });
 
 db.kv.set("user:1", { name: "Ada" });
+
+db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello world" } });
+db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
 
 const embedding = new Float32Array(768); // your real embedding here
 const query = new Float32Array(768);
@@ -87,7 +121,7 @@ db.close();
 |---|---|---|
 | `path` | `string` | DB file path, or `":memory:"`. |
 | `db` | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one. |
-| `dimensions` | `number` | Embedding dimensionality. Required before using `.vector`; persisted and enforced on reopen. |
+| `dimensions` | `number` | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
 | `forceJsCosine` | `boolean` | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests). |
 
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by

@@ -4,7 +4,7 @@
 
 # mirk
 
-> **Ports you import. Adapters you choose.** The dark foundational layer of storage — key-value, collections, and vector search as code-split primitives with no domain baked in.
+> **Ports you import. Adapters you choose.** The dark foundational layer of storage — key-value, collections, vector search, full-text search, graph traversal, and authored-data fixtures as code-split primitives with no domain baked in.
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
 
@@ -15,11 +15,11 @@ inherit a server, a daemon, an async API, and a native dependency in the client 
 asked for. Or a **pile of single-purpose libraries** — each with its own idioms, its own
 connection, repeated once per capability.
 
-**mirk** is the layer underneath both: small, typed, durable storage primitives with no domain
-baked in — somewhere to put key-values, somewhere to put vectors, similarity search over them. You
-assemble them from clean **interface ports** and swappable **source adapters**. Build against an
-in-memory reference with nothing installed; swap in SQLite for persistence without changing a line
-of your own code.
+**mirk** is the layer underneath both: small, typed, durable primitives with no domain
+baked in — somewhere to put key-values and collections, somewhere to put vectors, full-text search,
+graph edges, and authored fixture packs with validation/provenance. You assemble them from clean
+**interface ports** and swappable **source adapters**. Build against an in-memory reference with
+nothing installed; swap in SQLite for persistence without changing a line of your own code.
 
 A blog, a game, or an agent host can all draw from the same foundation. Published under the
 `@mirk/*` scope.
@@ -27,17 +27,17 @@ A blog, a game, or an agent host can all draw from the same foundation. Publishe
 ## One source, many capabilities
 
 A *source adapter* opens **one** backend connection and serves several capability **facets** over
-it. `SqliteAdapter` is a single `better-sqlite3` database exposing a `.kv` facet (a `SyncStore`)
-**and** a `.vector` facet (a `VectorStore`) — not two libraries, two connections, and two
-transaction scopes.
+it. `SqliteAdapter` is a single `better-sqlite3` database exposing `.kv` (`SyncStore`), `.vector`
+(`VectorStore`), and `.search` (`SearchStore`) facets — not three libraries, three connections,
+and three transaction scopes.
 
 <p align="center">
   <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one better-sqlite3 connection; a .kv facet (SyncStore: key-value + collections) and a .vector facet (VectorStore: cosine, vec0-accelerated) both ride that single connection. The same ports are implemented zero-native by the in-memory backends." width="820" />
 </p>
 
-The facets implement the same `SyncStore` / `VectorStore` ports that the zero-native in-memory
-backends do — so you can build and test against memory, then drop in the SQLite adapter for the
-real thing.
+The facets implement the same `SyncStore` / `VectorStore` / `SearchStore` ports that the
+zero-native in-memory backends do — so you can build and test against memory, then drop in the
+SQLite adapter for the real thing.
 
 ## Code-split — import only what you need
 
@@ -54,7 +54,10 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store` | the ports, their in-memory references, `toAsync`, cosine helpers | none |
 | `@mirk/store/kv` | `SyncStore` port (key-value + collections) · `InMemoryKv` · `toAsync` | none |
 | `@mirk/store/vector` | `VectorStore` port · `InMemoryVectorStore` · cosine helpers | none |
-| `@mirk/store/sqlite` | the SQLite source adapter — one connection, `.kv` + `.vector` facets | `better-sqlite3` (peer) · `sqlite-vec` (optional peer) |
+| `@mirk/store/search` | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search | none |
+| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal) | none |
+| `@mirk/store/sqlite` | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer) · `sqlite-vec` (optional peer) |
+| `@mirk/fixtures` | typed authored-data loader, registry, refs, diagnostics, provenance | none |
 
 ## Sync by design
 
@@ -90,14 +93,17 @@ await remote.get("user:1");
 ```
 
 ```ts
-// One SQLite connection, two capability facets over it.
+// One SQLite connection, three capability facets over it.
 import { SqliteAdapter } from "@mirk/store/sqlite";
 
-const db = new SqliteAdapter({ path: "data.db", dimensions: 768 });
+const db = new SqliteAdapter({ path: "data.db" });
 
 db.kv.set("user:1", { name: "Ada" });               // key-value + collections
 
-const embedding = new Float32Array(768);            // your real embedding
+db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello world" } });
+db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
+
+const embedding = new Float32Array(768);            // your real embedding; dimensions infer on first write
 db.vector.upsert("docs", { id: "a", vector: embedding });
 db.vector.search("docs", query, { topK: 10 });      // ranked by cosine
 

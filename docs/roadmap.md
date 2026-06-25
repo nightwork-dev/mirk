@@ -141,7 +141,7 @@ bidirectional: store-backed fixture packs can be loaded as a source, and validat
 seed ordinary store collections as a sink. Core stays parser-injected and Standard Schema based so
 root imports stay dependency-light and domain-neutral.
 
-Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). README draft: [`packages/fixtures/README.md`](../packages/fixtures/README.md).
+Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). Package README: [`packages/fixtures/README.md`](../packages/fixtures/README.md).
 Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader surface,
 patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
 the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
