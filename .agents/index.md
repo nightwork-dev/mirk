@@ -4,7 +4,7 @@ The dark foundational layer the rest of the stack is built on: substrate-agnosti
 primitives that aren't tied to any one domain. A blog, a game, or an agent host can all draw from
 it. Published under the `@mirk/*` scope.
 
-Monorepo (pnpm + tsup + vitest). Currently one package: `@mirk/store`.
+Monorepo (pnpm + tsup + vitest). Current packages include `@mirk/store` and source adapters such as `@mirk/store-libsql`; planned primitives are tracked in `docs/roadmap.md`.
 
 ## Build / test
 
@@ -22,6 +22,8 @@ backends, real persistence, real assertions) — keep them that way.
 
 - [`README.md`](../README.md) — the monorepo overview.
 - [`packages/store/README.md`](../packages/store/README.md) — `@mirk/store` install + usage.
+- [`docs/roadmap.md`](../docs/roadmap.md) — planned substrate primitives.
+- [`docs/fixtures-spec.md`](../docs/fixtures-spec.md) — draft `@mirk/fixtures` public package spec.
 
 ## Conventions enforced at review time
 
