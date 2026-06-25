@@ -133,6 +133,18 @@ pnpm test       # vitest — real backends, real persistence, real assertions
 pnpm -r typecheck
 ```
 
+## Release
+
+Mirk uses Changesets for release bookkeeping:
+
+```bash
+pnpm changeset          # describe package-impacting changes
+pnpm version-packages   # apply versions from pending changesets
+pnpm release            # build, then changeset publish
+```
+
+Do not hand-bump package versions for future releases; add a changeset and let `pnpm version-packages` apply it.
+
 ## Status
 
 Pre-1.0. The public API should be considered unstable until the first tagged release.
