@@ -27,9 +27,9 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped · adopted by DL | FR-5 |
 | MR-02 | Event primitive | @mirk/events | med | agreed, not started | FR-4 |
 | MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
-| MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | designed | FR-5/MR-01 |
+| MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | shipped | FR-5/MR-01 |
 | MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · knowledge adoption pending | @gonk/store adoption |
-| MR-06 | SqliteAdapter: expose connection / lazy vector dimensions | @mirk/store/sqlite | near | identified | @gonk/store adoption |
+| MR-06 | SqliteAdapter: lazy vector dimensions | @mirk/store/sqlite | near | implemented | @gonk/store adoption |
 
 ---
 
@@ -77,17 +77,14 @@ model + traversal — explicitly **not** graphRAG.
 
 ### MR-04 · Batch/IN match on the collection port — the graph fast-path's prerequisite
 
-**Pkg:** @mirk/store · **Horizon:** near · **Status:** designed (not started) · **Ref:** FR-5 / MR-01
+**Pkg:** @mirk/store · **Horizon:** near · **Status:** shipped · **Ref:** FR-5 / MR-01
 
-MR-01's at-scale `traverse` fast-path is **not** just a libsql override — it needs a **new port capability**.
-`StoreFilter.where` is exact-match only, so a start-anchored / frontier-IN prefilter
-(`WHERE from_id IN (frontier) OR to_id IN (frontier)`) **cannot be expressed through `list()`** — even a
-smarter traverse can't reach it. The fix: an IN / array-match on `StoreFilter` (or a dedicated batch-edge
-query), pushed into each **per-level** `WHERE … IN (…)` with the `edgeFilter` policy preserved (else the
-at-scale path diverges from load-once). Measured by DL's adopted `getNeighbors`: load-once does one full
-`list("edges")` scan per call, so graphSearch is `O(total_edges × hits)` — invisible at DL's corpus, and the
-swap is internal (no DL change). Design against DL's `getEdgesBatch` (indexed `idx_edges_from`/`idx_edges_to`).
-Load-once stays the correct default; the IN-path is the indexed override behind the same signature.
+**Shipped** — MR-04 adds the optional `SyncStoreInQuery` / `AsyncStoreInQuery` `listWhereIn()`
+capability, implements it for in-memory and sqlite stores, lifts it through `toAsync()`, and adds
+`traverseFrontierBatched()` as the graph fast-path. Stores without `listWhereIn()` still fall back
+to `traverse()`'s load-once strategy, so the capability is additive. The indexed path fetches only
+edges adjacent to the current BFS frontier at each level (`from IN frontier`, `to IN frontier`, or
+both), while preserving `edgeFilter` pushdown and deterministic parity with load-once traversal.
 
 ### MR-05 · Full-text search primitive — the one thing blocking knowledge
 
@@ -111,17 +108,21 @@ title boost — a real ranking-quality regression for knowledge. Until `/search`
 weighted fields (`index(collection, { fields: { title, body }, weights })` → column-weighted bm25),
 knowledge stays on its sqlite default. This is the concrete next step on the search primitive.
 
-### MR-06 · SqliteAdapter ergonomics — expose connection or lazy vector dimensions
+### MR-06 · SqliteAdapter ergonomics — lazy vector dimensions
 
-**Pkg:** @mirk/store/sqlite · **Horizon:** near · **Status:** identified (small) · **Ref:** @gonk/store adoption
+**Pkg:** @mirk/store/sqlite · **Horizon:** near · **Status:** implemented · **Ref:** @gonk/store adoption
 
 `@gonk/store`'s `MirkStoreBackend` (which puts gonk's KV/blob/log/vector stores on the sqlite adapter)
-hit one friction point: the `.vector` facet needs `dimensions` at `SqliteAdapter` construction, but the
+hit one friction point: the `.vector` facet needed `dimensions` at `SqliteAdapter` construction, but the
 consuming SPI only learns the dimension at the first `upsert(id, vector)`. To build the vector facet
 lazily over the SAME connection, the backend had to reach into the adapter's **private `db` field** via
-a cast — fragile coupling to mirk internals. Fix, either: (a) expose the underlying `better-sqlite3`
-connection (a public getter), or (b) let `.vector` accept `dimensions` lazily / be re-initialized
-post-construction. Small, but it removes a private-field reach in a real shipped consumer.
+a cast — fragile coupling to mirk internals.
+
+**Implemented** — `SqliteAdapter({ path })` can now open without vector dimensions. The vector facet
+persists dimensions from the first `upsert()` / `upsertMany()` call, updates `vector.meta`, and reuses
+that persisted configuration on reopen. `search()` still requires known dimensions so an empty query
+cannot accidentally pin a database to the wrong dimensionality. This solves the downstream private-field
+reach without exposing the raw `better-sqlite3` connection as public API.
 
 ---
 

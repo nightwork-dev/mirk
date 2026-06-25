@@ -253,6 +253,66 @@ suite("SqliteAdapter.vector (in-memory db)", async () => {
   return { store: adapter.vector, cleanup: () => adapter.close() };
 });
 
+describe("SqliteAdapter.vector — lazy dimensions", () => {
+  it("infers and persists dimensions from the first upsert", () => {
+    const path = join(tmpdir(), `mirk-vec-lazy-${process.pid}-${Date.now()}.db`);
+    try {
+      const a = new SqliteAdapter({ path, forceJsCosine: true });
+      expect(a.vector.meta.dimensions).toBe(0);
+      expect(a.vector.meta.accelerated).toBe(false);
+      a.vector.upsert("docs", { id: "x", vector: v(1, 0, 0, 0), metadata: { k: 1 } });
+      expect(a.vector.meta.dimensions).toBe(DIMS);
+      expect(a.vector.search("docs", v(1, 0, 0, 0))[0]!.id).toBe("x");
+      a.close();
+
+      const b = new SqliteAdapter({ path, forceJsCosine: true });
+      expect(b.vector.meta.dimensions).toBe(DIMS);
+      expect(b.vector.get("docs", "x")?.metadata).toEqual({ k: 1 });
+      expect(() => b.vector.upsert("docs", { id: "bad", vector: Float32Array.from([1, 0, 0]) })).toThrow(/dimension/);
+      b.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+
+  it("requires dimensions for search until a write or persisted dimension configures the facet", () => {
+    const adapter = new SqliteAdapter({ path: ":memory:" });
+    try {
+      expect(() => adapter.vector.search("docs", v(1, 0, 0, 0))).toThrow(/no dimensions yet/);
+      expect(adapter.vector.meta.dimensions).toBe(0);
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("does not persist lazy dimensions when upsertMany rejects before writing", () => {
+    const path = join(tmpdir(), `mirk-vec-lazy-atomic-${process.pid}-${Date.now()}.db`);
+    try {
+      const a = new SqliteAdapter({ path, forceJsCosine: true });
+      expect(() =>
+        a.vector.upsertMany("docs", [
+          { id: "a", vector: v(1, 0, 0, 0) },
+          { id: "bad", vector: Float32Array.from([1, 0, 0]) },
+        ]),
+      ).toThrow(/dimension/);
+      expect(a.vector.count("docs")).toBe(0);
+      a.close();
+
+      const b = new SqliteAdapter({ path, forceJsCosine: true });
+      expect(b.vector.meta.dimensions).toBe(0);
+      b.vector.upsert("docs", { id: "three", vector: Float32Array.from([1, 0, 0]) });
+      expect(b.vector.meta.dimensions).toBe(3);
+      b.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+});
+
 describe("SqliteAdapter.vector — persistence", () => {
   it("vectors survive a close + reopen", async () => {
     const path = join(tmpdir(), `mirk-vec-test-${process.pid}-${Date.now()}.db`);
