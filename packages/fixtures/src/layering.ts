@@ -67,16 +67,26 @@ export function provenanceCtx(layers: ReadonlyArray<FixtureProvenanceLayer>): Me
 function deepMerge(existing: unknown, incoming: unknown): unknown {
   if (!isPlainObject(existing) || !isPlainObject(incoming)) return cloneJsonish(incoming);
 
-  const out: Record<string, unknown> = { ...existing };
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existing)) {
+    out[key] = cloneJsonish(value);
+  }
   for (const [key, value] of Object.entries(incoming)) {
-    out[key] = key in out ? deepMerge(out[key], value) : cloneJsonish(value);
+    out[key] = key in existing ? deepMerge(existing[key], value) : cloneJsonish(value);
   }
   return out;
 }
 
 function shallowObjectMerge(existing: unknown, incoming: unknown): unknown {
   if (!isPlainObject(existing) || !isPlainObject(incoming)) return cloneJsonish(incoming);
-  return { ...existing, ...incoming };
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(existing)) {
+    out[key] = cloneJsonish(value);
+  }
+  for (const [key, value] of Object.entries(incoming)) {
+    out[key] = cloneJsonish(value);
+  }
+  return out;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -88,10 +98,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function cloneJsonish(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value;
   const clone = (globalThis as { structuredClone?: <T>(input: T) => T }).structuredClone;
-  if (!clone) return value;
-  try {
-    return clone(value);
-  } catch {
-    return value;
+  if (!clone) {
+    throw new TypeError("Fixture merge values require structuredClone support.");
   }
+  return clone(value);
 }

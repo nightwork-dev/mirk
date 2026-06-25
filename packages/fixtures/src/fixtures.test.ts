@@ -7,6 +7,7 @@ import {
   FixtureError,
   type StandardSchemaV1,
 } from "./index.js";
+import { mergeWithStrategy } from "./layering.js";
 import { createMemoryFixtureSource } from "./sources/memory.js";
 import {
   createStoreFixtureSource,
@@ -207,6 +208,43 @@ describe("fixture loading", () => {
       { code: "no-parser", source: "pack", path: "themes/dark.yaml" },
     ]);
   });
+
+  it("keeps merge strategies distinct and does not alias inputs", () => {
+    const existing = {
+      nested: { keep: true, replace: "base" },
+      list: ["base"],
+      retained: { stable: true },
+    };
+    const incoming = {
+      nested: { replace: "patch" },
+      list: ["patch"],
+    };
+    const ctx = { fixture: "theme:dark", layers: [] };
+
+    const replaced = mergeWithStrategy("replace", existing, incoming, ctx) as typeof incoming;
+    const deep = mergeWithStrategy("deep", existing, incoming, ctx) as typeof existing;
+    const arrayReplace = mergeWithStrategy("array-replace", existing, incoming, ctx) as typeof existing;
+
+    expect(replaced).toEqual({ nested: { replace: "patch" }, list: ["patch"] });
+    expect(deep).toEqual({ nested: { keep: true, replace: "patch" }, list: ["patch"], retained: { stable: true } });
+    expect(arrayReplace).toEqual({ nested: { replace: "patch" }, list: ["patch"], retained: { stable: true } });
+
+    deep.nested.keep = false;
+    deep.retained.stable = false;
+    arrayReplace.nested.replace = "mutated";
+    arrayReplace.list.push("mutated");
+    replaced.nested.replace = "mutated";
+
+    expect(existing).toEqual({
+      nested: { keep: true, replace: "base" },
+      list: ["base"],
+      retained: { stable: true },
+    });
+    expect(incoming).toEqual({
+      nested: { replace: "patch" },
+      list: ["patch"],
+    });
+  });
 });
 
 describe("references", () => {
@@ -257,6 +295,47 @@ describe("references", () => {
 
     const bareEnabled = createFixtureLoader({ registry, sources: [source], referenceMode: "explicit-and-bare" });
     await expect(bareEnabled.resolveRef<Theme>("theme:dark")).resolves.toEqual({ name: "dark" });
+  });
+
+  it("does not treat prose substrings as bare references", async () => {
+    const registry = registryWithTypes();
+    const source = createMemoryFixtureSource({
+      id: "pack",
+      files: {
+        "templates/welcome.json": JSON.stringify({ title: "Welcome", note: "Use theme:missing in prose only." }),
+      },
+    });
+    const loader = createFixtureLoader({ registry, sources: [source], referenceMode: "explicit-and-bare" });
+
+    await expect(loader.validate()).resolves.toEqual({ ok: true, diagnostics: [] });
+    await expect(loader.referenceGraph()).resolves.toMatchObject({ edges: [] });
+  });
+
+  it("uses custom extractReferences for validation and graph construction", async () => {
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType<Theme>({
+      type: "theme",
+      directory: "themes",
+      schema: anySchema as StandardSchemaV1<unknown, Theme>,
+    }));
+    registry.register(defineFixtureType<Record<string, unknown>>({
+      type: "page",
+      directory: "pages",
+      schema: objectSchema,
+      extractReferences: (value) => [{ ref: `theme:${String(value.themeId)}`, fieldPath: ["themeId"] }],
+    }));
+    const source = createMemoryFixtureSource({
+      id: "pack",
+      files: {
+        "themes/dark.json": JSON.stringify({ name: "dark" }),
+        "pages/home.json": JSON.stringify({ title: "Home", themeId: "dark" }),
+      },
+    });
+    const loader = createFixtureLoader({ registry, sources: [source] });
+
+    await expect(loader.validate()).resolves.toEqual({ ok: true, diagnostics: [] });
+    const graph = await loader.referenceGraph();
+    expect(graph.edges).toEqual([{ from: "page:home", to: "theme:dark", fieldPath: ["themeId"] }]);
   });
 
   it("surfaces malformed refs in the reference graph diagnostics", async () => {
