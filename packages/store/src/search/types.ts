@@ -14,14 +14,32 @@ import type { StoreFilter } from "../types.js";
  *  payload persisted as JSON by disk-backed backends, so it must be JSON-
  *  serializable; values JSON can't represent (`undefined`, functions) are dropped
  *  on persistence — don't rely on them. */
-export interface SearchDocument<M = Record<string, unknown>> {
+export interface SearchTextDocument<M = Record<string, unknown>> {
   /** Unique id within the collection. */
   id: string;
-  /** The text to tokenize and index. */
+  /** Single-field text to tokenize and index. Back-compat shorthand for
+   *  `fields: { text }`. */
   text: string;
+  /** Provide either `text` or `fields`, not both. */
+  fields?: never;
   /** Typed context stored alongside the text. */
   meta?: M;
 }
+
+export interface SearchFieldDocument<M = Record<string, unknown>> {
+  /** Unique id within the collection. */
+  id: string;
+  /** Named text fields to tokenize and index with optional query-time weights
+   *  (for example `{ title, body }`). All documents in a collection must use the
+   *  same field names. */
+  fields: Record<string, string>;
+  /** Provide either `text` or `fields`, not both. */
+  text?: never;
+  /** Typed context stored alongside the text. */
+  meta?: M;
+}
+
+export type SearchDocument<M = Record<string, unknown>> = SearchTextDocument<M> | SearchFieldDocument<M>;
 
 export interface SearchOptions {
   /** Maximum results to return. Default: 10. */
@@ -29,6 +47,9 @@ export interface SearchOptions {
   /** Exact-match filter on document `meta` (uses `filter.where`, evaluated with
    *  the shared `matchesWhere`). Applied before limit, after the FTS MATCH. */
   filter?: StoreFilter;
+  /** Per-field bm25 weights. Fields not listed default to 1. Higher means more
+   *  important; e.g. `{ title: 4, body: 1 }` boosts title matches. */
+  fieldWeights?: Record<string, number>;
 }
 
 /** A ranked search hit. `score` is the bm25 relevance — higher is more relevant. */
@@ -43,10 +64,11 @@ export interface SearchResult<M = Record<string, unknown>> {
 
 /** A synchronous full-text search store with per-collection documents.
  *
- *  Ranking is bm25 with the FTS5 default parameters (k1 = 1.2, b = 0.75). The
- *  in-memory reference and the sqlite `.search` facet produce the same RANKING
- *  on clear relevance differences; exact float scores need not match across
- *  backends (the same parity caveat as /vector). */
+ *  Ranking is bm25 with the FTS5 default parameters (k1 = 1.2, b = 0.75), plus
+ *  optional query-time per-field weights. The in-memory reference and the sqlite
+ *  `.search` facet produce the same RANKING on clear relevance differences;
+ *  exact float scores need not match across backends (the same parity caveat as
+ *  /vector). */
 export interface SearchStore {
   /** Insert or replace a document by (collection, id). */
   index<M extends Record<string, unknown> = Record<string, unknown>>(
