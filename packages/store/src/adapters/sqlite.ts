@@ -41,6 +41,14 @@ import type {
 } from '../search/types.js';
 import { sanitizeFtsQuery } from '../search/tokenize.js';
 import {
+  DEFAULT_SEARCH_FIELD,
+  assertSameSearchFields,
+  assertValidFieldWeightValues,
+  fieldWeightsFor,
+  normalizeSearchDocument,
+  type NormalizedSearchFields,
+} from '../search/fields.js';
+import {
   buildWhereClause,
   buildOrderBy,
   buildLimitOffset,
@@ -599,12 +607,13 @@ class SqliteVectorFacet implements VectorStore {
 
 // ─── Search facet (SearchStore) ─────────────────────────────────────────────
 //
-// FTS5 + bm25 over the same connection as .kv/.vector. Per collection: a docs
-// table {id, text, meta_json} as the FTS5 external-content source, with triggers
-// keeping the index in lockstep (the same pattern @gonk/knowledge uses). search
-// runs `MATCH ? ORDER BY bm25(fts)`, maps bm25 (lower=better) to score=-bm25
-// (higher=better), and applies the meta `filter` in JS via matchesWhere — the
-// identical semantics to the in-memory reference.
+// FTS5 + bm25 over the same connection as .kv/.vector. Per collection: one
+// stable field schema, a docs table {id, <field columns>, meta_json} as the FTS5
+// external-content source, with triggers keeping the index in lockstep (the same
+// pattern @gonk/knowledge uses). search runs `MATCH ? ORDER BY bm25(fts,
+// ...weights)`, maps bm25 (lower=better) to score=-bm25 (higher=better), and
+// applies the meta `filter` in JS via matchesWhere — the identical semantics to
+// the in-memory reference.
 
 interface SearchMatchRow {
   id: string;
@@ -612,10 +621,44 @@ interface SearchMatchRow {
   bm: number;
 }
 
+interface SearchSchema {
+  fields: string[];
+  columns: string[];
+}
+
+function searchColumnName(field: string, index: number): string {
+  if (field === DEFAULT_SEARCH_FIELD) return DEFAULT_SEARCH_FIELD;
+  return `f${index}_${hashName(field)}`;
+}
+
+function searchSchema(fields: readonly string[]): SearchSchema {
+  return { fields: [...fields], columns: fields.map(searchColumnName) };
+}
+
+function quoteSqlIdent(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+function searchFieldDefs(schema: SearchSchema): string {
+  return schema.columns.map((column) => `${quoteSqlIdent(column)} TEXT NOT NULL`).join(',\n        ');
+}
+
+function rowColumnRefs(prefix: 'new' | 'old', schema: SearchSchema): string {
+  return schema.columns.map((column) => `${prefix}.${quoteSqlIdent(column)}`).join(', ');
+}
+
 class SqliteSearchFacet implements SearchStore {
   private readonly ensured = new Set<string>();
+  private readonly schemaTable = '_mirk_search_schema';
 
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: Database.Database) {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ${this.schemaTable} (
+        collection TEXT PRIMARY KEY,
+        fields_json TEXT NOT NULL
+      );
+    `);
+  }
 
   private baseTable(collection: string): string {
     return `search_docs_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}_${hashName(collection)}`;
@@ -625,31 +668,84 @@ class SqliteSearchFacet implements SearchStore {
     return `search_fts_${collection.replace(/[^a-zA-Z0-9_]/g, '_')}_${hashName(collection)}`;
   }
 
-  private ensure(collection: string): { docs: string; fts: string } {
+  private tableExists(table: string): boolean {
+    return (
+      this.db
+        .prepare("SELECT 1 AS ok FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?")
+        .get(table) !== undefined
+    );
+  }
+
+  private loadSchema(collection: string): SearchSchema | undefined {
+    const row = this.db
+      .prepare(`SELECT fields_json FROM ${this.schemaTable} WHERE collection = ?`)
+      .get(collection) as { fields_json: string } | undefined;
+    if (row) {
+      const fields = JSON.parse(row.fields_json) as string[];
+      return searchSchema(fields);
+    }
+
+    // Upgrade path for databases created by the earlier single-column search
+    // facet: the collection tables already exist, but there is no schema row.
+    // Treat them as the default `{ text }` schema and persist that fact.
+    const docs = this.baseTable(collection);
+    if (!this.tableExists(docs)) return undefined;
+    const pragma = this.db.prepare(`PRAGMA table_info(${quoteSqlIdent(docs)})`).all() as Array<{ name: string }>;
+    if (!pragma.some((col) => col.name === DEFAULT_SEARCH_FIELD)) return undefined;
+    const fields = [DEFAULT_SEARCH_FIELD];
+    this.db
+      .prepare(`INSERT OR IGNORE INTO ${this.schemaTable}(collection, fields_json) VALUES (?, ?)`)
+      .run(collection, JSON.stringify(fields));
+    return searchSchema(fields);
+  }
+
+  private schemaForIndex(collection: string, normalized: NormalizedSearchFields): SearchSchema {
+    const existing = this.loadSchema(collection);
+    if (existing) {
+      assertSameSearchFields(existing.fields, normalized.names, collection);
+      return existing;
+    }
+    const fields = [...normalized.names];
+    this.db
+      .prepare(`INSERT INTO ${this.schemaTable}(collection, fields_json) VALUES (?, ?)`)
+      .run(collection, JSON.stringify(fields));
+    return searchSchema(fields);
+  }
+
+  private ensure(collection: string, schema: SearchSchema): { docs: string; fts: string } {
     const docs = this.baseTable(collection);
     const fts = this.ftsTable(collection);
-    if (this.ensured.has(docs)) return { docs, fts };
+    const key = `${docs}:${schema.fields.join('\u0000')}`;
+    if (this.ensured.has(key)) return { docs, fts };
+
+    const qDocs = quoteSqlIdent(docs);
+    const qFts = quoteSqlIdent(fts);
+    const qColumns = schema.columns.map(quoteSqlIdent).join(', ');
+    const newColumns = rowColumnRefs('new', schema);
+    const oldColumns = rowColumnRefs('old', schema);
+    const fieldDefs = searchFieldDefs(schema);
+
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS ${docs} (
+      CREATE TABLE IF NOT EXISTS ${qDocs} (
         id TEXT PRIMARY KEY,
-        text TEXT NOT NULL,
+        ${fieldDefs},
         meta_json TEXT
       );
-      CREATE VIRTUAL TABLE IF NOT EXISTS ${fts} USING fts5(
-        text, content='${docs}', content_rowid='rowid', tokenize='unicode61'
+      CREATE VIRTUAL TABLE IF NOT EXISTS ${qFts} USING fts5(
+        ${qColumns}, content='${docs}', content_rowid='rowid', tokenize='unicode61'
       );
-      CREATE TRIGGER IF NOT EXISTS ${docs}_ai AFTER INSERT ON ${docs} BEGIN
-        INSERT INTO ${fts}(rowid, text) VALUES (new.rowid, new.text);
+      CREATE TRIGGER IF NOT EXISTS ${quoteSqlIdent(`${docs}_ai`)} AFTER INSERT ON ${qDocs} BEGIN
+        INSERT INTO ${qFts}(rowid, ${qColumns}) VALUES (new.rowid, ${newColumns});
       END;
-      CREATE TRIGGER IF NOT EXISTS ${docs}_ad AFTER DELETE ON ${docs} BEGIN
-        INSERT INTO ${fts}(${fts}, rowid, text) VALUES('delete', old.rowid, old.text);
+      CREATE TRIGGER IF NOT EXISTS ${quoteSqlIdent(`${docs}_ad`)} AFTER DELETE ON ${qDocs} BEGIN
+        INSERT INTO ${qFts}(${quoteSqlIdent(fts)}, rowid, ${qColumns}) VALUES('delete', old.rowid, ${oldColumns});
       END;
-      CREATE TRIGGER IF NOT EXISTS ${docs}_au AFTER UPDATE ON ${docs} BEGIN
-        INSERT INTO ${fts}(${fts}, rowid, text) VALUES('delete', old.rowid, old.text);
-        INSERT INTO ${fts}(rowid, text) VALUES (new.rowid, new.text);
+      CREATE TRIGGER IF NOT EXISTS ${quoteSqlIdent(`${docs}_au`)} AFTER UPDATE ON ${qDocs} BEGIN
+        INSERT INTO ${qFts}(${quoteSqlIdent(fts)}, rowid, ${qColumns}) VALUES('delete', old.rowid, ${oldColumns});
+        INSERT INTO ${qFts}(rowid, ${qColumns}) VALUES (new.rowid, ${newColumns});
       END;
     `);
-    this.ensured.add(docs);
+    this.ensured.add(key);
     return { docs, fts };
   }
 
@@ -657,14 +753,21 @@ class SqliteSearchFacet implements SearchStore {
     collection: string,
     doc: SearchDocument<M>,
   ): void {
-    const { docs } = this.ensure(collection);
+    const normalized = normalizeSearchDocument(doc);
+    const schema = this.schemaForIndex(collection, normalized);
+    const { docs } = this.ensure(collection, schema);
+    const qDocs = quoteSqlIdent(docs);
+    const qColumns = schema.columns.map(quoteSqlIdent);
+    const insertColumns = ['id', ...schema.columns, 'meta_json'].map(quoteSqlIdent).join(', ');
+    const placeholders = Array.from({ length: schema.columns.length + 2 }, () => '?').join(', ');
+    const updateSet = [...qColumns.map((col) => `${col} = excluded.${col}`), 'meta_json = excluded.meta_json'].join(', ');
     const metaJson = doc.meta === undefined ? null : JSON.stringify(doc.meta);
     this.db
       .prepare(
-        `INSERT INTO ${docs}(id, text, meta_json) VALUES (?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET text = excluded.text, meta_json = excluded.meta_json`,
+        `INSERT INTO ${qDocs}(${insertColumns}) VALUES (${placeholders})
+         ON CONFLICT(id) DO UPDATE SET ${updateSet}`,
       )
-      .run(doc.id, doc.text, metaJson);
+      .run(doc.id, ...schema.fields.map((field) => normalized.values[field] ?? ''), metaJson);
   }
 
   indexMany<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -678,8 +781,10 @@ class SqliteSearchFacet implements SearchStore {
   }
 
   remove(collection: string, id: string): boolean {
-    const { docs } = this.ensure(collection);
-    return this.db.prepare(`DELETE FROM ${docs} WHERE id = ?`).run(id).changes > 0;
+    const schema = this.loadSchema(collection);
+    if (!schema) return false;
+    const { docs } = this.ensure(collection, schema);
+    return this.db.prepare(`DELETE FROM ${quoteSqlIdent(docs)} WHERE id = ?`).run(id).changes > 0;
   }
 
   search<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -687,17 +792,22 @@ class SqliteSearchFacet implements SearchStore {
     query: string,
     opts?: SearchOptions,
   ): SearchResult<M>[] {
-    const { docs, fts } = this.ensure(collection);
     const sanitized = sanitizeFtsQuery(query);
+    assertValidFieldWeightValues(opts?.fieldWeights);
     if (sanitized.length === 0) return [];
+    const schema = this.loadSchema(collection);
+    if (!schema) return [];
+    const { docs, fts } = this.ensure(collection, schema);
+    const weights = fieldWeightsFor(schema.fields, opts?.fieldWeights);
+    const weightArgs = weights.length > 0 ? `, ${weights.map((weight) => String(weight)).join(', ')}` : '';
     // Fetch ALL matches ordered by bm25 (lower=better), then apply the meta
     // filter in JS (matching the in-memory reference) and limit — so filter is
     // applied before limit, consistent with /vector's pre-KNN filtering.
     const rows = this.db
       .prepare(
-        `SELECT d.id AS id, d.meta_json AS meta_json, bm25(${fts}) AS bm
-         FROM ${fts}
-         JOIN ${docs} d ON d.rowid = ${fts}.rowid
+        `SELECT d.id AS id, d.meta_json AS meta_json, bm25(${fts}${weightArgs}) AS bm
+         FROM ${quoteSqlIdent(fts)}
+         JOIN ${quoteSqlIdent(docs)} d ON d.rowid = ${fts}.rowid
          WHERE ${fts} MATCH ?
          ORDER BY bm, d.id`,
       )
