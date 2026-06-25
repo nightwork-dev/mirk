@@ -76,6 +76,12 @@ function tryLoadSqliteVec(db: Database.Database): boolean {
   }
 }
 
+function assertPositiveDimensions(dimensions: number): void {
+  if (!Number.isInteger(dimensions) || dimensions <= 0) {
+    throw new Error(`Vector dimensions must be a positive integer; got ${dimensions}.`);
+  }
+}
+
 function sqlParam(value: unknown): SqlParam {
   if (value === null) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
@@ -116,7 +122,8 @@ export interface SqliteAdapterOptions {
   path: string;
   /** Existing better-sqlite3 instance to reuse (shares one connection). */
   db?: Database.Database;
-  /** Embedding dimensions. Required to use the `.vector` facet; KV works without it. */
+  /** Embedding dimensions. Optional: when omitted, `.vector` persists the
+   *  dimensions from the first upsert/upsertMany call. KV/search work without it. */
   dimensions?: number;
   /** Force the exact JS-cosine search path even when sqlite-vec is installed.
    *  Mainly for parity testing; production should leave this off. */
@@ -314,17 +321,17 @@ interface VectorRow {
 }
 
 class SqliteVectorFacet implements VectorStore {
-  readonly meta: VectorStoreMeta;
-  private readonly dimensions: number;
+  readonly meta: VectorStoreMeta = { backend: 'sqlite', dimensions: 0, accelerated: false };
+  private dimensions = -1;
   /** True when sqlite-vec loaded and the vec0 acceleration path is live. */
-  private readonly accelerated: boolean;
+  private accelerated = false;
   private readonly vecTablesEnsured = new Set<string>();
 
   constructor(
     private readonly db: Database.Database,
-    path: string,
+    private readonly path: string,
     dimensions?: number,
-    forceJsCosine?: boolean,
+    private readonly forceJsCosine = false,
   ) {
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS vectors (
@@ -349,30 +356,49 @@ class SqliteVectorFacet implements VectorStore {
           `Vector store at ${path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`,
         );
       }
+      this.refreshVectorMeta();
     } else if (dimensions !== undefined) {
-      this.dimensions = dimensions;
-      this.db
-        .prepare(`INSERT INTO _vec_meta (key, value) VALUES ('dimensions', ?)`)
-        .run(String(dimensions));
-    } else {
-      // No dimensions configured and none persisted — the vector facet is unusable
-      // until one is provided. KV-only adapters never touch these methods.
-      this.dimensions = -1;
+      this.initializeDims(dimensions);
     }
-    // Optional vec0 acceleration: load sqlite-vec unless forced off and dims are set.
-    // Any failure leaves the exact JS-cosine path (results are identical — see search).
-    this.accelerated = !forceJsCosine && this.dimensions >= 0 && tryLoadSqliteVec(this.db);
-    this.meta = {
-      backend: 'sqlite',
-      dimensions: Math.max(this.dimensions, 0),
-      accelerated: this.accelerated,
-    };
   }
 
-  private requireDims(v: Vector): void {
-    if (this.dimensions < 0) {
-      throw new Error('SqliteAdapter.vector requires `dimensions` — pass { dimensions } when opening.');
+  private initializeDims(dimensions: number): void {
+    assertPositiveDimensions(dimensions);
+    if (this.dimensions >= 0) {
+      if (dimensions !== this.dimensions) {
+        throw new Error(
+          `Vector store at ${this.path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`,
+        );
+      }
+      return;
     }
+    this.dimensions = dimensions;
+    this.db
+      .prepare(
+        `INSERT INTO _vec_meta (key, value) VALUES ('dimensions', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(String(dimensions));
+    this.refreshVectorMeta();
+  }
+
+  private refreshVectorMeta(): void {
+    // Optional vec0 acceleration: load sqlite-vec unless forced off and dims are set.
+    // Any failure leaves the exact JS-cosine path (results are identical — see search).
+    this.accelerated = !this.forceJsCosine && this.dimensions >= 0 && tryLoadSqliteVec(this.db);
+    this.meta.dimensions = Math.max(this.dimensions, 0);
+    this.meta.accelerated = this.accelerated;
+  }
+
+  private requireKnownDims(v: Vector): void {
+    if (this.dimensions < 0) {
+      throw new Error('SqliteAdapter.vector has no dimensions yet — pass { dimensions } when opening or upsert a vector first.');
+    }
+    assertDimensions(v, this.dimensions);
+  }
+
+  private ensureDimsForWrite(v: Vector): void {
+    if (this.dimensions < 0) this.initializeDims(v.length);
     assertDimensions(v, this.dimensions);
   }
 
@@ -432,7 +458,7 @@ class SqliteVectorFacet implements VectorStore {
     collection: string,
     doc: VectorDocument<M>,
   ): void {
-    this.requireDims(doc.vector);
+    this.ensureDimsForWrite(doc.vector);
     // Atomic: the base-table write and the vec0 sync must not desync on a crash.
     // (Nested inside upsertMany's transaction → savepoint, which is fine.)
     const write = this.db.transaction(() => {
@@ -456,6 +482,14 @@ class SqliteVectorFacet implements VectorStore {
     collection: string,
     docs: ReadonlyArray<VectorDocument<M>>,
   ): void {
+    const first = docs[0];
+    if (!first) return;
+    const dimensions = this.dimensions >= 0 ? this.dimensions : first.vector.length;
+    assertPositiveDimensions(dimensions);
+    for (const doc of docs) {
+      assertDimensions(doc.vector, dimensions);
+    }
+    if (this.dimensions < 0) this.initializeDims(dimensions);
     const tx = this.db.transaction((items: ReadonlyArray<VectorDocument<M>>) => {
       for (const doc of items) this.upsert(collection, doc);
     });
@@ -514,7 +548,7 @@ class SqliteVectorFacet implements VectorStore {
     query: Vector,
     opts?: VectorSearchOptions,
   ): VectorSearchResult<M>[] {
-    this.requireDims(query);
+    this.requireKnownDims(query);
     const topK = opts?.topK ?? 10;
     const minScore = opts?.minScore;
     const hasFilters = !!(opts?.where || opts?.whereNot);
