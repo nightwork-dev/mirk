@@ -30,6 +30,7 @@ uses `FR-2` / `#10`. Items that originate as a deadletters feature request carry
 | MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | shipped | FR-5/MR-01 |
 | MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · weighted-fields follow-up implemented | @gonk/store adoption |
 | MR-06 | SqliteAdapter: lazy vector dimensions | @mirk/store/sqlite | near | implemented | @gonk/store adoption |
+| MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | core + store slice implemented | package audit |
 
 ---
 
@@ -126,6 +127,25 @@ persists dimensions from the first `upsert()` / `upsertMany()` call, updates `ve
 that persisted configuration on reopen. `search()` still requires known dimensions so an empty query
 cannot accidentally pin a database to the wrong dimensionality. This solves the downstream private-field
 reach without exposing the raw `better-sqlite3` connection as public API.
+
+### MR-07 · Authored data / fixture loader primitive
+
+**Pkg:** @mirk/fixtures · **Horizon:** near · **Status:** core + store slice implemented · **Ref:** package audit
+
+A generic authored-data loader for content packs, configuration fragments, templates, lookup tables,
+and test fixtures that need schema validation, deterministic layering, patch overlays, references,
+materialization, provenance, and validation diagnostics before an application consumes them. It is
+**not** a new storage port and does not live inside `@mirk/store`; it sits above `@mirk/store/kv` and
+ships store integration at `@mirk/fixtures/store` over the KV collection shape. Store integration is
+bidirectional: store-backed fixture packs can be loaded as a source, and validated fixture packs can
+seed ordinary store collections as a sink. Core stays parser-injected and Standard Schema based so
+root imports stay dependency-light and domain-neutral.
+
+Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). README draft: [`packages/fixtures/README.md`](../packages/fixtures/README.md).
+Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader surface,
+patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
+the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
+parser plugins, and broader browser/packaging smoke tests.
 
 ---
 
