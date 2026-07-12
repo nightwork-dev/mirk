@@ -31,6 +31,8 @@ uses `FR-2` / `#10`. Items that originate as a a downstream application feature 
 | MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · weighted-fields follow-up implemented | an external package adoption |
 | MR-06 | SqliteAdapter: lazy vector dimensions | @mirk/store/sqlite | near | implemented | an external package adoption |
 | MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | core + store slice implemented | package audit |
+| MR-08 | Qdrant vector adapter | @mirk/vector-qdrant | med | ratified (safe bet) · FS/SQL first pass, Qdrant when a consumer outgrows embedded | an external project inventory · the project maintainer 2026-07-11 |
+| MR-09 | SurrealDB source adapter (engine-native graph facet) | @mirk/store-surreal | med | proposed · pulled by a downstream application migration | an external project inventory · ecosystem open decision 2 |
 
 ---
 
@@ -146,6 +148,50 @@ Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async 
 patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
 the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
 parser plugins, and broader browser/packaging smoke tests.
+
+### MR-08 · Qdrant vector adapter
+
+**Pkg:** @mirk/vector-qdrant · **Horizon:** near/med · **Status:** proposed, consumer-pulled ·
+**Ref:** an external project ingestion inventory (2026-07-11) · the project maintainer ruling: "Qdrant seems the more reasonable short term"
+
+A server-side implementation of the existing `VectorStore` port. Donor code exists —
+`an external package`'s Qdrant backend — so the port shape is proven and the work is mostly
+porting + the cross-backend parity test against the in-memory reference and sqlite-vec.
+
+**Confidence + sequencing (the project maintainer, 2026-07-11):** Qdrant is a **safe bet** — the project maintainer operates it
+heavily across other projects and at work, so this is proven-operator territory, not speculation;
+the question is *when*, not *if*. Sequencing ruling: **FS/SQL first** — the first pass for the
+slice/launch path runs on the existing embedded backends (sqlite-vec, libSQL native vectors);
+Qdrant lands as the server-side option when a consumer's scale or serving needs outgrow embedded.
+Donor code: `an external package`'s Qdrant backend. Implements against the existing
+`VectorStore` port with the standard cross-backend parity tests.
+
+### MR-09 · SurrealDB source adapter — engine-native graph facet
+
+**Pkg:** @mirk/store-surreal · **Horizon:** med · **Status:** proposed, pulled by the a downstream application
+migration · **Ref:** an external project inventory (donor: `an external package`) · ecosystem architecture
+open decision 2 (a downstream application operational persistence)
+
+A source adapter in the `store-libsql` mold: multiple port facets over one SurrealDB connection.
+The distinguishing design decision, per the project maintainer's concern that a generic implementation would be
+under-optimized: **the graph facet implements the `GraphStore` port on Surreal's native engine
+primitives** (record links, in-engine traversal) rather than riding the generic collection-backed
+load-once/batched BFS. Same contract, same parity tests, engine-optimized execution — this is
+exactly what the adapter seam exists for, and it is NOT a domain exception.
+
+**The domain boundary, stated so it survives review:** what stays *out* of this adapter is anything
+a downstream application/a downstream application-shaped — temporal edge validity semantics, live queries, scene-local query
+shapes. Those belong in the world module's **domain store** above Mirk, which (per the `an external package`
+precedent) may keep capability-local interfaces where Mirk's ports genuinely don't fit. So the
+migration shape is: a downstream application's operational store consumes `@mirk/store-surreal` for everything
+the ports express, and keeps a thin Surreal-native domain layer for what they don't — rather than
+either forcing all queries through generic ports (under-optimized) or teaching Mirk about scenes
+(domain leak).
+
+**Consumers (real):** a downstream application's `packages/graphs` imports `an external package` today; the
+`an external package` SurrealDB backend serves a downstream application/dev-dashboard paths. This adapter is their
+designated migration target, resolving ecosystem open decision 2 as "SurrealDB stays, behind Mirk's
+contract, engine-optimized."
 
 ---
 
