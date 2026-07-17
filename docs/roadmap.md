@@ -33,6 +33,7 @@ uses `FR-2` / `#10`. Items that originate as a a downstream application feature 
 | MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | core + store slice implemented | package audit |
 | MR-08 | Qdrant vector adapter | @mirk/vector-qdrant | med | ratified (safe bet) · FS/SQL first pass, Qdrant when a consumer outgrows embedded | an external project inventory · the project maintainer 2026-07-11 |
 | MR-09 | SurrealDB source adapter (engine-native graph facet) | @mirk/store-surreal | med | proposed · pulled by a downstream application migration | an external project inventory · ecosystem open decision 2 |
+| MR-10 | Durable artifact substrate | @mirk/artifact | near | core + store + OpenDAL adapter implemented | cross-consumer artifact consolidation |
 
 ---
 
@@ -192,6 +193,26 @@ either forcing all queries through generic ports (under-optimized) or teaching M
 `an external package` SurrealDB backend serves a downstream application/dev-dashboard paths. This adapter is their
 designated migration target, resolving ecosystem open decision 2 as "SurrealDB stays, behind Mirk's
 contract, engine-optimized."
+
+### MR-10 · Durable artifact substrate
+
+**Pkg:** @mirk/artifact · **Horizon:** near · **Status:** implemented, pre-release ·
+**Ref:** cross-consumer artifact consolidation
+
+A domain-neutral substrate for durable byte-bearing outputs: object-storage ports, stable artifact
+identity, integrity, portable metadata, and source/derivative lineage. The primitive deliberately
+excludes jobs, providers, workers, retries, progress, approval, and semantic attachment.
+
+The primitive is pulled by multiple consumers that need uploads, generated outputs, derivatives,
+and publication artifacts without importing one another's domain or execution state. Metadata rides
+`@mirk/store/kv`; physical storage is supplied through a small capability port, preferring maintained
+community libraries over Mirk-owned backend clients.
+
+Implemented as a runtime-neutral core and `@mirk/store/kv` repository plus the optional
+`@mirk/artifact-opendal` adapter. OpenDAL owns production backend transport; `@noble/hashes` owns
+incremental SHA-256. Remaining work is broader adapter conformance and consumer migration.
+
+Spec: [`docs/artifact-spec.md`](artifact-spec.md).
 
 ---
 

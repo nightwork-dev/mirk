@@ -18,6 +18,50 @@ importers:
         specifier: ^5.7.0
         version: 5.9.3
 
+  packages/artifact:
+    dependencies:
+      '@mirk/store':
+        specifier: workspace:*
+        version: link:../store
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.2.0
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.21
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@22.19.21)
+
+  packages/artifact-opendal:
+    dependencies:
+      '@mirk/artifact':
+        specifier: workspace:*
+        version: link:../artifact
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.21
+      opendal:
+        specifier: ^0.49.0
+        version: 0.49.5
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@22.19.21)
+
   packages/fixtures:
     devDependencies:
       '@mirk/store':
@@ -378,6 +422,10 @@ packages:
   '@neon-rs/load@0.0.4':
     resolution: {integrity: sha512-kTPhdZyTQxB+2wpiRcFWrDcejc4JI6tkPuS7UZCG4l6Zvc5kU/gGQ/ozvHTh1XR5tS+UlfAfGuPajjzQjCiHCw==}
 
+  '@noble/hashes@2.2.0':
+    resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
+
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
     engines: {node: '>= 8'}
@@ -389,6 +437,54 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@opendal/lib-darwin-arm64@0.49.5':
+    resolution: {integrity: sha512-TYZ0/XEUyz8ylr+AG0gkGsFBrEor9jQkx3aDU9UfkoNY4vIfxp23iaE0pyZEiYczLi0DYQtzjhIS+PvHHnP/PA==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@opendal/lib-darwin-x64@0.49.5':
+    resolution: {integrity: sha512-p8HwKxFHpv4Kl2ElNJrQ4irYYVjiHUcPK166/+uTptTyJiUCA8CbmRWxmidYxDKBZcc/TizFbFcJ0tf5hEhdYA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@opendal/lib-linux-arm64-gnu@0.49.5':
+    resolution: {integrity: sha512-OC+yeb+BMNn2KBDLENLBsHu/QkQf77i6oHPDlWGtv+x5vcrPLElL9FDSLqs0GIeqnfDFku0iLRtE6vwnhZOmkQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@opendal/lib-linux-arm64-musl@0.49.5':
+    resolution: {integrity: sha512-KGLnKULK9n/FIMKbYclTuI5JqHfI6fFJF4txTsQfCUDVcu6JC/sirT9hfmVNO0477ZqpNqNFrL6sJrqs+TwJKw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@opendal/lib-linux-x64-gnu@0.49.5':
+    resolution: {integrity: sha512-zb6qZ4ZNJhef2ccHRoKoMSm02scYFNRzyUSDpXicZIO1GUavR0E6oHu9zJnnLDGqBX9L29/f21DKP/7aHMv4eA==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+
+  '@opendal/lib-linux-x64-musl@0.49.5':
+    resolution: {integrity: sha512-L/F1w/0T3WBg+BT9wTKIP5W8PLFDOnq9XVyY4hqeM/+0Aelk0T3HaXwZ6StG0DB2Q6L03ublgBnbB5VZqXHEeQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [linux]
+
+  '@opendal/lib-win32-arm64-msvc@0.49.5':
+    resolution: {integrity: sha512-jvxtFxMbARnL6bnd2CR4onTm7fQEtZNFySDW2NCm7N+yHIP5/32+6esTi6DuzpCvwt77aD5pm8ILppG8DRByhw==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@opendal/lib-win32-x64-msvc@0.49.5':
+    resolution: {integrity: sha512-CEJbjjhgCpoO8IiRK1UUk5YQv3gQy5BwKwQb0cO4GeSczj9yFAQJ8mvSSVmAu1AFWy7wFMj21VRXNISVEHvcrQ==}
+    engines: {node: '>= 10'}
+    cpu: [x64]
+    os: [win32]
 
   '@rollup/rollup-android-arm-eabi@4.62.0':
     resolution: {integrity: sha512-IPIQ55ythEHkfEd9jMEi32OQ7SxURsGA43JI22lj01OLZNt2NUbJX8YUHxkVWyQ6daHPNn0truF5nSj3DQp6YQ==}
@@ -874,7 +970,6 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
-    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lilconfig@3.1.3:
@@ -959,6 +1054,10 @@ packages:
 
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
+
+  opendal@0.49.5:
+    resolution: {integrity: sha512-GeClCGR5mGOejFL2EqFXeJf/911BjXxGKNyLDO8dGdtsTlap/MisyIpgO9zBmwYxej9IfilodF6UA4e8Wndoiw==}
+    engines: {node: '>= 10'}
 
   outdent@0.5.0:
     resolution: {integrity: sha512-/jHxFIzoMXdqPzTaCpFzAAWhpkSjZPF4Vsn6jAfNpmbH/ymsmd7Qc6VE9BGn0L6YMj6uwpQLxCECpus4ukKS9Q==}
@@ -1727,6 +1826,8 @@ snapshots:
 
   '@neon-rs/load@0.0.4': {}
 
+  '@noble/hashes@2.2.0': {}
+
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
       '@nodelib/fs.stat': 2.0.5
@@ -1738,6 +1839,30 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.1
+
+  '@opendal/lib-darwin-arm64@0.49.5':
+    optional: true
+
+  '@opendal/lib-darwin-x64@0.49.5':
+    optional: true
+
+  '@opendal/lib-linux-arm64-gnu@0.49.5':
+    optional: true
+
+  '@opendal/lib-linux-arm64-musl@0.49.5':
+    optional: true
+
+  '@opendal/lib-linux-x64-gnu@0.49.5':
+    optional: true
+
+  '@opendal/lib-linux-x64-musl@0.49.5':
+    optional: true
+
+  '@opendal/lib-win32-arm64-msvc@0.49.5':
+    optional: true
+
+  '@opendal/lib-win32-x64-msvc@0.49.5':
+    optional: true
 
   '@rollup/rollup-android-arm-eabi@4.62.0':
     optional: true
@@ -2260,6 +2385,17 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  opendal@0.49.5:
+    optionalDependencies:
+      '@opendal/lib-darwin-arm64': 0.49.5
+      '@opendal/lib-darwin-x64': 0.49.5
+      '@opendal/lib-linux-arm64-gnu': 0.49.5
+      '@opendal/lib-linux-arm64-musl': 0.49.5
+      '@opendal/lib-linux-x64-gnu': 0.49.5
+      '@opendal/lib-linux-x64-musl': 0.49.5
+      '@opendal/lib-win32-arm64-msvc': 0.49.5
+      '@opendal/lib-win32-x64-msvc': 0.49.5
 
   outdent@0.5.0: {}
 
