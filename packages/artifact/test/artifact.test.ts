@@ -52,4 +52,20 @@ describe("ArtifactCoordinator", () => {
     await expect(coordinator.write({ bytes: bytes("new"), mediaType: "text/plain" })).rejects.toMatchObject({ cleanup: "succeeded" });
     expect(await objects.head("artifacts/fixed")).toBeUndefined();
   });
+
+  it("keeps shared imported bytes until the final artifact record is deleted", async () => {
+    let id = 0;
+    const objects = new InMemoryObjectStore();
+    await objects.put("imports/shared", bytes("shared"));
+    const coordinator = new ArtifactCoordinator(objects, new InMemoryArtifactRepository(), { idFactory: () => `id-${++id}` });
+    const first = await coordinator.import({ objectKey: "imports/shared", mediaType: "text/plain" });
+    const second = await coordinator.import({ objectKey: "imports/shared", mediaType: "text/plain" });
+
+    expect(await coordinator.delete(first.id)).toBe(true);
+    expect((await coordinator.verify(second.id)).ok).toBe(true);
+    expect(await objects.head("imports/shared")).toBeDefined();
+
+    expect(await coordinator.delete(second.id)).toBe(true);
+    expect(await objects.head("imports/shared")).toBeUndefined();
+  });
 });

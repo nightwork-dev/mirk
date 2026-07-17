@@ -74,8 +74,19 @@ export class ArtifactCoordinator {
     const record = await this.repository.get(id);
     if (!record) return false;
     if (!await this.repository.delete(id)) return false;
+    if (await this.#hasObjectReference(record.objectKey)) return true;
     if (!await this.objects.delete(record.objectKey)) throw new Error(`artifact metadata deleted but object deletion failed: ${id}`);
     return true;
+  }
+
+  async #hasObjectReference(objectKey: string): Promise<boolean> {
+    let cursor: string | undefined;
+    do {
+      const page = await this.repository.list({ limit: 500, ...(cursor ? { cursor } : {}) });
+      if (page.items.some((candidate) => candidate.objectKey === objectKey)) return true;
+      cursor = page.nextCursor;
+    } while (cursor);
+    return false;
   }
 
   async #commit(record: StoredArtifactRecord, sources: WriteArtifactInput["sources"], cleanupObject = true): Promise<ArtifactDescriptor> {
