@@ -151,7 +151,9 @@ Pre-1.0. The public API should be considered unstable until the first tagged rel
 
 Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
 lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at
-[`packages/fixtures/README.md`](packages/fixtures/README.md).
+[`packages/fixtures/README.md`](packages/fixtures/README.md). The durable artifact substrate is
+implemented in [`packages/artifact`](packages/artifact), with its ownership and failure contract in
+[`docs/artifact-spec.md`](docs/artifact-spec.md).
 
 ## License
 

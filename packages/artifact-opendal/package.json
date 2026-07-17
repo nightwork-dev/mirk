@@ -1,0 +1,38 @@
+{
+  "name": "@mirk/artifact-opendal",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenDAL object-storage adapter for @mirk/artifact.",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "rm -rf dist && tsup src/index.ts --format esm --dts --external opendal",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mirk/artifact": "workspace:*"
+  },
+  "peerDependencies": {
+    "opendal": "^0.49.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "opendal": "^0.49.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "tsup": "^8.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}
