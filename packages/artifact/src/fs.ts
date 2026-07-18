@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rm, stat } from "node:fs/promises";
+import { mkdir, open, rename, rm, stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 import type { ByteSource, ByteStream, ObjectInfo, ObjectPutOptions, ObjectStore } from "./types.js";
@@ -21,6 +22,12 @@ import { assertObjectKey, chunks } from "./util.js";
  * {@link ObjectInfo} (mediaType/metadata a filesystem can't carry natively).
  * The `.bin` suffix means a byte-file and a nested key directory never collide
  * (key `a` → `a.bin`; key `a/b` → `a/b.bin` under dir `a/`).
+ *
+ * Concurrency: unlike {@link InMemoryObjectStore}, `get()` returns a stream that
+ * reads lazily from disk — it is NOT a snapshot. A concurrent `delete`/overwrite
+ * of the same key while a returned stream is still being consumed may surface
+ * partial or changed bytes. Callers needing isolation should drain fully before
+ * mutating, or coordinate at a higher layer.
  */
 export interface FileObjectStoreOptions {
   /** Root directory for stored objects. Created on first write if absent. */
@@ -59,6 +66,15 @@ export class FileObjectStore implements ObjectStore {
         await handle.write(chunk);
         sizeBytes += chunk.byteLength;
       }
+    } catch (error) {
+      // A mid-stream failure must not leave a partial object. When we
+      // exclusively created the file (ifAbsent), remove it so the key isn't
+      // poisoned — a later ifAbsent put would otherwise hit EEXIST forever.
+      // On overwrite we leave it: the pre-existing bytes are already gone and
+      // deleting would lose data the caller may still expect on retry.
+      await handle.close();
+      if (options.ifAbsent) await rm(bytesPath, { force: true });
+      throw error;
     } finally {
       await handle.close();
     }
@@ -116,14 +132,24 @@ export class FileObjectStore implements ObjectStore {
     return full;
   }
 
+  /** Write the sidecar atomically: a unique temp file + rename (atomic on the
+   *  same filesystem). A crash never leaves a truncated/partial sidecar — the
+   *  reader sees either the previous complete file or the new one. */
   async #writeSidecar(key: string, info: ObjectInfo): Promise<void> {
     const path = this.#path(key, SIDECAR_SUFFIX);
     await mkdir(dirname(path), { recursive: true });
-    const handle = await open(path, "w");
+    const tmp = `${path}.tmp-${randomUUID()}`;
+    const handle = await open(tmp, "wx");
     try {
       await handle.write(JSON.stringify(info));
     } finally {
       await handle.close();
+    }
+    try {
+      await rename(tmp, path);
+    } catch (error) {
+      await rm(tmp, { force: true });
+      throw error;
     }
   }
 
@@ -134,6 +160,10 @@ export class FileObjectStore implements ObjectStore {
     try {
       const text = await handle.readFile("utf-8");
       return JSON.parse(text) as ObjectInfo;
+    } catch {
+      // Sidecar present but unreadable/corrupt — treat as absent so head()
+      // degrades to the stat-based fallback instead of throwing forever.
+      return undefined;
     } finally {
       await handle.close();
     }
