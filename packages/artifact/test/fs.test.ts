@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -107,5 +107,40 @@ describe("FileObjectStore", () => {
   it("refuses keys that would escape the store root", async () => {
     // assertObjectKey rejects `..` segments before the path guard is reached.
     await expect(store.put("../escape", new Uint8Array([1]))).rejects.toThrow(/invalid object key/);
+  });
+
+  // --- Regression tests for Annika review findings (F1, F2) ---
+
+  it("F1: head() falls back to stat when the sidecar is corrupt, not throws", async () => {
+    await store.put("images/x", new Uint8Array([1, 2, 3]), { mediaType: "image/png" });
+    // Corrupt the sidecar the way a mid-write crash would.
+    await writeFile(join(root, "images/x.sidecar.json"), "{ not valid json");
+    const info = await store.head("images/x");
+    expect(info).toEqual({ key: "images/x", sizeBytes: 3 }); // stat fallback, no throw
+    expect(await drain(await store.get("images/x"))).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("F1: head() falls back when the sidecar is missing but bytes exist (external seed)", async () => {
+    await store.put("k", new Uint8Array([7, 7]));
+    await rm(join(root, "k.sidecar.json"));
+    expect(await store.head("k")).toEqual({ key: "k", sizeBytes: 2 });
+  });
+
+  it("F2: a failed ifAbsent put does not poison the key", async () => {
+    async function* failing(): AsyncIterable<Uint8Array> {
+      yield new Uint8Array([1, 2]);
+      throw new Error("source blew up mid-stream");
+    }
+    await expect(store.put("k", failing(), { ifAbsent: true })).rejects.toThrow(/blew up/);
+    // The partial .bin must be gone, so the retry succeeds instead of EEXIST.
+    const info = await store.put("k", new Uint8Array([9]), { ifAbsent: true });
+    expect(info.sizeBytes).toBe(1);
+    expect(await drain(await store.get("k"))).toEqual(new Uint8Array([9]));
+  });
+
+  it("overwrite refreshes the sidecar (new size + mediaType visible via head)", async () => {
+    await store.put("k", new Uint8Array([1, 1, 1]), { mediaType: "image/png" });
+    await store.put("k", new Uint8Array([2]), { mediaType: "image/jpeg" });
+    expect(await store.head("k")).toEqual({ key: "k", sizeBytes: 1, mediaType: "image/jpeg" });
   });
 });
