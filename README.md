@@ -51,13 +51,20 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 
 | Import | What you get | Native deps |
 |---|---|---|
-| `@mirk/store` | the ports, their in-memory references, `toAsync`, cosine helpers | none |
+| `@mirk/store` | the ports, their in-memory references, sync-to-async lifts, cosine helpers | none |
 | `@mirk/store/kv` | `SyncStore` port (key-value + collections) · `InMemoryKv` · `toAsync` | none |
 | `@mirk/store/vector` | `VectorStore` port · `InMemoryVectorStore` · cosine helpers | none |
 | `@mirk/store/search` | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search | none |
 | `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal) | none |
+| `@mirk/store/sql` | SQL adapter contract types | none |
 | `@mirk/store/sqlite` | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer) · `sqlite-vec` (optional peer) |
+| `@mirk/store-postgres` *(release candidate)* | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters | `pg` |
+| `@mirk/store-markdown` *(release candidate)* | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history | none |
 | `@mirk/fixtures` | typed authored-data loader, registry, refs, diagnostics, provenance | none |
+| `@mirk/artifact` *(release candidate)* | durable artifact metadata, integrity, lineage, and object-storage coordination | none |
+| `@mirk/artifact-opendal` *(release candidate)* | OpenDAL-backed implementation of the artifact object-storage port | `opendal` (peer) |
+| `@mirk/surreal/*` *(release candidate)* | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
+| `@mirk/migrate` *(release candidate)* | backend-neutral checkpointed migration across Mirk ports and caller manifests | none |
 
 ## Sync by design
 
@@ -77,6 +84,22 @@ npm install sqlite-vec
 ```
 
 ESM-only. Node ≥ 20.
+
+For a remote or embedded async SurrealDB source, install `@mirk/surreal` and compose only the
+adapter subpaths you need over one `SurrealConnection`. The package currently ships store, graph,
+vector, object-storage, owned Node embedded, and browser WASM in-memory support. Weighted
+multi-field search and persistent WASM `indxdb://` remain explicit unsupported gates rather than
+compatibility shims.
+
+**IndexedDB status:** published `@surrealdb/wasm` versions 3.0.0–3.0.3 contain a confirmed upstream
+transaction bug that breaks `indxdb://` when selecting a namespace/database. SurrealDB tracks the
+failure in [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) and merged the
+IndxDB 0.12 fix in [surrealdb.js#600](https://github.com/surrealdb/surrealdb.js/pull/600), but the
+fixed WASM package has not yet been published. Mirk supports WASM `mem://` now and will enable
+`indxdb://` only after the fixed release passes its browser write/reopen/read test.
+
+For PostgreSQL, install `@mirk/store-postgres`. It implements the async KV and collection ports over
+one owned or caller-provided `pg.Pool`; future search and vector facets will share the same pool.
 
 ## A taste
 
@@ -104,6 +127,7 @@ db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello w
 db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
 
 const embedding = new Float32Array(768);            // your real embedding; dimensions infer on first write
+const query = new Float32Array(768);
 db.vector.upsert("docs", { id: "a", vector: embedding });
 db.vector.search("docs", query, { topK: 10 });      // ranked by cosine
 
@@ -154,7 +178,9 @@ lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package READ
 [`packages/fixtures/README.md`](packages/fixtures/README.md). The durable artifact substrate is
 implemented in [`packages/artifact`](packages/artifact), with its ownership and failure contract in
 [`docs/artifact-spec.md`](docs/artifact-spec.md).
+The PostgreSQL adapter contract is documented in
+[`docs/store-postgres-spec.md`](docs/store-postgres-spec.md).
 
 ## License
 
-Apache-2.0 © Mirk contributors. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

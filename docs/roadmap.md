@@ -1,238 +1,156 @@
 # Roadmap — mirk
 
-What's open for mirk — substrate storage primitives, no domain baked in. For shipped history see
-[CHANGELOG.md](../CHANGELOG.md).
-
-mirk ships storage **primitives** as code-split subpaths under one namespace: key-value, collections,
-and vector today (`@mirk/store`), with a libSQL/Turso source adapter (`@mirk/store-libsql`). The bar
-for a new primitive is **scope discipline**: a genuinely generic, substrate-level shape with ≥2 real
-consumers — never a domain framework dressed up as substrate.
-
-As of `@mirk/store@0.5.0`, **`an external package`** (the an external project harness's substrate store) backs its
-KV / blob / log / vector stores onto **`@mirk/store/sqlite`** through a `MirkStoreBackend` adapter —
-so nearly every an external project storage consumer (jobs, work-items, rlm, handoff, comms, curator, reflector,
-self-model-reflector) now runs on mirk, with a self-migrating carry-forward from the old filesystem
-backend. That broad adoption is what surfaced **MR-05** (knowledge's full-text gap) and **MR-06**
-(sqlite-adapter ergonomics) below — both real-consumer-driven, not speculative.
+Mirk provides substrate-level storage primitives with no application domain baked in. New primitives
+must have a generic contract, clear backend parity, and demonstrated use beyond a single application.
+Shipped history remains visible here so stable roadmap IDs are never reused.
 
 ## How this roadmap works
 
-Every item has a **stable `MR-NN` ID** (never renumbered or reused, so a reference survives), plus
-**Pkg / Horizon / Status**. Reference items by ID across repos / commits / the bus the way a downstream application
-uses `FR-2` / `#10`. Items that originate as a a downstream application feature request carry a **Ref** (`FR-N`).
-(an external project's own roadmap uses `GR-NN`; mirk's is `MR-NN` — distinct namespaces.)
+Every item has a stable `MR-NN` identifier, package, horizon, and status. Items move forward when the
+port is proven, real backends can meet its semantics, and critical behavior has conformance tests.
 
-| ID | Title | Pkg | Horizon | Status | Ref |
-| --- | --- | --- | --- | --- | --- |
-| MR-01 | Graph primitive — edge model + traversal | @mirk/store/graph | near | shipped · adopted by DL | FR-5 |
-| MR-02 | Event primitive | an external package + an external package | med | satisfied by existing (an external project) · not a separate mirk pkg | FR-4 |
-| MR-03 | Addressable no-drop inbox | @mirk/inbox | maybe | proposed | convergence proposal |
-| MR-04 | Batch/IN match on the collection port (graph fast-path) | @mirk/store | near | shipped | FR-5/MR-01 |
-| MR-05 | Full-text search primitive (FTS + ranking) | @mirk/store/search | near | shipped · weighted-fields follow-up implemented | an external package adoption |
-| MR-06 | SqliteAdapter: lazy vector dimensions | @mirk/store/sqlite | near | implemented | an external package adoption |
-| MR-07 | Authored data / fixture loader primitive | @mirk/fixtures | near | core + store slice implemented | package audit |
-| MR-08 | Qdrant vector adapter | @mirk/vector-qdrant | med | ratified (safe bet) · FS/SQL first pass, Qdrant when a consumer outgrows embedded | an external project inventory · the project maintainer 2026-07-11 |
-| MR-09 | SurrealDB source adapter (engine-native graph facet) | @mirk/store-surreal | med | proposed · pulled by a downstream application migration | an external project inventory · ecosystem open decision 2 |
-| MR-10 | Durable artifact substrate | @mirk/artifact | near | core + store + OpenDAL adapter implemented | cross-consumer artifact consolidation |
-
----
+| ID | Title | Package | Horizon | Status |
+| --- | --- | --- | --- | --- |
+| MR-01 | Graph primitive — edge model and traversal | `@mirk/store/graph` | near | shipped |
+| MR-02 | Event primitive | — | med | closed; outside Mirk's storage scope |
+| MR-03 | Addressable no-drop inbox | `@mirk/inbox` | maybe | proposed |
+| MR-04 | Batch/IN collection matching | `@mirk/store` | near | shipped |
+| MR-05 | Full-text search primitive | `@mirk/store/search` | near | shipped |
+| MR-06 | Lazy SQLite vector dimensions | `@mirk/store/sqlite` | near | implemented |
+| MR-07 | Authored-data fixture loader | `@mirk/fixtures` | near | core and store slice implemented |
+| MR-08 | Qdrant vector adapter | `@mirk/vector-qdrant` | med | proposed, consumer-gated |
+| MR-09 | Shared-connection SurrealDB adapters | `@mirk/surreal` | med | core, Node, and WASM memory implemented |
+| MR-10 | Durable artifact substrate | `@mirk/artifact` | near | implemented, pre-release |
+| MR-11 | Markdown and YAML-headmatter store | `@mirk/store-markdown` | near | implemented, pre-release |
+| MR-12 | PostgreSQL async store adapter | `@mirk/store-postgres` | near | implemented, pre-release |
+| MR-13 | PostgreSQL native full-text facet | `@mirk/store-postgres/search` | med | proposed, parity-gated |
+| MR-14 | PostgreSQL pgvector facet | `@mirk/store-postgres/vector` | med | proposed, consumer-gated |
+| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store` | near | implemented; downstream integration in progress |
 
 ## Near term
 
-### MR-01 · Graph primitive — edge model + traversal
+### MR-01 · Graph primitive
 
-**Pkg:** @mirk/store/graph · **Horizon:** near · **Status:** shipped (@mirk/store@0.5.0) · **Ref:** FR-5 (a downstream application)
+`@mirk/store/graph` ships flat edge records, `neighbors()`, `traverse()`, and
+`traverseFrontierBatched()` over the ordinary collection port. The optional `AsyncGraphTraversal`
+capability lets an engine provide native traversal without changing the public result contract.
+Traversal is cycle-safe, preserves complete edge records, supports direction and depth bounds, and
+applies caller policy through `edgeFilter`.
 
-**Shipped** — `@mirk/store/graph` exports `neighbors` + `traverse` (pure, load-once fanout-free BFS
-over the `AsyncStore` collection port; flat `{id,from,to,type,…}` edge records; policy via a
-caller-supplied `edgeFilter`; not graphRAG). Independently reviewed (a reviewer: SHIP — cycle-safe,
-correct depth/direction semantics, policy pruned at load, port-agnostic so sqlite/libsql get it
-free). 22 tests + a locked full-record-preservation contract. **Adopted** — DL's `getNeighbors` now runs
-on `traverse()` (a reviewer-fuzzed at 50k vs the old BFS); the full-record + id-opaque + edgeFilter-at-load
-contracts all held in the wild. **Remaining:** the at-scale fast-path is now **MR-04** (a port IN/batch-match
-capability — `traverse`'s load-once is a full edge scan per call, fine at current scale but
-`O(total_edges × hits)` for graphSearch); plus the **graph-specific** pilot — port `an external package`'s `TripleStore` onto `@mirk/store/graph`
-(distinct from the broad `an external package` → sqlite adoption noted in the intro, which covers
-KV/collections/vector but not graph).
+### MR-04 · Batch/IN collection matching
 
-The fourth code-split primitive next to key-value / collections / vector. A graph **primitive** — edge
-model + traversal — explicitly **not** graphRAG.
+The optional `SyncStoreInQuery` and `AsyncStoreInQuery` capabilities add `listWhereIn()`. Graph
+frontier traversal uses the capability when available and retains the load-once fallback otherwise.
+Implementations must preserve normal `StoreFilter` semantics and deterministic traversal results.
 
-- **Shape.** Edges = a collection of `{ from, to, type, ...meta }` records. Traversal = **pure
-  batched-BFS functions over the existing `AsyncStore` collection port + `StoreFilter`**:
-  `neighbors(store, { from, edgeTypes, direction })` and `traverse(store, { start, depth, direction,
-  edgeTypes })` with per-depth-level batching (avoid query fan-out) + dedup. Because it rides the
-  collection port it works over in-memory / sqlite / libsql **for free** — zero new native deps, no
-  new adapter. A `GraphStore` port + in-memory reference matching the `/kv` and `/vector` pattern; the
-  cross-backend parity test is the contract.
-- **Policy stays out of the primitive.** Published/status filtering, edge-type semantics
-  (e.g. `in-series`), and bitemporal validity ride a caller-supplied `edgeFilter` (`StoreFilter`).
-  graphRAG search (embed → vectorSearch → neighbor-expand → score) is thin glue + per-consumer policy
-  — it stays consumer-side (same call as no speculative `compareAndSwapJson`).
-- **Consumers (real, not speculative).** a downstream application' `getNeighbors`; `an external package`'s `triples.ts`
-  (a subject·predicate·object `TripleStore` that *already* rebuilt mirk's port+adapter+parity pattern
-  because mirk lacked a graph primitive); plausibly `an external package` term/doc relations.
-- **Plan.** Take DL's `getNeighbors` reference impl + edge-type taxonomy; **dry-season pilot** by
-  porting `an external package`'s `TripleStore` onto it (it already has the parity harness) and proving it
-  green before opening breadth. Not a DL `#10` blocker — DL keeps its graph-service over the
-  vector+kv ports until this ships, then swaps cleanly. DL's `#10` store rebuild extracts a
-  graph-service (graphSearch + computeDerivedEdges + traversal) that is the concrete
-  consumer-in-waiting — it plugs straight into this primitive the moment it lands.
+### MR-05 · Full-text search primitive
 
-### MR-04 · Batch/IN match on the collection port — the graph fast-path's prerequisite
+`@mirk/store/search` provides `SearchStore` and `AsyncSearchStore`, an in-memory BM25-style
+reference, sync-to-async lifting, and an SQLite FTS5 facet. Documents may use a single text value or
+stable named fields with query-time field weights. Ranking, filters, schema mismatch behavior,
+updates, removals, and reopen persistence are covered by parity tests.
 
-**Pkg:** @mirk/store · **Horizon:** near · **Status:** shipped · **Ref:** FR-5 / MR-01
+### MR-06 · Lazy SQLite vector dimensions
 
-**Shipped** — MR-04 adds the optional `SyncStoreInQuery` / `AsyncStoreInQuery` `listWhereIn()`
-capability, implements it for in-memory and sqlite stores, lifts it through `toAsync()`, and adds
-`traverseFrontierBatched()` as the graph fast-path. Stores without `listWhereIn()` still fall back
-to `traverse()`'s load-once strategy, so the capability is additive. The indexed path fetches only
-edges adjacent to the current BFS frontier at each level (`from IN frontier`, `to IN frontier`, or
-both), while preserving `edgeFilter` pushdown and deterministic parity with load-once traversal.
+`SqliteAdapter` can open without vector dimensions. The vector facet learns dimensions from its
+first write, persists them, and enforces them on reopen. Searching an empty unconfigured vector
+store still requires known dimensions, preventing an accidental schema choice.
 
-### MR-05 · Full-text search primitive — the one thing blocking knowledge
+### MR-07 · Authored-data fixture loader
 
-**Pkg:** @mirk/store/search · **Horizon:** near · **Status:** **shipped** (`@mirk/store@0.6.0`) ·
-knowledge adoption **opt-in** (not default) · **Ref:** an external package adoption
+`@mirk/fixtures` validates and materializes authored data with deterministic layering, patch
+overlays, references, provenance, and diagnostics. Core remains parser-injected and Standard Schema
+based. Store integration lives at `@mirk/fixtures/store` and can both load fixture records and seed
+ordinary collections.
 
-**Shipped** — `@mirk/store/search`: a `SearchStore` port (index/indexMany/remove/search) with an
-in-memory bm25 reference (FTS5 defaults k1=1.2, b=0.75) and a `.search` FTS5 facet on `SqliteAdapter`
-(same connection as `.kv`/`.vector`); cross-backend parity test asserts ranking order. `an external package`
-has a `MirkKnowledgeIndex` over `.kv` (pages) + `.search` (FTS), parity-tested against its sqlite index,
-**opt-in** behind `mirkKnowledgeIndexFactory` (sqlite stays the default — see the follow-up).
+Remaining work includes filesystem and package-resource sources, additional parser plugins, CLI
+support, and broader browser and packaging verification.
 
-The original gap: knowledge did sqlite FTS5 + bm25 over title+body, which `@mirk/store/sql`'s exact-match
-`StoreFilter.where` can't express. Now solved. Note: knowledge's supersession/correction **audit trail**
-(append-only version history) is an append-log concern closer to **MR-03**, not here.
-
-**Follow-up — weighted multi-field FTS (implemented).** `an external package`'s sqlite index uses
-`fts5(title, body)` — TWO columns — while the first `/search` cut indexed ONE concatenated text field.
-That lost the ability to boost title matches over body matches, a real ranking-quality regression for
-knowledge. `/search` now keeps the old `{ text }` shorthand and adds `{ fields: { title, body } }` plus
-query-time `fieldWeights` (for example `{ title: 4, body: 1 }`). The sqlite facet persists one stable
-field schema per collection, creates matching FTS5 columns, and ranks with `bm25(fts, ...weights)`;
-the in-memory reference mirrors the same contract. Tests cover backcompat text docs, fielded docs,
-weighted title-vs-body ordering, schema mismatch rejection, invalid weights, fielded update/remove,
-and sqlite reopen persistence. Knowledge can now adopt `/search` without concatenating title+body.
-
-### MR-06 · SqliteAdapter ergonomics — lazy vector dimensions
-
-**Pkg:** @mirk/store/sqlite · **Horizon:** near · **Status:** implemented · **Ref:** an external package adoption
-
-`an external package`'s `MirkStoreBackend` (which puts an external project's KV/blob/log/vector stores on the sqlite adapter)
-hit one friction point: the `.vector` facet needed `dimensions` at `SqliteAdapter` construction, but the
-consuming SPI only learns the dimension at the first `upsert(id, vector)`. To build the vector facet
-lazily over the SAME connection, the backend had to reach into the adapter's **private `db` field** via
-a cast — fragile coupling to mirk internals.
-
-**Implemented** — `SqliteAdapter({ path })` can now open without vector dimensions. The vector facet
-persists dimensions from the first `upsert()` / `upsertMany()` call, updates `vector.meta`, and reuses
-that persisted configuration on reopen. `search()` still requires known dimensions so an empty query
-cannot accidentally pin a database to the wrong dimensionality. This solves the downstream private-field
-reach without exposing the raw `better-sqlite3` connection as public API.
-
-### MR-07 · Authored data / fixture loader primitive
-
-**Pkg:** @mirk/fixtures · **Horizon:** near · **Status:** core + store slice implemented · **Ref:** package audit
-
-A generic authored-data loader for content packs, configuration fragments, templates, lookup tables,
-and test fixtures that need schema validation, deterministic layering, patch overlays, references,
-materialization, provenance, and validation diagnostics before an application consumes them. It is
-**not** a new storage port and does not live inside `@mirk/store`; it sits above `@mirk/store/kv` and
-ships store integration at `@mirk/fixtures/store` over the KV collection shape. Store integration is
-bidirectional: store-backed fixture packs can be loaded as a source, and validated fixture packs can
-seed ordinary store collections as a sink. Core stays parser-injected and Standard Schema based so
-root imports stay dependency-light and domain-neutral.
-
-Spec: [`docs/fixtures-spec.md`](fixtures-spec.md). Package README: [`packages/fixtures/README.md`](../packages/fixtures/README.md).
-Implemented slice: scaffold `@mirk/fixtures`, memory source, JSON parser, async loader surface,
-patch/merge core, reference validation/graph, materialization, and store source/seeding helpers over
-the KV collection shape. Remaining slices: filesystem source, package-resource source, CLI, richer
-parser plugins, and broader browser/packaging smoke tests.
+Specification: [`fixtures-spec.md`](fixtures-spec.md). Package documentation:
+[`packages/fixtures/README.md`](../packages/fixtures/README.md).
 
 ### MR-08 · Qdrant vector adapter
 
-**Pkg:** @mirk/vector-qdrant · **Horizon:** near/med · **Status:** proposed, consumer-pulled ·
-**Ref:** an external project ingestion inventory (2026-07-11) · the project maintainer ruling: "Qdrant seems the more reasonable short term"
+A server-side implementation of the existing vector port. It should arrive when an actual workload
+outgrows the embedded and general-purpose database adapters. Release requires cross-backend cosine,
+filter, update, removal, and dimensionality parity.
 
-A server-side implementation of the existing `VectorStore` port. Donor code exists —
-`an external package`'s Qdrant backend — so the port shape is proven and the work is mostly
-porting + the cross-backend parity test against the in-memory reference and sqlite-vec.
+### MR-09 · Shared-connection SurrealDB adapters
 
-**Confidence + sequencing (the project maintainer, 2026-07-11):** Qdrant is a **safe bet** — the project maintainer operates it
-heavily across other projects and at work, so this is proven-operator territory, not speculation;
-the question is *when*, not *if*. Sequencing ruling: **FS/SQL first** — the first pass for the
-slice/launch path runs on the existing embedded backends (sqlite-vec, libSQL native vectors);
-Qdrant lands as the server-side option when a consumer's scale or serving needs outgrow embedded.
-Donor code: `an external package`'s Qdrant backend. Implements against the existing
-`VectorStore` port with the standard cross-backend parity tests.
+`@mirk/surreal` owns one `SurrealConnection`; separately imported `/store`, `/graph`, `/vector`,
+`/search`, `/storage`, `/node`, and `/wasm` subpaths can share it without loading unrelated
+capabilities.
 
-### MR-09 · SurrealDB source adapter — engine-native graph facet
+The graph facet uses native relation records and bounded engine traversal while preserving the same
+public traversal contract as the generic helpers. Store, vector, graph, object storage, and artifact
+composition are tested against the Node embedded engine and a loopback server connection.
 
-**Pkg:** @mirk/store-surreal · **Horizon:** med · **Status:** proposed, pulled by the a downstream application
-migration · **Ref:** an external project inventory (donor: `an external package`) · ecosystem architecture
-open decision 2 (a downstream application operational persistence)
+The browser WASM helper supports `mem://`. Persistent `indxdb://` remains disabled until a released
+upstream engine containing the IndexedDB transaction fix passes Mirk's write/reopen/read browser
+gate. Weighted multi-field search also remains an explicit unsupported capability until the engine
+can meet the search port.
 
-A source adapter in the `store-libsql` mold: multiple port facets over one SurrealDB connection.
-The distinguishing design decision, per the project maintainer's concern that a generic implementation would be
-under-optimized: **the graph facet implements the `GraphStore` port on Surreal's native engine
-primitives** (record links, in-engine traversal) rather than riding the generic collection-backed
-load-once/batched BFS. Same contract, same parity tests, engine-optimized execution — this is
-exactly what the adapter seam exists for, and it is NOT a domain exception.
-
-**The domain boundary, stated so it survives review:** what stays *out* of this adapter is anything
-a downstream application/a downstream application-shaped — temporal edge validity semantics, live queries, scene-local query
-shapes. Those belong in the world module's **domain store** above Mirk, which (per the `an external package`
-precedent) may keep capability-local interfaces where Mirk's ports genuinely don't fit. So the
-migration shape is: a downstream application's operational store consumes `@mirk/store-surreal` for everything
-the ports express, and keeps a thin Surreal-native domain layer for what they don't — rather than
-either forcing all queries through generic ports (under-optimized) or teaching Mirk about scenes
-(domain leak).
-
-**Consumers (real):** a downstream application's `packages/graphs` imports `an external package` today; the
-`an external package` SurrealDB backend serves a downstream application/dev-dashboard paths. This adapter is their
-designated migration target, resolving ecosystem open decision 2 as "SurrealDB stays, behind Mirk's
-contract, engine-optimized."
+Application-specific schemas, temporal validity rules, live-query policies, and domain query shapes
+remain above Mirk's adapters.
 
 ### MR-10 · Durable artifact substrate
 
-**Pkg:** @mirk/artifact · **Horizon:** near · **Status:** implemented, pre-release ·
-**Ref:** cross-consumer artifact consolidation
+`@mirk/artifact` provides durable byte-bearing outputs, object-storage ports, integrity, portable
+metadata, and source/derivative lineage. It deliberately excludes jobs, providers, workers, retries,
+progress, approval, and application-specific attachment semantics.
 
-A domain-neutral substrate for durable byte-bearing outputs: object-storage ports, stable artifact
-identity, integrity, portable metadata, and source/derivative lineage. The primitive deliberately
-excludes jobs, providers, workers, retries, progress, approval, and semantic attachment.
+Metadata uses `@mirk/store/kv`; bytes use an `ObjectStore`. `@mirk/artifact-opendal` supplies the
+optional OpenDAL adapter.
 
-The primitive is pulled by multiple consumers that need uploads, generated outputs, derivatives,
-and publication artifacts without importing one another's domain or execution state. Metadata rides
-`@mirk/store/kv`; physical storage is supplied through a small capability port, preferring maintained
-community libraries over Mirk-owned backend clients.
+Specification: [`artifact-spec.md`](artifact-spec.md).
 
-Implemented as a runtime-neutral core and `@mirk/store/kv` repository plus the optional
-`@mirk/artifact-opendal` adapter. OpenDAL owns production backend transport; `@noble/hashes` owns
-incremental SHA-256. Remaining work is broader adapter conformance and consumer migration.
+### MR-11 · Markdown and YAML-headmatter store
 
-Spec: [`docs/artifact-spec.md`](artifact-spec.md).
+`@mirk/store-markdown` implements `SyncStore` over one Markdown file per record. Configurable field
+mappings support frontmatter, whole-body content, or named sections. Reads reflect current disk
+state; writes preserve unknown frontmatter and unconfigured body sections, use atomic replacement,
+regenerate an optional index, and can create one local Git commit per mutation.
 
----
+Version 1 is single-writer and last-write-wins across processes. Corrupt records produce one typed
+aggregate error containing every affected path because the current collection contract cannot return
+healthy records and diagnostics together.
+
+### MR-12 · PostgreSQL async store adapter
+
+`@mirk/store-postgres` implements `AsyncStore` and `AsyncStoreInQuery` over one owned or
+caller-provided `pg.Pool`. Fixed JSONB-backed KV and records tables keep collection names as bound
+data. Tests cover exact top-level filters, insertion and sorted-tie ordering, null/missing behavior,
+literal key prefixes, persistence, pool ownership, pagination, and hostile identifiers against a
+real PostgreSQL server.
+
+Specification: [`store-postgres-spec.md`](store-postgres-spec.md). Package documentation:
+[`packages/store-postgres/README.md`](../packages/store-postgres/README.md).
 
 ## Medium term
 
-### MR-02 · Event primitive — satisfied by `an external package` + `an external package`
+### MR-13 · PostgreSQL native full-text search facet
 
-**Pkg:** an external package + an external package (an external project, not mirk) · **Horizon:** med · **Status:** satisfied by existing substrate, not a separate mirk package · **Ref:** a downstream application FR-4
+A separately imported async search facet over the MR-12 pool using PostgreSQL `tsvector`, `tsquery`,
+and GIN indexes. It lands only when field weighting, filtering, ranking order, updates, removals, and
+empty-query behavior meet the existing search contract. Language configuration and index migrations
+must be explicit.
 
-Originally scoped as a new `@mirk/events` package ("the plumbing layer beneath cross-agent messaging and temporal concerns"). On substrate audit (2026-06-24), the need is already met by existing an external project packages: `an external package` is the transport contract (`IChannel`/`BaseChannel`, `internal`/`websocket`/`signal` types, pluggable), `an external package` is the messaging domain (envelope, `decideDelivery` wake bit, presence directory), and `pi-comms` ships the durable inbox + HTTP front door. The genuine gap was not a bus — it was the **between-turns PUSH** (comms Slice 1 was pull-only; `decideDelivery`'s wake bit was stubbed). That is now closed by pi-comms' `WakeLoop`, which drives `an external package`'s `shouldRun` on one unref'd interval, reads the inbox + job watch set, and dispatches `pi.sendUserMessage(followUp)`. Job-wake routes through the same comms inbox (a terminal job publishes a `status` message), so a detached worker's completion surfaces through the same push path as a peer's DM — same-machine now (shared KV), cross-machine later via the channel transports. No `@mirk/events` package needed; mirk's role remains the data substrate (`@mirk/store`), not a separate event layer.
+### MR-14 · PostgreSQL pgvector facet
 
----
+A separately imported `AsyncVectorStore` facet sharing the MR-12 pool. Exact cosine search is the
+parity baseline. The vector extension and codec remain dependencies of this subpath only; HNSW and
+IVFFlat are explicit operational options because they may trade recall for latency.
+
+### MR-02 · Event primitive
+
+Closed. Event delivery, wake scheduling, and transport orchestration are not storage primitives and
+do not belong in Mirk. Mirk may supply durable records beneath such systems without owning their
+messaging contract.
 
 ## Maybe later
 
-### MR-03 · Addressable no-drop inbox — `@mirk/inbox` (proposed)
+### MR-03 · Addressable no-drop inbox
 
-**Pkg:** @mirk/inbox (proposed) · **Horizon:** maybe · **Status:** proposed · **Ref:** messaging-convergence proposal
-
-A possible no-drop, addressable **append-log + status** layered over `@mirk/store` kv — the durable
-inbox substrate under cross-agent messaging. Open question whether `an external package` rests on it.
-Surfaced in the messaging-convergence proposal; not committed — promote if a second consumer beyond
-the messaging leg appears.
+A possible append-log and status primitive layered over `@mirk/store/kv`. It remains proposed until
+multiple independent consumers demonstrate a shared contract that is smaller than a messaging or
+workflow framework.
