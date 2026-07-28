@@ -1,11 +1,50 @@
+# Dependencies and build output
 node_modules/
 dist/
+coverage/
 *.tsbuildinfo
 .vite/
-**/.agents/memory/
+.turbo/
+.nx/
+
+# Generated package artifacts
 *.tgz
+
+# Local environment and registry configuration
+.env
+.env.*
+!.env.example
 .npmrc
 
-# Local working docs / scratch — never version-controlled
-*.local/
+# Local databases and sidecars
+*.db
+*.db-wal
+*.db-shm
+
+# Debug logs and operating-system noise
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+
+# Browser and test captures
+.playwright-mcp/
+playwright-report/
+test-results/
+
+# Agent and orchestration runtime state
+.omc/
+.omx/
 .gonk/
+traces/
+.agents/*
+!.agents/index.md
+!.agents/skills/
+!.agents/skills/**
+
+# Local working docs and scratch
+docs.local/
+*.local/
+*.local.*
