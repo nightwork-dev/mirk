@@ -1,6 +1,6 @@
 # `@mirk/artifact` public package specification
 
-**Status:** implemented, pre-release
+**Status:** core, store, filesystem, and OpenDAL packages released; consumer adoption remains external
 **Package:** `@mirk/artifact`
 **Roadmap:** MR-10
 **Horizon:** near
@@ -678,24 +678,25 @@ The exact attachment schema remains a consumer decision. The invariant is that i
 artifact rather than owning physical storage or execution state. Successful finalization does not
 imply semantic acceptance.
 
-## Implementation plan
+## Implementation record
 
-### Phase 0 — upstream evaluation and frozen contracts
+### Phase 0 — upstream evaluation and frozen contracts — package boundary completed
 
-1. Evaluate maintained community storage libraries against the `ObjectStore` capability contract.
-2. Adopt upstream implementations for backend access, streaming, retries, and signing wherever
-   their semantics pass the conformance suite.
-3. Snapshot representative records and object layouts from the first adopting consumer.
-4. Define rollback handles before changing a consumer.
+1. The `ObjectStore` capability contract is frozen around portable keys, streaming bytes, metadata,
+   conditional creation, and explicit optional capabilities.
+2. Backend access, streaming, retries, signing, and provider transport remain delegated to maintained
+   community implementations such as OpenDAL.
+3. Consumer record snapshots and rollback handles remain adoption requirements in Phase 4 rather
+   than package-release claims.
 
-### Phase 1 — core primitive
+### Phase 1 — core primitive — shipped
 
 1. Implement core records and ports.
 2. Implement normative in-memory object store and artifact repository.
 3. Implement the coordinator, hashing, streaming, lineage, and idempotency.
 4. Prove failure cleanup and orphan auditing.
 
-### Phase 2 — Mirk persistence
+### Phase 2 — Mirk persistence — shipped
 
 1. Implement `@mirk/artifact/store` over `@mirk/store/kv`.
 2. Add parity tests against the in-memory repository.
@@ -703,22 +704,24 @@ imply semantic acceptance.
 4. Do not create an artifact-specific SQL schema package unless measured behavior proves the generic
    collection port insufficient.
 
-### Phase 3 — community storage bindings
+### Phase 3 — community storage bindings — shipped initial adapters
 
-1. Bind at least one local and one remote community storage implementation.
-2. Publish only the thin capability translation and conformance evidence.
-3. Add a Mirk-owned backend adapter only when an upstream gap is demonstrated and documented.
+1. `FileObjectStore` supplies the local Node reference.
+2. `@mirk/artifact-opendal` supplies a thin community-storage binding and rejects unsupported
+   capabilities rather than emulating weaker behavior.
+3. Remote provider selection, credentials, and deployment validation remain consumer-owned.
+4. A Mirk-owned provider adapter still requires a demonstrated and documented upstream gap.
 
-### Phase 4 — consumer adoption
+### Phase 4 — consumer adoption — external and ongoing
 
 1. Introduce artifact references alongside existing consumer records.
 2. Backfill artifact records and verify hashes without changing consumer-facing IDs.
 3. Retain a reversible legacy-read path until stored objects remain accessible through the new seam.
 4. Remove duplicate storage code only after conformance, rollback, and reachability checks pass.
 
-## Acceptance criteria
+## Broader maturity criteria
 
-The first release candidate is acceptable when:
+The initial packages are released. The broader substrate is mature when:
 
 - a zero-byte object and a multi-gigabyte streamed object follow the same portable API;
 - one local and one remote community storage binding pass the shared contract suite;
@@ -735,9 +738,9 @@ The first release candidate is acceptable when:
 - an execution worker can record an artifact output without Mirk importing execution-system types;
 - existing consumer records can be backfilled and read without changing their public IDs.
 
-## Open implementation decisions
+## Remaining design decisions
 
-These decisions should be resolved during Phase 0/1 with contract tests:
+These decisions require consumer evidence and contract tests before expanding the released surface:
 
 1. Whether `ByteStream` should additionally support the standard `ReadableStream<Uint8Array>` at
    the public boundary or remain `AsyncIterable` with conversion helpers.

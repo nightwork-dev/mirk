@@ -1,6 +1,6 @@
 # `@mirk/fixtures` public package specification
 
-**Status:** draft spec  
+**Status:** core, memory, store, references, and materialization released; filesystem/package sources implemented; CLI planned
 **Package:** `@mirk/fixtures`  
 **Horizon:** near  
 **Related primitive:** `@mirk/store/kv`
@@ -85,7 +85,7 @@ Public subpaths are normative; internal source filenames are not:
 | `@mirk/fixtures/memory` | in-memory fixture source | none |
 | `@mirk/fixtures/store` | store-backed fixture source and store seeding helpers over the `@mirk/store/kv` collection port | none beyond `@mirk/store` types |
 | `@mirk/fixtures/filesystem` | Node filesystem source | Node built-ins only |
-| `@mirk/fixtures/package` | package/resource source helper | none or Node built-ins only, depending on implementation |
+| `@mirk/fixtures/package` | file-backed package/resource source helper | Node built-ins only |
 | `@mirk/fixtures/cli` | CLI entry helpers | only optional parser deps if they are explicitly added later |
 
 The root entry must not re-export filesystem, package-resolution, or CLI helpers if doing so would
@@ -362,8 +362,8 @@ createPackageFixtureSource({
 });
 ```
 
-The exact implementation can be Node-first in v1, but the spec should leave room for bundled
-manifests in browser/edge environments.
+The first implementation is Node-first and accepts a `file:` root URL. Bundled manifests for
+browser/edge environments remain a separate future source contract.
 
 ## Parser model
 
@@ -679,9 +679,9 @@ Minimum tests before implementation is called done:
 41. Package metadata contains no private registry, local path, or internal package scope.
 42. Package export smoke tests prove root import does not load Node-only modules.
 
-## Initial implementation slices
+## Implementation record
 
-### Slice 1 — core + memory source
+### Slice 1 — core + memory source — shipped
 
 - Package scaffold with tsup, explicit exports, README.
 - Registry, refs, diagnostics, parser normalization.
@@ -691,7 +691,7 @@ Minimum tests before implementation is called done:
 - Basic `$patch` support.
 - Unit tests for core behavior.
 
-### Slice 2 — store integration
+### Slice 2 — store integration — shipped
 
 - `@mirk/fixtures/store` subpath.
 - Structural `KvLike` source support over `SyncStore` / `AsyncStore` collection methods.
@@ -699,20 +699,20 @@ Minimum tests before implementation is called done:
 - Tests over `InMemoryKv` and `LibsqlAdapter.kv`, with libSQL kept in `@mirk/store-libsql`'s dev surface.
 - Source cache invalidation hook.
 
-### Slice 3 — filesystem/package sources
+### Slice 3 — filesystem/package sources — implemented, release pending
 
 - Node filesystem source with path safety.
 - Package/resource source for shipped defaults.
 - Export-map smoke tests.
 
-### Slice 4 — reference graph + materialization
+### Slice 4 — reference graph + materialization — shipped
 
 - `resolveRef`.
 - Validation aggregation.
 - Reference graph.
 - Materialization cache and cycle detection.
 
-### Slice 5 — CLI
+### Slice 5 — CLI — planned
 
 - `validate`, `list`, `show`, `graph`, `explain`.
 - JSON output mode.
@@ -720,22 +720,25 @@ Minimum tests before implementation is called done:
 
 ## Open design questions
 
-1. Should store-backed fixtures be stored as one collection for all types or one collection per type?
-   The source adapter can support both, but examples should pick one.
-2. Should CLI parser plugins be configured by JS config file, package subpath, or command-line
+1. Should CLI parser plugins be configured by JS config file, package subpath, or command-line
    dynamic import?
-3. What real no-Promise consumer would justify a future `@mirk/fixtures/sync` subpath and the
+2. What real no-Promise consumer would justify a future `@mirk/fixtures/sync` subpath and the
    accompanying parity matrix?
-4. Should nested fixture ids remain a later feature, or should a first implementation expose an
-   explicit opt-in before package release?
+3. Should nested fixture ids remain a later feature, or should a later implementation expose an
+   explicit opt-in before adding them to the public contract?
 
-## Acceptance criteria
+Store collection topology is caller-selected through `createStoreFixtureSource({ collection })`;
+examples use one `fixtures` collection without making that layout normative.
 
-The feature is ready for implementation when:
+## Initial package-boundary acceptance
 
-- This spec is linked from the roadmap.
-- The first implementation slice has a reviewed package boundary and export map.
-- Tests demonstrate store-backed fixtures over `@mirk/store/kv` without depending on a concrete
-  backend.
-- Root imports remain native-free and Node-built-in-free.
-- Docs and examples contain no private project names, local paths, or application-specific details.
+The implemented package boundary requires:
+
+- this spec to remain linked from the roadmap;
+- explicit subpaths and export-map smoke tests for every source helper;
+- store-backed fixtures over the structural `@mirk/store/kv` subset without a concrete backend
+  dependency;
+- a native-free, Node-built-in-free root import;
+- real-path containment and path-safe diagnostics for filesystem/package sources; and
+- public docs and examples without private project names, local paths, or application-specific
+  details.

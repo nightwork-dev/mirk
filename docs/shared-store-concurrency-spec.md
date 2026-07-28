@@ -1,11 +1,13 @@
 # Mirk shared-store concurrency specification
 
-**Status:** proposed architecture and conformance contract; direct SQLite characterization implemented
+**Status:** MR-15 foundation shipped; MR-16 atomic mutation contract and MR-17 coordinated profile proposed
 
 **Primary package:** `@mirk/store`
 
-**Related packages:** `@mirk/store-libsql`; candidate follow-ons include `@mirk/migrate`,
-`@mirk/store-postgres`, and `@mirk/surreal`
+**Roadmap:** MR-15, MR-16, MR-17
+
+**Related packages:** `@mirk/store-libsql`, `@mirk/migrate`, `@mirk/store-postgres`, and
+`@mirk/surreal`
 
 ## Summary
 
@@ -61,11 +63,11 @@ for one-process embedding, tests, command-line tools with exclusive ownership, a
 admitted workloads. Reusable single-writer support is legitimate Mirk scope and must not be
 reimplemented by each host.
 
-## Current implementation record
+## Current implementation record — MR-15
 
-The first integration slice does **not** claim that the coordinated default is complete. It adds
-logical namespace views, a bounded SQLite busy timeout, and a narrow synchronous transaction primitive
-in Mirk. The initial downstream host integrates those through one composition-root provider owning
+The shipped MR-15 slice does **not** claim that the coordinated default is complete. It adds logical
+namespace views, a bounded SQLite busy timeout, and a narrow synchronous transaction primitive in
+Mirk. The initial downstream host integrates those through one composition-root provider owning
 one database connection per scope tier, atomic append-log offset allocation, transactionally
 excluded legacy copy-forward, and a real 16-process contention regression.
 
@@ -76,7 +78,7 @@ SQLite databases, and does not admit direct SQLite as the general multi-process 
 
 The public-API proof also exposes the next boundary: the host's current `StoreBackend` mutation
 methods are synchronous, while a client of a writer process or local libSQL server is naturally
-asynchronous. Finishing the coordinated profile therefore requires either an asynchronous backend
+asynchronous. Finishing MR-17's coordinated profile therefore requires either an asynchronous backend
 contract or a separately justified synchronous IPC bridge. A longer busy timeout is not that bridge.
 
 ## Goals
@@ -462,13 +464,14 @@ database.
 
 ## Delivery sequence
 
-1. Add logical namespaces to the backend-neutral store composition and SQLite physical schema.
-2. Define transaction, CAS, idempotency, and typed conflict capabilities.
-3. Add explicit WAL verification, busy timeout, checkpoint policy, and contention observability to
+1. **MR-15 — shipped:** add logical namespaces, bounded SQLite writer waits, and synchronous
+   transaction modes.
+2. **MR-16:** define transaction, CAS, idempotency, and typed conflict capabilities.
+3. **MR-16/MR-17:** add explicit WAL verification, checkpoint policy, and contention observability to
    `SqliteAdapter`.
-4. Build one two-process contention and fault harness that exercises the coordinated profile and can
+4. **MR-17:** build one two-process contention and fault harness that exercises the coordinated profile and can
    also characterize direct SQLite without making it the delivery gate.
-5. Evaluate whether existing local libSQL can supply the coordinated profile without a bespoke
+5. **MR-17:** evaluate whether existing local libSQL can supply the coordinated profile without a bespoke
    protocol; specify the Mirk-owned client/lifecycle wrapper if it can.
 6. If libSQL is unsuitable, specify the smallest Mirk writer service with client identities and
    namespace-scoped grants.

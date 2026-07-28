@@ -58,13 +58,14 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal) | none |
 | `@mirk/store/sql` | SQL adapter contract types | none |
 | `@mirk/store/sqlite` | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer) · `sqlite-vec` (optional peer) |
-| `@mirk/store-postgres` *(release candidate)* | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters | `pg` |
-| `@mirk/store-markdown` *(release candidate)* | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history | none |
+| `@mirk/store-libsql` | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets | none |
+| `@mirk/store-postgres` | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters | `pg` |
+| `@mirk/store-markdown` | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history | none |
 | `@mirk/fixtures` | typed authored-data loader, registry, refs, diagnostics, provenance | none |
-| `@mirk/artifact` *(release candidate)* | durable artifact metadata, integrity, lineage, and object-storage coordination | none |
-| `@mirk/artifact-opendal` *(release candidate)* | OpenDAL-backed implementation of the artifact object-storage port | `opendal` (peer) |
-| `@mirk/surreal/*` *(release candidate)* | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
-| `@mirk/migrate` *(release candidate)* | backend-neutral checkpointed migration across Mirk ports and caller manifests | none |
+| `@mirk/artifact` | durable artifact metadata, integrity, lineage, and object-storage coordination | none |
+| `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port | `opendal` (peer) |
+| `@mirk/surreal` | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
+| `@mirk/migrate` | backend-neutral checkpointed migration across Mirk ports and caller manifests | none |
 
 ## Sync by design
 
@@ -171,7 +172,7 @@ Do not hand-bump package versions for future releases; add a changeset and let `
 
 ## Status
 
-Pre-1.0. The public API should be considered unstable until the first tagged release.
+Pre-1.0. Packages are publicly released and versioned independently; APIs may still change until 1.0.
 
 Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
 lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at
@@ -180,6 +181,7 @@ implemented in [`packages/artifact`](packages/artifact), with its ownership and 
 [`docs/artifact-spec.md`](docs/artifact-spec.md).
 The PostgreSQL adapter contract is documented in
 [`docs/store-postgres-spec.md`](docs/store-postgres-spec.md).
+Release history: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 

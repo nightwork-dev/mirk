@@ -37,6 +37,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Check public documentation
+        run: pnpm docs:check
+
       - name: Install browser test runtime
         run: pnpm --filter @mirk/surreal exec playwright install --with-deps chromium
 

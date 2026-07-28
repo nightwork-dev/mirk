@@ -16,16 +16,18 @@ port is proven, real backends can meet its semantics, and critical behavior has 
 | MR-03 | Addressable no-drop inbox | `@mirk/inbox` | maybe | proposed |
 | MR-04 | Batch/IN collection matching | `@mirk/store` | near | shipped |
 | MR-05 | Full-text search primitive | `@mirk/store/search` | near | shipped |
-| MR-06 | Lazy SQLite vector dimensions | `@mirk/store/sqlite` | near | implemented |
-| MR-07 | Authored-data fixture loader | `@mirk/fixtures` | near | core and store slice implemented |
+| MR-06 | Lazy SQLite vector dimensions | `@mirk/store/sqlite` | near | shipped |
+| MR-07 | Authored-data fixture loader | `@mirk/fixtures` | near | core/store shipped; filesystem/package release pending |
 | MR-08 | Qdrant vector adapter | `@mirk/vector-qdrant` | med | proposed, consumer-gated |
-| MR-09 | Shared-connection SurrealDB adapters | `@mirk/surreal` | med | core, Node, and WASM memory implemented |
-| MR-10 | Durable artifact substrate | `@mirk/artifact` | near | implemented, pre-release |
-| MR-11 | Markdown and YAML-headmatter store | `@mirk/store-markdown` | near | implemented, pre-release |
-| MR-12 | PostgreSQL async store adapter | `@mirk/store-postgres` | near | implemented, pre-release |
+| MR-09 | Shared-connection SurrealDB adapters | `@mirk/surreal` | med | core, Node, and WASM memory shipped |
+| MR-10 | Durable artifact substrate | `@mirk/artifact` | near | shipped |
+| MR-11 | Markdown and YAML-headmatter store | `@mirk/store-markdown` | near | shipped |
+| MR-12 | PostgreSQL async store adapter | `@mirk/store-postgres` | near | shipped |
 | MR-13 | PostgreSQL native full-text facet | `@mirk/store-postgres/search` | med | proposed, parity-gated |
 | MR-14 | PostgreSQL pgvector facet | `@mirk/store-postgres/vector` | med | proposed, consumer-gated |
-| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store` | near | implemented; downstream integration in progress |
+| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store` | near | shipped |
+| MR-16 | Backend-neutral atomic mutation capabilities | `@mirk/store` | near | proposed, contract-gated |
+| MR-17 | Coordinated multi-process SQLite writer profile | package TBD | med | proposed, evidence-gated |
 
 ## Near term
 
@@ -63,8 +65,9 @@ overlays, references, provenance, and diagnostics. Core remains parser-injected 
 based. Store integration lives at `@mirk/fixtures/store` and can both load fixture records and seed
 ordinary collections.
 
-Remaining work includes filesystem and package-resource sources, additional parser plugins, CLI
-support, and broader browser and packaging verification.
+Filesystem and file-backed package-resource sources are implemented behind explicit Node-only
+subpaths for the next release. Remaining work includes CLI support, optional parser plugins, bundled
+browser/edge package manifests, and broader packaging verification.
 
 Specification: [`fixtures-spec.md`](fixtures-spec.md). Package documentation:
 [`packages/fixtures/README.md`](../packages/fixtures/README.md).
@@ -126,6 +129,24 @@ real PostgreSQL server.
 Specification: [`store-postgres-spec.md`](store-postgres-spec.md). Package documentation:
 [`packages/store-postgres/README.md`](../packages/store-postgres/README.md).
 
+### MR-15 · Shared logical namespaces and bounded SQLite writer waits
+
+`@mirk/store@0.8.0` ships logical `namespaceStore()` views, a 30-second default SQLite busy timeout,
+and synchronous `deferred`, `immediate`, and `exclusive` transaction modes on `SqliteAdapter`. These
+are the admitted direct-connection foundation; they do not claim that direct SQLite is a universal
+multi-process default.
+
+The broader concurrency specification is split across MR-15's shipped foundation, MR-16's proposed
+atomic mutation contract, and MR-17's proposed coordinated writer profile:
+[`shared-store-concurrency-spec.md`](shared-store-concurrency-spec.md).
+
+### MR-16 · Backend-neutral atomic mutation capabilities
+
+Define deliberately optional transaction, compare-and-set, idempotency, and typed conflict
+capabilities that async and sync backends can implement without pretending a sequence of independent
+writes is atomic. This lands only with cross-backend conformance tests and at least one real consumer
+that needs the same contract.
+
 ## Medium term
 
 ### MR-13 · PostgreSQL native full-text search facet
@@ -140,6 +161,13 @@ must be explicit.
 A separately imported `AsyncVectorStore` facet sharing the MR-12 pool. Exact cosine search is the
 parity baseline. The vector extension and codec remain dependencies of this subpath only; HNSW and
 IVFFlat are explicit operational options because they may trade recall for latency.
+
+### MR-17 · Coordinated multi-process SQLite writer profile
+
+A reusable async client boundary around one SQLite owner, selected only after a two-process fault and
+contention harness proves its protocol, authorization, lifecycle, checkpoint, and indeterminate-write
+semantics. Local libSQL should be evaluated before introducing a bespoke service. Direct
+multi-process SQLite remains an explicit bounded-workload option rather than the default.
 
 ### MR-02 · Event primitive
 
