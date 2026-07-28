@@ -1,10 +1,17 @@
 {
   "name": "@mirk/store-markdown",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Human-editable Markdown and YAML headmatter adapter for @mirk/store.",
   "license": "Apache-2.0",
-  "keywords": ["storage", "markdown", "yaml", "frontmatter", "git", "mirk"],
+  "keywords": [
+    "storage",
+    "markdown",
+    "yaml",
+    "frontmatter",
+    "git",
+    "mirk"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nightwork-dev/mirk.git",
@@ -20,7 +27,9 @@
       "types": "./src/index.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -49,7 +58,7 @@
       }
     },
     "dependencies": {
-      "@mirk/store": "^0.7.0",
+      "@mirk/store": "^0.8.0",
       "yaml": "^2.8.1"
     }
   }

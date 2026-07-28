@@ -1,6 +1,6 @@
 {
   "name": "@mirk/artifact",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Domain-neutral artifact identity, integrity, lineage, and object-storage coordination.",
   "license": "Apache-2.0",

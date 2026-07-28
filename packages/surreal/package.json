@@ -1,6 +1,6 @@
 {
   "name": "@mirk/surreal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "SurrealDB source adapters for Mirk over one shared async connection.",
   "license": "Apache-2.0",
@@ -131,8 +131,8 @@
       }
     },
     "dependencies": {
-      "@mirk/artifact": "^0.1.0",
-      "@mirk/store": "^0.7.0",
+      "@mirk/artifact": "^0.1.1",
+      "@mirk/store": "^0.8.0",
       "surrealdb": "^2.0.4"
     }
   }
