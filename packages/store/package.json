@@ -2,7 +2,7 @@
   "name": "@mirk/store",
   "version": "0.8.0",
   "type": "module",
-  "description": "Code-split storage ports + source adapters under one namespace. KV + collection store and vector similarity store as interface subpaths; the sqlite source-adapter implements both over one connection.",
+  "description": "Code-split key-value, collection, vector, full-text search, graph, and SQL storage ports with in-memory references and a shared-connection SQLite adapter.",
   "license": "Apache-2.0",
   "keywords": [
     "storage",
@@ -10,6 +10,9 @@
     "collection-store",
     "vector",
     "vector-search",
+    "full-text-search",
+    "graph",
+    "graph-traversal",
     "similarity",
     "cosine",
     "sqlite",

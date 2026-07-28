@@ -67,6 +67,9 @@ importers:
       '@mirk/store':
         specifier: workspace:^
         version: link:../store
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.21
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)(yaml@2.9.0)
@@ -75,7 +78,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.0.0
-        version: 3.2.6(@types/node@25.9.3)(@vitest/browser@3.2.6)(yaml@2.9.0)
+        version: 3.2.6(@types/node@22.19.21)(@vitest/browser@3.2.6)(yaml@2.9.0)
 
   packages/migrate:
     dependencies:

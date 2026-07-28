@@ -2,7 +2,7 @@
 
 > Typed, layered, explainable authored data.
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-draft-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
 
 ## Why this exists
 
@@ -23,6 +23,10 @@ Once authored data matters, the same questions come up repeatedly:
 
 `@mirk/fixtures` turns authored data into something load-bearing: validated records, deterministic
 precedence, small patch overlays, checked references, and provenance.
+
+```bash
+npm install @mirk/fixtures
+```
 
 ## The contract
 
@@ -143,11 +147,40 @@ places authored data commonly lives.
 | --- | --- | --- |
 | `@mirk/fixtures/memory` | tests, examples, generated packs | implemented |
 | `@mirk/fixtures/store` | durable packs backed by `@mirk/store/kv` | implemented |
-| `@mirk/fixtures/filesystem` | local directories and CLI workflows | planned |
-| `@mirk/fixtures/package` | defaults shipped with a package | planned |
+| `@mirk/fixtures/filesystem` | local directories and CLI workflows | implemented |
+| `@mirk/fixtures/package` | file-backed defaults shipped with a package | implemented |
 
 Everything above the source boundary is shared: parsing, validation, layering, patching, reference
 resolution, materialization, diagnostics, and provenance.
+
+### Filesystem and package resources
+
+Node applications can load an ordinary directory through an explicit Node-only subpath:
+
+```ts
+import { createFilesystemFixtureSource } from "@mirk/fixtures/filesystem";
+
+const local = createFilesystemFixtureSource({
+  id: "local",
+  root: "./fixtures",
+});
+```
+
+Packages can expose file-backed defaults relative to their own module:
+
+```ts
+import { createPackageFixtureSource } from "@mirk/fixtures/package";
+
+const defaults = createPackageFixtureSource({
+  id: "defaults",
+  rootUrl: new URL("./fixtures/", import.meta.url),
+});
+```
+
+Both sources resolve and contain real paths beneath one fixed root, list normalized relative paths in
+deterministic order, and reject entries that escape through a symlink. Package resources are
+Node-first in this slice and require a `file:` URL; bundled browser manifests remain a separate
+future contract.
 
 ## Store integration
 
@@ -205,8 +238,8 @@ Root imports stay dependency-light and runtime-neutral.
 | `@mirk/fixtures` | registry, type definitions, loader, refs, diagnostics | no | implemented |
 | `@mirk/fixtures/memory` | in-memory source | no | implemented |
 | `@mirk/fixtures/store` | store source and seeding helpers | no | implemented |
-| `@mirk/fixtures/filesystem` | filesystem source | yes | planned |
-| `@mirk/fixtures/package` | package/resource source | maybe | planned |
+| `@mirk/fixtures/filesystem` | filesystem source | yes | implemented |
+| `@mirk/fixtures/package` | file-backed package/resource source | yes | implemented |
 | `@mirk/fixtures/cli` | CLI helpers | yes | planned |
 
 The root entry does not pull filesystem APIs, parser bundles, database bindings, or CLI code into a
@@ -221,8 +254,8 @@ Judge the package by a small set of promises:
 3. **No copy-the-world overrides.** Patch documents let higher layers own small changes.
 4. **No mystery refs.** References can be checked and graphed.
 5. **No unexplainable final values.** Provenance is part of the model.
-6. **No backend lock-in.** The same loader works over the implemented memory and store sources;
-   filesystem and package-resource sources remain planned.
+6. **No backend lock-in.** The same loader works over memory, filesystem, package-resource, and store
+   sources.
 7. **No storage coupling.** Fixture rules stay in this package; store adapters stay plain.
 
 ## What this is not
@@ -234,6 +267,7 @@ It is the reusable boundary between raw authored data and application state.
 
 ## Status
 
-Implemented core + store integration slice. Filesystem, package-resource, and CLI sources remain planned.
+Core, memory, store, references, materialization, filesystem, and file-backed package sources are
+implemented. CLI helpers remain planned.
 
 See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design and remaining slice plan.

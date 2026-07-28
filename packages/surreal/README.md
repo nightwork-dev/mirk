@@ -126,13 +126,13 @@ and object-storage subpaths are separate adapter entry points and are not re-exp
 
 | Subpath | Status | Contract |
 |---|---|---|
-| `/store` | supported | `AsyncStore` and `AsyncStoreInQuery` |
-| `/graph` | supported | explicit relation mapping and native bounded traversal |
-| `/vector` | supported | async cosine vector operations |
-| `/storage` | supported | chunked `ObjectStore` with renewable upload leases |
-| `/search` | unsupported by design | fails closed; Surreal's current single-field FTS cannot satisfy Mirk's weighted multi-field search contract |
-| `/node` | supported | owned Node embedded connection; compiled SurrealKV persistence is tested across process reopen |
-| `/wasm` | supported for `mem://` | owned browser WASM connection, exercised through the Mirk store adapter in real Chromium; `indxdb://` is blocked by [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) until the merged fix is published and passes Mirk's reopen test |
+| `@mirk/surreal/store` | supported | `AsyncStore` and `AsyncStoreInQuery` |
+| `@mirk/surreal/graph` | supported | explicit relation mapping and native bounded traversal |
+| `@mirk/surreal/vector` | supported | async cosine vector operations |
+| `@mirk/surreal/storage` | supported | chunked `ObjectStore` with renewable upload leases |
+| `@mirk/surreal/search` | unsupported by design | fails closed; Surreal's current single-field FTS cannot satisfy Mirk's weighted multi-field search contract |
+| `@mirk/surreal/node` | supported | owned Node embedded connection; compiled SurrealKV persistence is tested across process reopen |
+| `@mirk/surreal/wasm` | supported for `mem://` | owned browser WASM connection, exercised through the Mirk store adapter in real Chromium; `indxdb://` is blocked by [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) until the merged fix is published and passes Mirk's reopen test |
 
 `SurrealStoreAdapter` and `SurrealObjectStore` are integration-tested together through one
 connection with `StoreArtifactRepository` and `ArtifactCoordinator`. Persistent connection reopen
