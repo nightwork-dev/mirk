@@ -11,13 +11,19 @@ import { join } from "node:path";
 import { rmSync } from "node:fs";
 import Database from "better-sqlite3";
 
-import type { SearchStore } from "./search/types.js";
+import type { AsyncSearchStore, SearchStore } from "./search/types.js";
 import { InMemorySearchStore } from "./search/memory.js";
+import { toAsyncSearch } from "./search/to-async-search.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
 import { hashName } from "./sql.js";
 
 interface Made {
   store: SearchStore;
+  cleanup?: () => void;
+}
+
+interface MadeAsync {
+  store: AsyncSearchStore;
   cleanup?: () => void;
 }
 
@@ -268,6 +274,48 @@ function suite(name: string, make: () => Promise<Made>): void {
   });
 }
 
+function asyncSuite(name: string, make: () => Promise<MadeAsync>): void {
+  describe(name, () => {
+    let store: AsyncSearchStore;
+    let cleanup: (() => void) | undefined;
+
+    beforeEach(async () => {
+      const made = await make();
+      store = made.store;
+      cleanup = made.cleanup;
+    });
+    afterEach(() => cleanup?.());
+
+    it("indexMany + search preserve the sync store result contract through Promises", async () => {
+      await store.indexMany("pages", [
+        { id: "title-hit", fields: { title: "opal alpha", body: "plain beta" } },
+        { id: "body-hit", fields: { title: "plain beta", body: "opal alpha" } },
+        { id: "f1", fields: { title: "river stone", body: "quiet harbor" } },
+        { id: "f2", fields: { title: "forest moss", body: "desert sand" } },
+        { id: "f3", fields: { title: "ocean wave", body: "valley mist" } },
+      ]);
+
+      const res = await store.search("pages", "opal", { fieldWeights: { title: 5, body: 1 } });
+      expect(res.map((r) => r.id)).toEqual(["title-hit", "body-hit"]);
+      expect(res[0]!.score).toBeGreaterThan(res[1]!.score);
+    });
+
+    it("remove resolves to the sync result and removes the document", async () => {
+      await store.index("docs", { id: "a", text: "river flows" });
+      expect(await store.remove("docs", "a")).toBe(true);
+      expect(await store.remove("docs", "a")).toBe(false);
+      expect(await store.search("docs", "river")).toEqual([]);
+    });
+
+    it("synchronous backend errors become Promise rejections", async () => {
+      await store.index("pages", { id: "a", fields: { title: "opal", body: "plain" } });
+      await expect(
+        store.search("pages", "opal", { fieldWeights: { heading: 2 } }),
+      ).rejects.toThrow(/Unknown/);
+    });
+  });
+}
+
 suite("InMemorySearchStore", async () => ({
   store: new InMemorySearchStore(),
 }));
@@ -275,6 +323,15 @@ suite("InMemorySearchStore", async () => ({
 suite("SqliteAdapter.search (in-memory db)", async () => {
   const adapter = new SqliteAdapter({ path: ":memory:" });
   return { store: adapter.search, cleanup: () => adapter.close() };
+});
+
+asyncSuite("toAsyncSearch(InMemorySearchStore)", async () => ({
+  store: toAsyncSearch(new InMemorySearchStore()),
+}));
+
+asyncSuite("toAsyncSearch(SqliteAdapter.search)", async () => {
+  const adapter = new SqliteAdapter({ path: ":memory:" });
+  return { store: toAsyncSearch(adapter.search), cleanup: () => adapter.close() };
 });
 
 describe("SqliteAdapter.search — persistence", () => {

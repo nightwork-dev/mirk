@@ -221,8 +221,8 @@ Judge the package by a small set of promises:
 3. **No copy-the-world overrides.** Patch documents let higher layers own small changes.
 4. **No mystery refs.** References can be checked and graphed.
 5. **No unexplainable final values.** Provenance is part of the model.
-6. **No backend lock-in.** The same loader works over memory, files, package resources, and store
-   collections.
+6. **No backend lock-in.** The same loader works over the implemented memory and store sources;
+   filesystem and package-resource sources remain planned.
 7. **No storage coupling.** Fixture rules stay in this package; store adapters stay plain.
 
 ## What this is not

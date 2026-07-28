@@ -1,0 +1,139 @@
+{
+  "name": "@mirk/surreal",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "SurrealDB source adapters for Mirk over one shared async connection.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "storage",
+    "key-value",
+    "collection-store",
+    "surrealdb",
+    "mirk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/surreal"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/surreal#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./store": {
+      "import": "./src/store.ts",
+      "types": "./src/store.ts"
+    },
+    "./graph": {
+      "import": "./src/graph.ts",
+      "types": "./src/graph.ts"
+    },
+    "./vector": {
+      "import": "./src/vector.ts",
+      "types": "./src/vector.ts"
+    },
+    "./search": {
+      "import": "./src/search.ts",
+      "types": "./src/search.ts"
+    },
+    "./storage": {
+      "import": "./src/storage.ts",
+      "types": "./src/storage.ts"
+    },
+    "./node": {
+      "import": "./src/node.ts",
+      "types": "./src/node.ts"
+    },
+    "./wasm": {
+      "import": "./src/wasm.ts",
+      "types": "./src/wasm.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "vitest run --exclude 'src/**/*.browser.test.ts' && pnpm test:browser",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:remote": "node ./test/remote-server-smoke.mjs",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsup src/index.ts src/store.ts src/graph.ts src/vector.ts src/search.ts src/storage.ts src/node.ts src/wasm.ts --format esm --dts --external @surrealdb/node --external @surrealdb/wasm && node ./test/node-export-smoke.mjs"
+  },
+  "dependencies": {
+    "@mirk/artifact": "workspace:^",
+    "@mirk/store": "workspace:^",
+    "surrealdb": "^2.0.4"
+  },
+  "peerDependencies": {
+    "@surrealdb/node": "^3.0.3",
+    "@surrealdb/wasm": "^3.0.3"
+  },
+  "peerDependenciesMeta": {
+    "@surrealdb/node": {
+      "optional": true
+    },
+    "@surrealdb/wasm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@surrealdb/node": "^3.0.3",
+    "@types/node": "^22.0.0",
+    "@vitest/browser": "3.2.6",
+    "playwright": "1.61.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      },
+      "./store": {
+        "import": "./dist/store.js",
+        "types": "./dist/store.d.ts"
+      },
+      "./graph": {
+        "import": "./dist/graph.js",
+        "types": "./dist/graph.d.ts"
+      },
+      "./vector": {
+        "import": "./dist/vector.js",
+        "types": "./dist/vector.d.ts"
+      },
+      "./search": {
+        "import": "./dist/search.js",
+        "types": "./dist/search.d.ts"
+      },
+      "./storage": {
+        "import": "./dist/storage.js",
+        "types": "./dist/storage.d.ts"
+      },
+      "./node": {
+        "import": "./dist/node.js",
+        "types": "./dist/node.d.ts"
+      },
+      "./wasm": {
+        "import": "./dist/wasm.js",
+        "types": "./dist/wasm.d.ts"
+      }
+    },
+    "dependencies": {
+      "@mirk/artifact": "^0.1.0",
+      "@mirk/store": "^0.7.0",
+      "surrealdb": "^2.0.4"
+    }
+  }
+}

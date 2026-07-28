@@ -3,6 +3,7 @@
 //
 // Sync by design: the embedded backends (in-memory, sqlite) are synchronous —
 // better-sqlite3 is synchronous, and forcing async on a local call buys nothing.
+// AsyncSearchStore is the Promise-returning twin for remote backends.
 //
 // Hand-written per-method generics (mirroring VectorStore) rather than derived
 // via a mapped type: per-method generics (`index<M>`, `search<M>`, …) collapse to
@@ -92,4 +93,26 @@ export interface SearchStore {
     query: string,
     opts?: SearchOptions,
   ): SearchResult<M>[];
+}
+
+/** The async face of the same full-text search store. Remote backends implement
+ *  this natively; sync backends reach it via {@link toAsyncSearch}. */
+export interface AsyncSearchStore {
+  index<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    doc: SearchDocument<M>,
+  ): Promise<void>;
+
+  indexMany<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    docs: ReadonlyArray<SearchDocument<M>>,
+  ): Promise<void>;
+
+  remove(collection: string, id: string): Promise<boolean>;
+
+  search<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    query: string,
+    opts?: SearchOptions,
+  ): Promise<SearchResult<M>[]>;
 }

@@ -21,11 +21,12 @@ npm install sqlite-vec
 
 | Import | What it gives you | Native deps |
 |---|---|---|
-| `@mirk/store` | the ports + their in-memory references + `toAsync` + cosine helpers | none |
+| `@mirk/store` | the ports + their in-memory references + `toAsync` / `toAsyncSearch`, graph contract types, cosine helpers | none |
 | `@mirk/store/kv` | `SyncStore` port (key-value + collections), `InMemoryKv`, `toAsync` | none |
 | `@mirk/store/vector` | `VectorStore` port, `InMemoryVectorStore`, cosine helpers | none |
-| `@mirk/store/search` | `SearchStore` port, `InMemorySearchStore`, BM25-style keyword search | none |
-| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) | none |
+| `@mirk/store/search` | `SearchStore` / `AsyncSearchStore` ports, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search | none |
+| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none |
+| `@mirk/store/sql` | SQL adapter contract types | none |
 | `@mirk/store/sqlite` | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
@@ -50,6 +51,17 @@ const asyncKv = toAsync(kv);
 await asyncKv.get("user:1");
 ```
 
+Bind logical stores to one backing without exposing physical key or collection prefixes:
+
+```ts
+import { namespaceStore } from "@mirk/store";
+
+const projects = namespaceStore(kv, "app.projects.v1");
+const workspaces = namespaceStore(kv, "app.workspaces.v1");
+```
+
+Namespaces isolate keys and collection names while preserving the ordinary `SyncStore` contract.
+
 ### Collections
 
 A `SyncStore` is also a small document store, keyed by `id`:
@@ -68,27 +80,35 @@ kv.remove("posts", "p1");
 single-field shorthand or `fields` for named columns with query-time weighting:
 
 ```ts
-import { InMemorySearchStore } from "@mirk/store/search";
+import { InMemorySearchStore, toAsyncSearch } from "@mirk/store/search";
 
 const search = new InMemorySearchStore();
 search.index("pages", { id: "a", fields: { title: "Opal guide", body: "plain body" } });
 search.index("pages", { id: "b", fields: { title: "plain title", body: "Opal guide" } });
 search.search("pages", "opal", { fieldWeights: { title: 4, body: 1 } }); // [a, b]
+
+const asyncSearch = toAsyncSearch(search);
+await asyncSearch.search("pages", "opal");
 ```
 
 The first indexed document fixes a collection's field schema; later documents must use the same
 field names. `text` and `fields: { text }` are the same single-field schema for backwards
-compatibility.
+compatibility. Remote search backends should implement `AsyncSearchStore` directly; local sync
+backends can be lifted with `toAsyncSearch`.
 
 ## Graph helpers
 
 `@mirk/store/graph` stores edges as ordinary collection records and traverses them through the
-existing collection port. Policy stays caller-owned through `StoreFilter`.
+existing collection port. Policy stays caller-owned through `StoreFilter`. Remote adapters with a
+real graph engine can expose `AsyncGraphTraversal`; `traverse()` and `traverseFrontierBatched()`
+delegate to that native path only for collections where `canTraverseGraph(collection)` is true.
+Otherwise `traverseFrontierBatched()` uses `listWhereIn` when available, then falls back to the
+load-once traversal.
 
 ```ts
 import { traverse } from "@mirk/store/graph";
 
-const hits = traverse(kv, { start: "node:a", depth: 2, direction: "out" });
+const hits = await traverse(asyncKv, "edges", { start: "node:a", depth: 2, direction: "out" });
 ```
 
 ## SQLite adapter — one connection, many capabilities
@@ -112,6 +132,11 @@ const query = new Float32Array(768);
 db.vector.upsert("docs", { id: "a", vector: embedding });
 const results = db.vector.search("docs", query, { topK: 10 }); // ranked by cosine
 
+db.transaction(() => {
+  db.kv.set("jobs:next", 42);
+  db.kv.put("audit", { id: "42", event: "allocated" });
+}, "immediate");
+
 db.close();
 ```
 
@@ -123,6 +148,11 @@ db.close();
 | `db` | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one. |
 | `dimensions` | `number` | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
 | `forceJsCosine` | `boolean` | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests). |
+| `busyTimeoutMs` | `number` | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections. |
+
+`transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
+Modes are `deferred` (default), `immediate`, and `exclusive`. The callback must not perform
+asynchronous or external work.
 
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by
 **exact cosine**. When the optional `sqlite-vec` peer is installed, search is transparently
@@ -134,9 +164,10 @@ live.
 
 Embedded backends are **synchronous** — `better-sqlite3` is synchronous, and an async-everywhere
 interface would tax every local call with a Promise it doesn't need. A `SyncStore` lifts to an
-async API via `toAsync(store)`; the reverse is impossible. Pick sync for embedded/local, and reach
-for async only where a remote backend genuinely requires it.
+async API via `toAsync(store)`, and a `SearchStore` lifts via `toAsyncSearch(search)`; the reverse
+is impossible. Pick sync for embedded/local, and reach for async only where a remote backend
+genuinely requires it.
 
 ## License
 
-Apache-2.0 © Mirk contributors
+Apache-2.0. See [LICENSE](LICENSE).

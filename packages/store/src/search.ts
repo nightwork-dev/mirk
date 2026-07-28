@@ -5,6 +5,7 @@
 
 export type {
   SearchStore,
+  AsyncSearchStore,
   SearchDocument,
   SearchTextDocument,
   SearchFieldDocument,
@@ -12,6 +13,7 @@ export type {
   SearchResult,
 } from "./search/types.js";
 export { InMemorySearchStore } from "./search/memory.js";
+export { toAsyncSearch } from "./search/to-async-search.js";
 export { tokenize, sanitizeFtsQuery } from "./search/tokenize.js";
 // The canonical exact-match meta filter — the same definition /vector exports.
 export { matchesWhere } from "./vector/filter.js";

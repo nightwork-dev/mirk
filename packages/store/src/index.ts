@@ -23,6 +23,7 @@ export type {
 } from './types.js';
 export { toAsync } from './to-async.js';
 export { InMemoryStore as InMemoryKv } from './backends/memory.js';
+export { namespaceStore } from './namespace.js';
 
 // Vector port + in-memory reference + shared helpers
 export type {
@@ -48,9 +49,22 @@ export { matchesWhere } from './vector/filter.js';
 // Search port + in-memory reference + shared tokenization helpers
 export type {
   SearchStore,
+  AsyncSearchStore,
   SearchDocument,
+  SearchTextDocument,
+  SearchFieldDocument,
   SearchOptions,
   SearchResult,
 } from './search/types.js';
 export { InMemorySearchStore } from './search/memory.js';
+export { toAsyncSearch } from './search/to-async-search.js';
 export { tokenize, sanitizeFtsQuery } from './search/tokenize.js';
+
+// Graph contract types. The traversal helpers remain available from /graph.
+export type {
+  Edge,
+  Direction,
+  GraphTraversalOptions,
+  GraphTraversalResult,
+  AsyncGraphTraversal,
+} from './graph.js';
