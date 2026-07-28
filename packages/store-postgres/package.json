@@ -1,6 +1,6 @@
 {
   "name": "@mirk/store-postgres",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "PostgreSQL source adapter for @mirk/store's async key-value and collection ports.",
   "license": "Apache-2.0",
@@ -26,7 +26,9 @@
       "types": "./src/index.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -56,7 +58,7 @@
       }
     },
     "dependencies": {
-      "@mirk/store": "^0.7.0",
+      "@mirk/store": "^0.8.0",
       "pg": "^8.22.0"
     }
   }

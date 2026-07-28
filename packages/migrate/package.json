@@ -1,6 +1,6 @@
 {
   "name": "@mirk/migrate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Backend-agnostic, checkpointed copy helpers over Mirk ports and caller-supplied export manifests.",
   "license": "Apache-2.0",
