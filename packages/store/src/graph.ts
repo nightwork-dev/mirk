@@ -1,9 +1,9 @@
 // ─── @mirk/store/graph ──────────────────────────────────────────────────────
 // A PURE graph-traversal primitive over the AsyncStore port. Edges are flat
 // collection records, so any field is matchable through StoreFilter.where (exact
-// match) — there is no dedicated edge table or graph engine. Because it runs over
-// the port, the SAME traversal works over every backing (in-memory, sqlite,
-// libsql) for free.
+// match). Backends may expose an optional native traversal capability for
+// explicitly configured graph collections; otherwise the same generic traversal
+// works over every backing (in-memory, sqlite, libsql) for free.
 //
 // Explicitly NOT graphRAG: there is no embed → vectorSearch → expand → score
 // here. Policy (which edges are eligible) stays OUT of the primitive — the caller
@@ -28,6 +28,27 @@ export interface Edge {
 
 /** Which way to walk an edge. "both" treats every edge as bidirectional. */
 export type Direction = "out" | "in" | "both";
+
+export interface GraphTraversalOptions {
+  start: string;
+  depth: number;
+  direction?: Direction;
+  edgeTypes?: string[];
+  edgeFilter?: StoreFilter;
+}
+
+export interface GraphTraversalResult {
+  nodes: string[];
+  edges: Edge[];
+}
+
+export interface AsyncGraphTraversal {
+  canTraverseGraph(collection: string): boolean;
+  traverseGraph(
+    collection: string,
+    options: GraphTraversalOptions,
+  ): Promise<GraphTraversalResult>;
+}
 
 /** Keep edges whose `type` is in the set. No-op when `edgeTypes` is undefined.
  *  Done in-memory because StoreFilter.where is exact-match only and cannot
@@ -67,6 +88,11 @@ function withoutWhereField(filter: StoreFilter | undefined, field: string): Stor
 
 function hasListWhereIn(store: AsyncStore): store is AsyncStore & AsyncStoreInQuery {
   return typeof (store as Partial<AsyncStoreInQuery>).listWhereIn === "function";
+}
+
+function hasGraphTraversal(store: AsyncStore): store is AsyncStore & AsyncGraphTraversal {
+  const candidate = store as Partial<AsyncGraphTraversal>;
+  return typeof candidate.canTraverseGraph === "function" && typeof candidate.traverseGraph === "function";
 }
 
 async function frontierEdges(
@@ -163,14 +189,12 @@ export async function neighbors(
 export async function traverse(
   store: AsyncStore,
   collection: string,
-  opts: {
-    start: string;
-    depth: number;
-    direction?: Direction;
-    edgeTypes?: string[];
-    edgeFilter?: StoreFilter;
-  },
-): Promise<{ nodes: string[]; edges: Edge[] }> {
+  opts: GraphTraversalOptions,
+): Promise<GraphTraversalResult> {
+  if (hasGraphTraversal(store) && store.canTraverseGraph(collection)) {
+    return store.traverseGraph(collection, opts);
+  }
+
   const direction = opts.direction ?? "out";
 
   if (!Number.isFinite(opts.depth) || opts.depth <= 0) {
@@ -259,14 +283,12 @@ export async function traverse(
 export async function traverseFrontierBatched(
   store: AsyncStore,
   collection: string,
-  opts: {
-    start: string;
-    depth: number;
-    direction?: Direction;
-    edgeTypes?: string[];
-    edgeFilter?: StoreFilter;
-  },
-): Promise<{ nodes: string[]; edges: Edge[] }> {
+  opts: GraphTraversalOptions,
+): Promise<GraphTraversalResult> {
+  if (hasGraphTraversal(store) && store.canTraverseGraph(collection)) {
+    return store.traverseGraph(collection, opts);
+  }
+
   if (!hasListWhereIn(store)) {
     return traverse(store, collection, opts);
   }

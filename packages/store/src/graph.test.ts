@@ -7,7 +7,15 @@ import { describe, it, expect, beforeEach } from "vitest";
 import type { AsyncStore, AsyncStoreInQuery, StoreFilter } from "./types.js";
 import { InMemoryKv, toAsync } from "./kv.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
-import { neighbors, traverse, traverseFrontierBatched, type Edge } from "./graph.js";
+import {
+  neighbors,
+  traverse,
+  traverseFrontierBatched,
+  type AsyncGraphTraversal,
+  type Edge,
+  type GraphTraversalOptions,
+  type GraphTraversalResult,
+} from "./graph.js";
 
 const COLLECTION = "edges";
 
@@ -94,6 +102,46 @@ function batchOnlyStore(edges: Edge[]): {
     },
   };
   return { store, queries };
+}
+
+function nativeGraphStore(
+  collections: readonly string[],
+  result: GraphTraversalResult,
+): {
+  store: AsyncStore & AsyncStoreInQuery & AsyncGraphTraversal;
+  traversals: Array<{ collection: string; options: GraphTraversalOptions }>;
+  listWhereInCalls: number;
+} {
+  const configured = new Set(collections);
+  const traversals: Array<{ collection: string; options: GraphTraversalOptions }> = [];
+  let listWhereInCalls = 0;
+  const base = toAsync(new InMemoryKv()) as AsyncStore & AsyncStoreInQuery;
+  const baseListWhereIn = base.listWhereIn.bind(base);
+  const store = Object.assign(base, {
+    canTraverseGraph(collection: string): boolean {
+      return configured.has(collection);
+    },
+    async traverseGraph(collection: string, options: GraphTraversalOptions): Promise<GraphTraversalResult> {
+      traversals.push({ collection, options });
+      return result;
+    },
+    async listWhereIn<T>(
+      collection: string,
+      field: string,
+      values: readonly unknown[],
+      filter?: StoreFilter,
+    ): Promise<T[]> {
+      listWhereInCalls++;
+      return baseListWhereIn<T>(collection, field, values, filter);
+    },
+  }) as AsyncStore & AsyncStoreInQuery & AsyncGraphTraversal;
+  return {
+    store,
+    traversals,
+    get listWhereInCalls() {
+      return listWhereInCalls;
+    },
+  };
 }
 
 describe("graph — neighbors", () => {
@@ -334,7 +382,7 @@ describe("graph — traverse", () => {
   });
 
   it("full edge record preserved — extra fields (from_type, to_type, weight) survive round-trip", async () => {
-    // Contract that deadletters gates on: graph functions never project edge records
+    // Consumer contract: graph functions never project edge records
     // down to {id,from,to,type}. Every stored field must be present on returned edges.
     const richEdge = {
       id: "e_ft",
@@ -412,5 +460,172 @@ describe("graph — traverse", () => {
     } finally {
       adapter.close();
     }
+  });
+
+  it("traverse delegates to native graph traversal for configured collections", async () => {
+    const native = nativeGraphStore(["native-edges"], {
+      nodes: ["native-node"],
+      edges: [edge("native-edge", "a", "native-node", "link")],
+    });
+
+    const opts = { start: "a", depth: 2, edgeTypes: ["link"] };
+    await expect(traverse(native.store, "native-edges", opts)).resolves.toEqual({
+      nodes: ["native-node"],
+      edges: [edge("native-edge", "a", "native-node", "link")],
+    });
+    expect(native.traversals).toEqual([{ collection: "native-edges", options: opts }]);
+  });
+
+  it("frontier-batched delegates to native graph traversal when that is the only fast path", async () => {
+    const traversals: Array<{ collection: string; options: GraphTraversalOptions }> = [];
+    const store: AsyncStore & AsyncGraphTraversal = {
+      meta: { backend: "native-only-probe" },
+      canTraverseGraph(collection: string): boolean {
+        return collection === "native-edges";
+      },
+      async traverseGraph(collection: string, options: GraphTraversalOptions): Promise<GraphTraversalResult> {
+        traversals.push({ collection, options });
+        return { nodes: ["b"], edges: [edge("e_ab", "a", "b", "follows")] };
+      },
+      async get<T>(): Promise<T | null> {
+        throw new Error("unused");
+      },
+      async set(): Promise<void> {
+        throw new Error("unused");
+      },
+      async has(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async delete(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async keys(): Promise<string[]> {
+        throw new Error("unused");
+      },
+      async list<T>(): Promise<T[]> {
+        throw new Error("native traversal must not call list()");
+      },
+      async getById<T>(): Promise<T | null> {
+        throw new Error("unused");
+      },
+      async put<T extends { id: string }>(_: string, item: T): Promise<T> {
+        return item;
+      },
+      async remove(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async count(): Promise<number> {
+        throw new Error("unused");
+      },
+    };
+
+    const opts = { start: "a", depth: 1 };
+    await expect(traverseFrontierBatched(store, "native-edges", opts)).resolves.toEqual({
+      nodes: ["b"],
+      edges: [edge("e_ab", "a", "b", "follows")],
+    });
+    expect(traversals).toEqual([{ collection: "native-edges", options: opts }]);
+  });
+
+  it("frontier-batched native traversal wins over listWhereIn when both capabilities apply", async () => {
+    const native = nativeGraphStore(["native-edges"], {
+      nodes: ["b"],
+      edges: [edge("e_ab", "a", "b", "follows")],
+    });
+    await native.store.put("native-edges", edge("fallback", "a", "fallback", "follows"));
+
+    const result = await traverseFrontierBatched(native.store, "native-edges", {
+      start: "a",
+      depth: 1,
+    });
+
+    expect(result.nodes).toEqual(["b"]);
+    expect(native.traversals).toHaveLength(1);
+    expect(native.listWhereInCalls).toBe(0);
+  });
+
+  it("unconfigured collections on a native-capable store use listWhereIn before load-once fallback", async () => {
+    const native = nativeGraphStore(["native-edges"], {
+      nodes: ["wrong"],
+      edges: [edge("wrong", "a", "wrong", "link")],
+    });
+    for (const e of EDGES) await native.store.put("flat-edges", e);
+
+    const result = await traverseFrontierBatched(native.store, "flat-edges", {
+      start: "a",
+      depth: 2,
+      edgeFilter: { where: { published: true } },
+    });
+
+    expect(result.nodes).toEqual(["b", "c", "d", "e"]);
+    expect(result.edges.map((e) => e.id)).toEqual(["e_ab", "e_ad", "e_bc", "e_de"]);
+    expect(native.traversals).toEqual([]);
+    expect(native.listWhereInCalls).toBe(2);
+  });
+
+  it("stores without native or listWhereIn use the load-once traversal fallback", async () => {
+    let listCalls = 0;
+    const store: AsyncStore = {
+      meta: { backend: "load-once-probe" },
+      async get<T>(): Promise<T | null> {
+        throw new Error("unused");
+      },
+      async set(): Promise<void> {
+        throw new Error("unused");
+      },
+      async has(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async delete(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async keys(): Promise<string[]> {
+        throw new Error("unused");
+      },
+      async list<T>(): Promise<T[]> {
+        listCalls++;
+        return EDGES as T[];
+      },
+      async getById<T>(): Promise<T | null> {
+        throw new Error("unused");
+      },
+      async put<T extends { id: string }>(_: string, item: T): Promise<T> {
+        return item;
+      },
+      async remove(): Promise<boolean> {
+        throw new Error("unused");
+      },
+      async count(): Promise<number> {
+        throw new Error("unused");
+      },
+    };
+
+    const result = await traverseFrontierBatched(store, COLLECTION, {
+      start: "a",
+      depth: 2,
+    });
+
+    expect(result.nodes).toEqual(["b", "c", "d", "e", "x"]);
+    expect(listCalls).toBe(1);
+  });
+
+  it("native-capable stores do not treat arbitrary from/to records as configured graphs", async () => {
+    const native = nativeGraphStore(["native-edges"], {
+      nodes: ["wrong"],
+      edges: [edge("wrong", "source", "wrong", "link")],
+    });
+    await native.store.put("notes", {
+      id: "note-1",
+      from: "source",
+      to: "target",
+      type: "mentions",
+      body: "plain collection record",
+    });
+
+    const result = await traverse(native.store, "notes", { start: "source", depth: 1 });
+
+    expect(result.nodes).toEqual(["target"]);
+    expect(result.edges.map((e) => e.id)).toEqual(["note-1"]);
+    expect(native.traversals).toEqual([]);
   });
 });

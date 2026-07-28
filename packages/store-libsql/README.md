@@ -56,6 +56,7 @@ await adapter.vector.upsert("docs", {
 });
 
 // Pre-KNN metadata filter: topK is the true nearest WITHIN the filtered set.
+const queryVector = new Float32Array(1536);
 const hits = await adapter.vector.search("docs", queryVector, {
   topK: 5,
   where: { type: "document" },

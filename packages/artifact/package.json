@@ -4,6 +4,13 @@
   "type": "module",
   "description": "Domain-neutral artifact identity, integrity, lineage, and object-storage coordination.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/artifact"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/artifact#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

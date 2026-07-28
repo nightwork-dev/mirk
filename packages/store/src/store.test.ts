@@ -463,6 +463,44 @@ describe.each<[string, () => SyncStore]>([
 });
 
 describe('SqliteAdapter — one connection serves kv + vector', () => {
+  it('applies an explicit busy timeout to caller-owned connections', async () => {
+    const Database = (await import('better-sqlite3')).default;
+    const raw = new Database(':memory:');
+    const adapter = new SqliteAdapter({ path: ':memory:', db: raw, busyTimeoutMs: 12_345 });
+    expect(raw.pragma('busy_timeout', { simple: true })).toBe(12_345);
+    adapter.close();
+  });
+
+  it('rejects invalid busy timeouts before opening the database', () => {
+    expect(() => new SqliteAdapter({ path: ':memory:', busyTimeoutMs: -1 })).toThrow(
+      'busyTimeoutMs must be a non-negative safe integer',
+    );
+  });
+
+  it('exposes atomic synchronous transactions without exposing the database handle', () => {
+    const adapter = new SqliteAdapter({ path: ':memory:' });
+    try {
+      expect(() =>
+        adapter.transaction(() => {
+          adapter.kv.set('first', 1);
+          adapter.kv.set('second', 2);
+          throw new Error('rollback');
+        }, 'immediate'),
+      ).toThrow('rollback');
+      expect(adapter.kv.get('first')).toBeNull();
+      expect(adapter.kv.get('second')).toBeNull();
+
+      const result = adapter.transaction(() => {
+        adapter.kv.set('committed', 3);
+        return 'ok';
+      }, 'immediate');
+      expect(result).toBe('ok');
+      expect(adapter.kv.get('committed')).toBe(3);
+    } finally {
+      adapter.close();
+    }
+  });
+
   it('shares a single db across the kv and vector facets', () => {
     const db = new SqliteAdapter({ path: ':memory:', dimensions: 3 });
     try {

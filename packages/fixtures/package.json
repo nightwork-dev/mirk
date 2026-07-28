@@ -4,7 +4,6 @@
   "type": "module",
   "description": "Typed, layered, explainable authored data: schema validation, patch overlays, references, provenance, and store integration.",
   "license": "Apache-2.0",
-  "author": "David Robinson <dr@monetise.io>",
   "keywords": [
     "fixtures",
     "authored-data",

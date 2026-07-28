@@ -136,7 +136,11 @@ export interface SqliteAdapterOptions {
   /** Force the exact JS-cosine search path even when sqlite-vec is installed.
    *  Mainly for parity testing; production should leave this off. */
   forceJsCosine?: boolean;
+  /** Maximum time SQLite waits for another process's writer before returning SQLITE_BUSY. */
+  busyTimeoutMs?: number;
 }
+
+export type SqliteTransactionMode = 'deferred' | 'immediate' | 'exclusive';
 
 /** Multi-capability sqlite source adapter. Open once; use `.kv` and/or `.vector`
  *  — both ride the same connection. */
@@ -148,9 +152,13 @@ export class SqliteAdapter {
 
   constructor(opts: SqliteAdapterOptions) {
     const ownsDb = opts.db === undefined;
-    this.db = opts.db ?? new Database(opts.path);
+    if (opts.busyTimeoutMs !== undefined && (!Number.isSafeInteger(opts.busyTimeoutMs) || opts.busyTimeoutMs < 0)) {
+      throw new Error(`busyTimeoutMs must be a non-negative safe integer; got ${opts.busyTimeoutMs}.`);
+    }
+    this.db = opts.db ?? new Database(opts.path, { timeout: opts.busyTimeoutMs ?? 30_000 });
     try {
       this.db.pragma('journal_mode = WAL');
+      this.db.pragma(`busy_timeout = ${opts.busyTimeoutMs ?? 30_000}`);
       this.kv = new SqliteKvFacet(this.db);
       this.vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions, opts.forceJsCosine);
       this.search = new SqliteSearchFacet(this.db);
@@ -166,6 +174,17 @@ export class SqliteAdapter {
       }
       throw err;
     }
+  }
+
+  /** Run synchronous work atomically on this adapter's connection.
+   *
+   * The callback may use any adapter facet. It must not perform asynchronous or
+   * external work: better-sqlite3 transactions are synchronous and hold the
+   * database transaction open until the callback returns.
+   */
+  transaction<T>(work: () => T, mode: SqliteTransactionMode = 'deferred'): T {
+    const transaction = this.db.transaction(work);
+    return transaction[mode]();
   }
 
   /** Close the underlying connection (shared by both facets). */
@@ -644,7 +663,7 @@ class SqliteVectorFacet implements VectorStore {
 // FTS5 + bm25 over the same connection as .kv/.vector. Per collection: one
 // stable field schema, a docs table {id, <field columns>, meta_json} as the FTS5
 // external-content source, with triggers keeping the index in lockstep (the same
-// pattern @gonk/knowledge uses). search runs `MATCH ? ORDER BY bm25(fts,
+// pattern used by downstream knowledge indexes). search runs `MATCH ? ORDER BY bm25(fts,
 // ...weights)`, maps bm25 (lower=better) to score=-bm25 (higher=better), and
 // applies the meta `filter` in JS via matchesWhere — the identical semantics to
 // the in-memory reference.

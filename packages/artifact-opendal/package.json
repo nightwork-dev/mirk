@@ -4,6 +4,13 @@
   "type": "module",
   "description": "OpenDAL object-storage adapter for @mirk/artifact.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/artifact-opendal"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/artifact-opendal#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -12,7 +19,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsup src/index.ts --format esm --dts --external opendal",
     "test": "vitest run",
