@@ -19,15 +19,16 @@ npm install sqlite-vec
 
 ## Subpaths
 
-| Import | What it gives you | Native deps |
-|---|---|---|
-| `@mirk/store` | the ports + their in-memory references + `toAsync` / `toAsyncSearch`, graph contract types, cosine helpers | none |
-| `@mirk/store/kv` | `SyncStore` port (key-value + collections), `InMemoryKv`, `toAsync` | none |
-| `@mirk/store/vector` | `VectorStore` port, `InMemoryVectorStore`, cosine helpers | none |
-| `@mirk/store/search` | `SearchStore` / `AsyncSearchStore` ports, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search | none |
-| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none |
-| `@mirk/store/sql` | SQL adapter contract types | none |
-| `@mirk/store/sqlite` | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
+| Import                     | What it gives you                                                                                                                                | Native deps                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `@mirk/store`              | the ports + their in-memory references + `toAsync` / `toAsyncSearch`, graph contract types, cosine helpers                                       | none                                                  |
+| `@mirk/store/kv`           | `SyncStore` port (key-value + collections), `InMemoryKv`, `toAsync`                                                                              | none                                                  |
+| `@mirk/store/vector`       | `VectorStore` port, `InMemoryVectorStore`, cosine helpers                                                                                        | none                                                  |
+| `@mirk/store/search`       | `SearchStore` / `AsyncSearchStore` ports, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search                                      | none                                                  |
+| `@mirk/store/graph`        | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none                                                  |
+| `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                                                  |
+| `@mirk/store/coordination` | SQLite-backed async keyed coordinator with leases, renewal, fencing generations, and ownership-loss checks                                       | `better-sqlite3` (peer)                               |
+| `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
 port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
@@ -43,8 +44,8 @@ import { InMemoryKv, toAsync } from "@mirk/store/kv";
 
 const kv = new InMemoryKv();
 kv.set("user:1", { name: "Ada" });
-kv.get<{ name: string }>("user:1");   // { name: "Ada" }
-kv.keys("user:");                      // ["user:1"]
+kv.get<{ name: string }>("user:1"); // { name: "Ada" }
+kv.keys("user:"); // ["user:1"]
 
 // Lift any SyncStore to a Promise-returning API (one-way: sync ⊂ async):
 const asyncKv = toAsync(kv);
@@ -68,9 +69,9 @@ A `SyncStore` is also a small document store, keyed by `id`:
 
 ```ts
 kv.put("posts", { id: "p1", title: "Hello", pinned: true });
-kv.getById("posts", "p1");                       // { id: "p1", title: "Hello", pinned: true }
+kv.getById("posts", "p1"); // { id: "p1", title: "Hello", pinned: true }
 kv.list("posts", { where: { pinned: true }, sortBy: "title", limit: 10 });
-kv.count("posts");                               // 1
+kv.count("posts"); // 1
 kv.remove("posts", "p1");
 ```
 
@@ -83,8 +84,14 @@ single-field shorthand or `fields` for named columns with query-time weighting:
 import { InMemorySearchStore, toAsyncSearch } from "@mirk/store/search";
 
 const search = new InMemorySearchStore();
-search.index("pages", { id: "a", fields: { title: "Opal guide", body: "plain body" } });
-search.index("pages", { id: "b", fields: { title: "plain title", body: "Opal guide" } });
+search.index("pages", {
+  id: "a",
+  fields: { title: "Opal guide", body: "plain body" },
+});
+search.index("pages", {
+  id: "b",
+  fields: { title: "plain title", body: "Opal guide" },
+});
 search.search("pages", "opal", { fieldWeights: { title: 4, body: 1 } }); // [a, b]
 
 const asyncSearch = toAsyncSearch(search);
@@ -108,7 +115,11 @@ load-once traversal.
 ```ts
 import { traverse } from "@mirk/store/graph";
 
-const hits = await traverse(asyncKv, "edges", { start: "node:a", depth: 2, direction: "out" });
+const hits = await traverse(asyncKv, "edges", {
+  start: "node:a",
+  depth: 2,
+  direction: "out",
+});
 ```
 
 ## SQLite adapter — one connection, many capabilities
@@ -124,7 +135,10 @@ const db = new SqliteAdapter({ path: "data.db" });
 
 db.kv.set("user:1", { name: "Ada" });
 
-db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello world" } });
+db.search.index("pages", {
+  id: "intro",
+  fields: { title: "Intro", body: "hello world" },
+});
 db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
 
 const embedding = new Float32Array(768); // your real embedding here
@@ -142,13 +156,13 @@ db.close();
 
 ### `SqliteAdapter` options
 
-| Option | Type | Notes |
-|---|---|---|
-| `path` | `string` | DB file path, or `":memory:"`. |
-| `db` | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one. |
-| `dimensions` | `number` | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
-| `forceJsCosine` | `boolean` | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests). |
-| `busyTimeoutMs` | `number` | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections. |
+| Option          | Type       | Notes                                                                                                                                                          |
+| --------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`          | `string`   | DB file path, or `":memory:"`.                                                                                                                                 |
+| `db`            | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one.                                                                                          |
+| `dimensions`    | `number`   | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
+| `forceJsCosine` | `boolean`  | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests).                                                                           |
+| `busyTimeoutMs` | `number`   | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections.                                            |
 
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
 Modes are `deferred` (default), `immediate`, and `exclusive`. The callback must not perform
@@ -159,6 +173,44 @@ Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs
 accelerated by vec0 using the `cosine` distance metric, so rankings are identical to the JS path;
 without it, the exact JS-cosine fallback runs. `db.vector.meta.accelerated` reports which path is
 live.
+
+## Async coordination
+
+`@mirk/store/coordination` exposes one cooperating-writer critical-section primitive for async
+external work that cannot live inside a synchronous SQLite transaction:
+
+```ts
+import { createSqliteCoordinator } from "@mirk/store/coordination";
+
+const coordinator = createSqliteCoordinator({
+  path: "roadmap/.locks/coordination.sqlite",
+  namespace: "roadmap-specs",
+});
+
+await coordinator.runExclusive(
+  "specs",
+  async (guard) => {
+    guard.assertOwned();
+    // Read files, write Markdown, update revision state, or run git here.
+    guard.assertOwned();
+  },
+  { waitMs: 5_000, leaseMs: 2_000, renewEveryMs: 500 }
+);
+```
+
+Each successful owner receives a unique `ownerToken`, a monotonic `fencingGeneration`, an
+`AbortSignal`, and `assertOwned()`. The coordinator renews the lease while the callback runs.
+If the process stalls past expiry and another owner takes over, the stale guard is aborted and
+`assertOwned()` throws `CoordinationOwnershipLostError`. Release and renewal only affect the
+current owner token and generation, so a stale owner cannot delete or renew a successor lease.
+
+The SQLite database stores lease metadata only. Acquisition, renewal, stale recovery, and release
+use short synchronous SQLite statements; no database transaction is held while the callback awaits.
+Use this to serialize cooperating writers and make ownership loss observable. It is not a
+transaction over Markdown files, arbitrary filesystem writes, object stores, or git commits, and it
+cannot roll back partial external side effects after a crash. Consumers must call `assertOwned()`
+around each external mutation phase and keep their own revision or idempotency checks where those
+semantics matter.
 
 ## Sync by design
 
