@@ -1,6 +1,6 @@
 # Mirk shared-store concurrency specification
 
-**Status:** MR-15 foundation shipped; MR-16 atomic mutation contract and MR-17 coordinated profile proposed
+**Status:** MR-15 foundation shipped; G3 async coordination primitive added; MR-16 atomic mutation contract and broader MR-17 coordinated profile still proposed
 
 **Primary package:** `@mirk/store`
 
@@ -80,6 +80,37 @@ The public-API proof also exposes the next boundary: the host's current `StoreBa
 methods are synchronous, while a client of a writer process or local libSQL server is naturally
 asynchronous. Finishing MR-17's coordinated profile therefore requires either an asynchronous backend
 contract or a separately justified synchronous IPC bridge. A longer busy timeout is not that bridge.
+
+## Current implementation record — G3 async coordination
+
+The G3 slice adds `@mirk/store/coordination`, a SQLite-backed keyed async coordinator for
+cooperating writers whose critical section includes awaited filesystem, Markdown, object-store, or
+git work. It is deliberately narrower than the full MR-17 coordinated profile: it does not create a
+writer service, does not add backend-neutral async transactions, and does not make direct SQLite a
+general multi-writer answer.
+
+The coordinator stores only lease metadata in SQLite:
+
+- namespace plus coordination key;
+- owner token;
+- monotonic fencing generation;
+- acquisition/update timestamps;
+- expiry timestamp.
+
+Acquisition and stale takeover use short synchronous SQLite transactions over that metadata. The
+caller callback runs after acquisition and outside any SQLite transaction. Renewal and release match
+the exact owner token and fencing generation, and release also requires the lease to still be
+unexpired. A stalled owner whose lease expires can be overtaken with a higher fencing generation; if
+it resumes, its guard's `AbortSignal` and `assertOwned()` make the loss observable before the next
+cooperating mutation phase.
+
+This primitive is not a filesystem transaction and not a git transaction. It serializes admitted
+cooperating writers and prevents stale owners from renewing or deleting a successor lease. It cannot
+roll back a process that crashed after one external side effect and before another. Consumers must
+keep revision, idempotency, or recovery records where the application contract needs them.
+
+For roadmap/specs-style consumers, place the coordination database in untracked runtime lock state,
+for example `<roadmap-root>/.locks/coordination.sqlite`, not inside staged spec content.
 
 ## Goals
 
