@@ -99,6 +99,28 @@ importers:
         specifier: ^3.0.0
         version: 3.2.6(@types/node@25.9.3)(@vitest/browser@3.2.6)(yaml@2.9.0)
 
+  packages/statements:
+    dependencies:
+      '@mirk/store':
+        specifier: workspace:*
+        version: link:../store
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.0
+        version: 7.6.13
+      better-sqlite3:
+        specifier: ^11.0.0
+        version: 11.10.0
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(postcss@8.5.15)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.6(@types/node@25.9.3)(@vitest/browser@3.2.6)(yaml@2.9.0)
+
   packages/store:
     devDependencies:
       '@types/better-sqlite3':
