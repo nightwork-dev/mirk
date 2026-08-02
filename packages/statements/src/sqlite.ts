@@ -140,6 +140,17 @@ export class SqliteStatementStore {
         PRIMARY KEY (authority_scope, idempotency_key, operation_kind)
       );
 
+      CREATE TABLE IF NOT EXISTS mirk_statement_idempotency_conflicts (
+        authority_scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        operation_kind TEXT NOT NULL,
+        statement_key TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        committed_at TEXT NOT NULL,
+        PRIMARY KEY (authority_scope, idempotency_key, operation_kind, fingerprint)
+      );
+
       CREATE TABLE IF NOT EXISTS mirk_statement_backfills (
         backfill_id TEXT PRIMARY KEY,
         source_name TEXT NOT NULL,
@@ -335,14 +346,17 @@ export class SqliteStatementStore {
           ) as StatementOperationResult;
           if (existing.fingerprint === fingerprint)
             return { ...parsed, replay: true };
-          return this.#persistRefusal(
+          const conflict = this.#existingIdempotencyConflict(
             request,
-            "idempotency-conflict",
-            "store",
-            "idempotency-conflict",
-            fingerprint,
-            false
+            fingerprint
           );
+          if (conflict) {
+            return {
+              ...(JSON.parse(conflict.result_json) as StatementOperationResult),
+              replay: true,
+            };
+          }
+          return this.#persistIdempotencyConflict(request, fingerprint);
         }
         const decision = this.#authority.decide(request.envelope.auth, request);
         if (decision.outcome.kind === "refuse") {
@@ -606,6 +620,53 @@ export class SqliteStatementStore {
         request.envelope.idempotencyKey,
         request.operationKind
       ) as ReceiptRow | undefined;
+  }
+
+  #existingIdempotencyConflict(
+    request: StatementAdmissionRequest,
+    fingerprint: string
+  ): Pick<ReceiptRow, "result_json"> | undefined {
+    return this.#db
+      .prepare(
+        `SELECT result_json FROM mirk_statement_idempotency_conflicts
+         WHERE authority_scope = ? AND idempotency_key = ? AND operation_kind = ? AND fingerprint = ?`
+      )
+      .get(
+        request.envelope.auth.authorityScope,
+        request.envelope.idempotencyKey,
+        request.operationKind,
+        fingerprint
+      ) as Pick<ReceiptRow, "result_json"> | undefined;
+  }
+
+  #persistIdempotencyConflict(
+    request: StatementAdmissionRequest,
+    fingerprint: string
+  ): StatementOperationResult {
+    const result = this.#persistRefusal(
+      request,
+      "idempotency-conflict",
+      "store",
+      "idempotency-conflict",
+      fingerprint,
+      false
+    );
+    this.#db
+      .prepare(
+        `INSERT INTO mirk_statement_idempotency_conflicts
+          (authority_scope, idempotency_key, operation_kind, statement_key, fingerprint, result_json, committed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        request.envelope.auth.authorityScope,
+        request.envelope.idempotencyKey,
+        request.operationKind,
+        `${request.envelope.worldId}:${request.envelope.branchId}:${request.envelope.statementId}`,
+        fingerprint,
+        JSON.stringify(result),
+        request.envelope.recordedAt
+      );
+    return result;
   }
 
   #persistReceipt(
