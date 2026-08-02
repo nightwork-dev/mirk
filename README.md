@@ -64,6 +64,7 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/fixtures` | typed authored-data loader, registry, refs, diagnostics, provenance | none |
 | `@mirk/artifact` | durable artifact metadata, integrity, lineage, and object-storage coordination | none |
 | `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port | `opendal` (peer) |
+| `@mirk/statements` | SQLite-backed production storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses | `better-sqlite3` (peer) |
 | `@mirk/surreal` | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
 | `@mirk/migrate` | backend-neutral checkpointed migration across Mirk ports and caller manifests | none |
 
