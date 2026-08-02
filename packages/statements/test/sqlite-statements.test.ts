@@ -66,10 +66,14 @@ describe("@mirk/statements sqlite adapter", () => {
   });
 
   it("returns exact idempotent replay and persists idempotency conflicts", async () => {
-    const store = testStore(new AllowAuthority());
+    const path = testStorePath();
+    const store = testStore(new AllowAuthority(), path);
     const first = await store.admit(admission({ idempotencyKey: "same" }));
     const replay = await store.admit(admission({ idempotencyKey: "same" }));
     const conflict = await store.admit(
+      admission({ idempotencyKey: "same", statementId: "other" })
+    );
+    const conflictReplay = await store.admit(
       admission({ idempotencyKey: "same", statementId: "other" })
     );
 
@@ -79,7 +83,23 @@ describe("@mirk/statements sqlite adapter", () => {
     expect(conflict.ok).toBe(false);
     if (conflict.ok) throw new Error("expected refusal");
     expect(conflict.code).toBe("idempotency-conflict");
+    expect(conflictReplay.ok).toBe(false);
+    if (conflictReplay.ok) throw new Error("expected replayed refusal");
+    expect(conflictReplay.replay).toBe(true);
+    expect(conflictReplay.receipt).toEqual(conflict.receipt);
     store.close();
+
+    const reopened = testStore(new AllowAuthority(), path);
+    const reopenedConflictReplay = await reopened.admit(
+      admission({ idempotencyKey: "same", statementId: "other" })
+    );
+    expect(reopenedConflictReplay.ok).toBe(false);
+    if (reopenedConflictReplay.ok) throw new Error("expected durable refusal");
+    expect(reopenedConflictReplay.replay).toBe(true);
+    expect(reopenedConflictReplay.receipt).toEqual(conflict.receipt);
+    expect(reopened.getHead(ref("s1"))).toEqual(first.statement);
+    expect(reopened.getHead(ref("other"))).toBeNull();
+    reopened.close();
   });
 
   it("serializes revision admission and records conflicts", async () => {
@@ -269,11 +289,18 @@ describe("@mirk/statements sqlite adapter", () => {
   });
 });
 
-function testStore(authority: StatementAdmissionAuthority) {
+function testStorePath() {
   const dir = mkdtempSync(join(tmpdir(), "mirk-statements-"));
   tempDirs.push(dir);
+  return join(dir, "statements.sqlite");
+}
+
+function testStore(
+  authority: StatementAdmissionAuthority,
+  path = testStorePath()
+) {
   return createSqliteStatementStore({
-    path: join(dir, "statements.sqlite"),
+    path,
     authority,
     now: () => new Date("2026-08-01T00:00:00.000Z"),
     receiptIdFactory: () => `receipt-${Math.random().toString(36).slice(2)}`,
