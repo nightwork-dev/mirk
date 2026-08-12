@@ -37,7 +37,7 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-09 | Shared-connection SurrealDB adapters                      | `@mirk/surreal`               | med     | implemented; receipt-green; Verdaccio-published |
 | MR-10 | Durable artifact substrate                                | `@mirk/artifact`              | near    | implemented; receipt-green; Verdaccio-published |
 | MR-11 | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`        | near    | implemented; receipt-green; Verdaccio-published |
-| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | implemented; receipt-green; Verdaccio-published |
+| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | implemented; Verdaccio-published; receipt requires a live PostgreSQL |
 | MR-13 | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search` | med     | proposed; parity-gated                      |
 | MR-14 | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector` | med     | proposed; consumer-gated                    |
 | MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
@@ -48,9 +48,14 @@ condition; `closed` means the item is intentionally outside Mirk.
 
 ## Current closure
 
-The current train at `2a3a37a` is `implemented` and `receipt-green`: all 10
-packages pass the clean `pnpm release:receipt --all` checks, with receipts
-tracked in `docs/evidence/receipts/2026-08-12/`. Their versions are present in
+The current train at `07cb48e` is `implemented` and `receipt-green` for 9 of 10
+packages: they pass the clean `pnpm release:receipt --all` checks, with receipts
+tracked in `docs/evidence/receipts/2026-08-12/`. `@mirk/store-postgres` has no
+receipt at this commit. Its whole suite requires `MIRK_POSTGRES_TEST_URL`, and
+since receipts now record executed test counts, publication mode refuses a
+receipt for a run that executed zero tests. CI supplies that URL; a local
+workstation without PostgreSQL cannot produce this package's receipt.
+Their versions are present in
 local Verdaccio, but no receipt binds that registry metadata to this commit.
 The commit is pushed but not tagged, and this roadmap does not claim
 `public-npm-published` or deployment proof. `templates/sigil-chat` provides one
