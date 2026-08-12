@@ -1,7 +1,7 @@
 {
   "schema": "mirk-release-receipt/v1",
   "source": {
-    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "commit": "07cb48e5c514ec9432c8c45430e7c60dc0c71d6a",
     "clean": true,
     "packedInputSha256": "fed9aaea831280f28583c4b3a4d40d4c4f15b96c2bd14acb9997551df0533497"
   },
@@ -39,7 +39,16 @@
     },
     {
       "name": "test",
-      "status": "passed"
+      "status": "passed",
+      "detail": "10 executed (10 passed, 0 failed), 0 skipped, 0 todo of 10 total",
+      "tests": {
+        "executed": 10,
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "total": 10
+      }
     },
     {
       "name": "typecheck",
@@ -72,8 +81,8 @@
     },
     {
       "name": "root-dependency-boundary",
-      "status": "passed",
-      "detail": "no generic root boundary rule is required for this adapter package"
+      "status": "skipped",
+      "detail": "no root boundary rule is configured for this package"
     },
     {
       "name": "clean-consumer-install",

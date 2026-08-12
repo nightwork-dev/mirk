@@ -1,13 +1,13 @@
 {
   "schema": "mirk-release-receipt/v1",
   "source": {
-    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "commit": "07cb48e5c514ec9432c8c45430e7c60dc0c71d6a",
     "clean": true,
-    "packedInputSha256": "8e2026912b1ed927620fa695679b24db48508a24d4c837692c01653429b4f85c"
+    "packedInputSha256": "6e6e5493b25a650c62797963b2b379e5e008e94d2435b7f5478a9a6c7d5134bb"
   },
   "package": "@mirk/store-libsql",
   "version": "0.1.4",
-  "tarballSha256": "d89df21d8937c2d44eeb6d4abd77a0a1a222ddbcae3a19828c30dfc78725903a",
+  "tarballSha256": "9fd94f2aeba15fb399d0e250b82533e5588363213cbeeef612499a73692397aa",
   "packedFiles": [
     "LICENSE",
     "README.md",
@@ -27,7 +27,16 @@
     },
     {
       "name": "test",
-      "status": "passed"
+      "status": "passed",
+      "detail": "22 executed (22 passed, 0 failed), 0 skipped, 0 todo of 22 total",
+      "tests": {
+        "executed": 22,
+        "passed": 22,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "total": 22
+      }
     },
     {
       "name": "typecheck",
@@ -60,8 +69,8 @@
     },
     {
       "name": "root-dependency-boundary",
-      "status": "passed",
-      "detail": "no generic root boundary rule is required for this adapter package"
+      "status": "skipped",
+      "detail": "no root boundary rule is configured for this package"
     },
     {
       "name": "clean-consumer-install",

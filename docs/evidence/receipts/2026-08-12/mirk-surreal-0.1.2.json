@@ -1,13 +1,13 @@
 {
   "schema": "mirk-release-receipt/v1",
   "source": {
-    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "commit": "07cb48e5c514ec9432c8c45430e7c60dc0c71d6a",
     "clean": true,
-    "packedInputSha256": "6964918ec39ee1c26ba8d061439f2a8bb188b450d627ae28284ceadb26f5a9b4"
+    "packedInputSha256": "148e98750d2e6d03ea4f215676b2d27bdd2dbcaf13f324533c97bddf28871158"
   },
   "package": "@mirk/surreal",
   "version": "0.1.2",
-  "tarballSha256": "b26c7a9a294e4c3563fec0d1cde748acaa18763f526c9a8acfbffcb33cef397e",
+  "tarballSha256": "340d7f63cdfb4ea21864fe6217fa72c21fd058d90fd5dcf3342d48df0f57880c",
   "packedFiles": [
     "LICENSE",
     "README.md",
@@ -50,7 +50,16 @@
     },
     {
       "name": "test",
-      "status": "passed"
+      "status": "passed",
+      "detail": "36 executed (36 passed, 0 failed), 0 skipped, 0 todo of 36 total",
+      "tests": {
+        "executed": 36,
+        "passed": 36,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "total": 36
+      }
     },
     {
       "name": "typecheck",
@@ -83,8 +92,8 @@
     },
     {
       "name": "root-dependency-boundary",
-      "status": "passed",
-      "detail": "no generic root boundary rule is required for this adapter package"
+      "status": "skipped",
+      "detail": "no root boundary rule is configured for this package"
     },
     {
       "name": "clean-consumer-install",

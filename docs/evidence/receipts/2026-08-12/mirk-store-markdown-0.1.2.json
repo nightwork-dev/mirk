@@ -1,13 +1,13 @@
 {
   "schema": "mirk-release-receipt/v1",
   "source": {
-    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "commit": "07cb48e5c514ec9432c8c45430e7c60dc0c71d6a",
     "clean": true,
-    "packedInputSha256": "aaa7cb3484dd8fe6ca01ca3d576a1384a446de4ae7c4d3d6851a26af66fc4c81"
+    "packedInputSha256": "010f0fb2ca2ce6875cb195566fdf1d4d88dd2563a0e23114dbfb093bbf1bf0ea"
   },
   "package": "@mirk/store-markdown",
   "version": "0.1.2",
-  "tarballSha256": "38d14c0e4986aba3480f068f9ef6a435132fb08d457fcd9aef1fa8b6f00deefc",
+  "tarballSha256": "34762048cb6d9320c59c2c8c80c0ea5cff7efcacd952c4f608b629323bc7c341",
   "packedFiles": [
     "LICENSE",
     "README.md",
@@ -27,7 +27,16 @@
     },
     {
       "name": "test",
-      "status": "passed"
+      "status": "passed",
+      "detail": "5 executed (5 passed, 0 failed), 0 skipped, 0 todo of 5 total",
+      "tests": {
+        "executed": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "total": 5
+      }
     },
     {
       "name": "typecheck",
@@ -60,8 +69,8 @@
     },
     {
       "name": "root-dependency-boundary",
-      "status": "passed",
-      "detail": "no generic root boundary rule is required for this adapter package"
+      "status": "skipped",
+      "detail": "no root boundary rule is configured for this package"
     },
     {
       "name": "clean-consumer-install",

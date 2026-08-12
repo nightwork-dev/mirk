@@ -1,7 +1,7 @@
 {
   "schema": "mirk-release-receipt/v1",
   "source": {
-    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "commit": "07cb48e5c514ec9432c8c45430e7c60dc0c71d6a",
     "clean": true,
     "packedInputSha256": "d93af1cd60ee26b0c3a45499532add9f9aa80c04a63fb2479cf50fbf60e38cd8"
   },
@@ -63,7 +63,16 @@
     },
     {
       "name": "test",
-      "status": "passed"
+      "status": "passed",
+      "detail": "325 executed (325 passed, 0 failed), 0 skipped, 0 todo of 325 total",
+      "tests": {
+        "executed": 325,
+        "passed": 325,
+        "failed": 0,
+        "skipped": 0,
+        "todo": 0,
+        "total": 325
+      }
     },
     {
       "name": "typecheck",

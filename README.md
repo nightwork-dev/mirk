@@ -200,12 +200,15 @@ package, and a green receipt is not a publication receipt.
 
 Current closure evidence (2026-08-12):
 
-- `implemented` and `receipt-green`: all 10 current `@mirk/*` packages have clean receipts from
-  `2a3a37a` (`pnpm release:receipt --all`), tracked in
-  [`docs/evidence/receipts/2026-08-12/`](docs/evidence/receipts/2026-08-12/).
+- `implemented` and `receipt-green`: 9 of the 10 current `@mirk/*` packages have clean receipts
+  from `07cb48e` (`pnpm release:receipt --all`), tracked in
+  [`docs/evidence/receipts/2026-08-12/`](docs/evidence/receipts/2026-08-12/). Each receipt records
+  the number of tests the package actually executed. `@mirk/store-postgres` has no receipt at this
+  commit: its whole suite skips without `MIRK_POSTGRES_TEST_URL`, and publication mode refuses a
+  receipt for a run that executed zero tests. CI supplies that URL.
 - `Verdaccio-published`: the current package train is present in the canonical local registry.
-  This metadata is not tied to `2a3a37a` by a publication receipt.
-- `remote/tagged`: `2a3a37a` is pushed to `origin/main`; no tag points at it yet.
+  This metadata is not tied to `07cb48e` by a publication receipt.
+- `remote/tagged`: `07cb48e` is pushed to `origin/main`; no tag points at it yet.
 - `consumer-adopted`: `templates/sigil-chat` installs the current train from its frozen lockfile
   and exercises Mirk-backed store, fixture, Markdown, and artifact paths. Consumer evidence stays
   with that product; Mirk does not maintain a cross-project conformance matrix.
