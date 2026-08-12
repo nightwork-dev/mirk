@@ -60,10 +60,6 @@
         "import": "./dist/index.js",
         "types": "./dist/index.d.ts"
       }
-    },
-    "dependencies": {
-      "@libsql/client": "^0.14.0",
-      "@mirk/store": "^0.8.0"
     }
   }
 }

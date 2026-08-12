@@ -129,11 +129,6 @@
         "import": "./dist/wasm.js",
         "types": "./dist/wasm.d.ts"
       }
-    },
-    "dependencies": {
-      "@mirk/artifact": "^0.1.1",
-      "@mirk/store": "^0.8.0",
-      "surrealdb": "^2.0.4"
     }
   }
 }

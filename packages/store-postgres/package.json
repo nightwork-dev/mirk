@@ -56,10 +56,6 @@
         "import": "./dist/index.js",
         "types": "./dist/index.d.ts"
       }
-    },
-    "dependencies": {
-      "@mirk/store": "^0.8.0",
-      "pg": "^8.22.0"
     }
   }
 }
