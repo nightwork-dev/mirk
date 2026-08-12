@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, open, rename, rm, stat } from "node:fs/promises";
+import { mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
-import type { ByteSource, ByteStream, ObjectInfo, ObjectPutOptions, ObjectStore } from "./types.js";
+import type {
+  ByteSource,
+  ByteStream,
+  ListableObjectStore,
+  ObjectInfo,
+  ObjectPutOptions,
+} from "./types.js";
 import { ObjectAlreadyExistsError } from "./memory.js";
 import { assertObjectKey, chunks } from "./util.js";
 
@@ -37,14 +43,18 @@ export interface FileObjectStoreOptions {
 const BYTES_SUFFIX = ".bin";
 const SIDECAR_SUFFIX = ".sidecar.json";
 
-export class FileObjectStore implements ObjectStore {
+export class FileObjectStore implements ListableObjectStore {
   readonly #root: string;
 
   constructor(options: FileObjectStoreOptions) {
     this.#root = resolve(options.root);
   }
 
-  async put(key: string, source: ByteSource, options: ObjectPutOptions = {}): Promise<ObjectInfo> {
+  async put(
+    key: string,
+    source: ByteSource,
+    options: ObjectPutOptions = {}
+  ): Promise<ObjectInfo> {
     assertObjectKey(key);
     const bytesPath = this.#path(key, BYTES_SUFFIX);
     await mkdir(dirname(bytesPath), { recursive: true });
@@ -54,7 +64,10 @@ export class FileObjectStore implements ObjectStore {
     try {
       handle = await open(bytesPath, options.ifAbsent ? "wx" : "w");
     } catch (error) {
-      if (options.ifAbsent && (error as NodeJS.ErrnoException).code === "EEXIST") {
+      if (
+        options.ifAbsent &&
+        (error as NodeJS.ErrnoException).code === "EEXIST"
+      ) {
         throw new ObjectAlreadyExistsError(key);
       }
       throw error;
@@ -85,7 +98,15 @@ export class FileObjectStore implements ObjectStore {
       ...(options.mediaType ? { mediaType: options.mediaType } : {}),
       ...(options.metadata ? { metadata: { ...options.metadata } } : {}),
     };
-    await this.#writeSidecar(key, info);
+    try {
+      await this.#writeSidecar(key, info);
+    } catch (error) {
+      // An ifAbsent write owns this path. Do not leave a byte object that can
+      // poison the next retry when its metadata commit fails.
+      if (options.ifAbsent)
+        await rm(bytesPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
     return info;
   }
 
@@ -121,13 +142,39 @@ export class FileObjectStore implements ObjectStore {
     return existed;
   }
 
+  async list(prefix = ""): Promise<readonly ObjectInfo[]> {
+    if (prefix) assertObjectKey(prefix);
+    const paths: string[] = [];
+    const visit = async (directory: string): Promise<void> => {
+      const entries = await readdir(directory, { withFileTypes: true }).catch(
+        () => []
+      );
+      for (const entry of entries) {
+        const path = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) await visit(path);
+        else if (entry.isFile() && entry.name.endsWith(BYTES_SUFFIX))
+          paths.push(path.slice(this.#root.length + 1, -BYTES_SUFFIX.length));
+      }
+    };
+    await visit(this.#root);
+    const filtered = paths.filter((key) => key.startsWith(prefix));
+    const infos: ObjectInfo[] = [];
+    for (const key of filtered) {
+      const info = await this.head(key);
+      if (info) infos.push(info);
+    }
+    return infos.sort((a, b) => a.key.localeCompare(b.key));
+  }
+
   /** Resolve a suffixed key to an absolute path, refusing any escape from root.
    *  `assertObjectKey` already forbids `..`/absolute keys; this is defense in
    *  depth so a store can never write outside its own directory. */
   #path(key: string, suffix: string): string {
     const full = resolve(this.#root, key + suffix);
     if (full !== this.#root && !full.startsWith(this.#root + sep)) {
-      throw new TypeError(`object key escapes store root: ${JSON.stringify(key)}`);
+      throw new TypeError(
+        `object key escapes store root: ${JSON.stringify(key)}`
+      );
     }
     return full;
   }
@@ -142,6 +189,9 @@ export class FileObjectStore implements ObjectStore {
     const handle = await open(tmp, "wx");
     try {
       await handle.write(JSON.stringify(info));
+    } catch (error) {
+      await rm(tmp, { force: true });
+      throw error;
     } finally {
       await handle.close();
     }

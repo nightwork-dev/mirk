@@ -1,6 +1,7 @@
 # Mirk shared-store concurrency specification
 
-**Status:** MR-15 foundation shipped; G3 async coordination primitive added; MR-16 atomic mutation contract and broader MR-17 coordinated profile still proposed
+**Status:** MR-15 foundation, MR-16 atomic mutation, and MR-17 inspection/checkpoint/evidence surfaces are
+implemented locally; the coordinated writer profile remains deferred
 
 **Primary package:** `@mirk/store`
 
@@ -11,33 +12,22 @@
 
 ## Summary
 
-Mirk should support many logical stores sharing one host-selected transactional database without
-turning each namespace into a directory, database file, connection, or lifecycle.
+Mirk supports many logical stores sharing a host-selected transactional database without turning
+each namespace into a directory, database file, connection, or lifecycle. The MR-15 and G3 surfaces
+provide the foundation: logical namespaces, bounded SQLite waits, synchronous transaction
+modes, and fenced coordination for cooperating writers whose critical sections include external IO.
 
-Uncoordinated direct SQLite writers are not the default implementation candidate. A downstream
-multi-process agent host has repeatedly experienced `database is locked` failures when parallel
-harness processes load and write extension state. Its dispatch guidance therefore tells callers to
-avoid parallel full-stack launches; one 16-item batch died entirely from the collision. This is an
-admitted system constraint, not a hypothetical risk that each consumer must rediscover.
+The remaining concurrency decision is deliberately evidence-led. The local source now includes the
+optional backend-neutral atomic mutation capability, read-only SQLite inspection, explicit checkpoint
+operations, and a repository-owned two-process fault/contention harness. A coordinated writer
+profile or daemon remains deferred until those generic results and any backend evaluation show that
+the existing substrate cannot meet a declared bounded workload.
 
-SQLite coordinates access across processes, WAL allows readers and a writer to overlap, and writers
-can queue through the database's locking and busy-handler machinery. In this system those mechanisms
-have not been reliable enough as the sole coordination boundary. Mirk should expose a reusable
-single-writer profile so consumers do not build their own queueing daemon or serialize unrelated agent
-work as a storage workaround.
-
-This specification therefore defines storage semantics and a measurement ladder, not a predetermined
-daemon:
-
-1. make namespaces logical inside one database;
-2. add public transactions, compare-and-set, and idempotency primitives;
-3. configure SQLite contention and checkpoint behavior explicitly;
-4. prove the coordinated profile with two real client processes and representative application load;
-5. retain direct multi-process SQLite only as an explicit opt-in profile for a separately proven,
-   bounded workload.
-
-The coordinated profile may reuse local libSQL or use a small Mirk-owned writer service. PostgreSQL
-remains the sustained multi-writer path. SurrealDB remains an independently motivated backend.
+This specification does not choose a writer daemon in advance. A coordinated writer service is a
+separate future proposal only if generic evidence shows that direct SQLite and existing backends
+cannot meet a declared bounded workload. Direct multi-process SQLite remains an explicit opt-in
+profile, not a universal default. Mirk owns the generic contracts and harness; consuming projects
+own their workload, deployment, and adoption evidence.
 
 References:
 
@@ -47,39 +37,46 @@ References:
 ## Decision
 
 Mirk owns backend-neutral storage contracts, adapter configuration, namespace isolation, migration
-integration, and cross-backend conformance tests. Consumers choose physical topology and inject store
-handles; they do not recreate CAS, transaction, retry, migration, or namespace behavior.
+integration, and cross-backend contract tests. A caller chooses physical topology and injects store
+handles; it does not recreate namespace, conditional-mutation, retry, or migration semantics.
 
-The first implementation target is the shared namespace, transaction, CAS, idempotency, migration,
-and conformance substrate. Two SQLite profiles may implement it:
+MR-16 is an optional declarative atomic mutation capability. It must not widen the base store ports
+with transaction callbacks or pretend that sequential writes are atomic. Embedded adapters may keep
+local callback helpers, such as `SqliteAdapter.transaction()`, but those helpers are not the portable
+contract.
 
-- **coordinated default:** one owner opens SQLite and other processes use a Mirk-owned async client
-  boundary;
-- **direct opt-in:** each admitted process opens the database through a correctly configured adapter,
-  only after its bounded workload passes and accepts the remaining operational risk.
-
-The coordinated profile is the safe default for multi-process consumers. Direct SQLite remains useful
-for one-process embedding, tests, command-line tools with exclusive ownership, and specifically
-admitted workloads. Reusable single-writer support is legitimate Mirk scope and must not be
-reimplemented by each host.
+MR-17 begins with inspection, a generic two-process harness, declared workload limits, and evaluation
+of existing backends. Only proven need can justify a coordinated writer boundary, and that boundary
+requires its own protocol, authorization, lifecycle, and failure specification. PostgreSQL remains
+the independently supported sustained multi-writer path; SurrealDB remains an independently
+motivated backend.
 
 ## Current implementation record — MR-15
 
-The shipped MR-15 slice does **not** claim that the coordinated default is complete. It adds logical
-namespace views, a bounded SQLite busy timeout, and a narrow synchronous transaction primitive in
-Mirk. The initial downstream host integrates those through one composition-root provider owning
-one database connection per scope tier, atomic append-log offset allocation, transactionally
-excluded legacy copy-forward, and a real 16-process contention regression.
+MR-15 ships logical `namespaceStore()` views, a bounded SQLite busy timeout, and synchronous
+`deferred`, `immediate`, and `exclusive` transaction modes. These are a direct-connection foundation;
+they do not claim that direct SQLite is a universal multi-process default or that a coordinated writer
+profile is complete.
 
-That regression characterizes the direct SQLite profile: 16 independent processes complete 4,000 KV
-writes and 4,000 log appends without a lock error or lost record. It is useful evidence, but it is not
-a Mirk-owned writer process, does not erase the host's historical failures in other extension-owned
-SQLite databases, and does not admit direct SQLite as the general multi-process default.
+## Current implementation record — MR-16
 
-The public-API proof also exposes the next boundary: the host's current `StoreBackend` mutation
-methods are synchronous, while a client of a writer process or local libSQL server is naturally
-asynchronous. Finishing MR-17's coordinated profile therefore requires either an asynchronous backend
-contract or a separately justified synchronous IPC bridge. A longer busy timeout is not that bridge.
+The local `@mirk/store` implementation adds `/atomic` plus root and `/kv` capability types and
+guards. In-memory and SQLite KV facets implement versioned reads and bounded declarative mutation
+batches with canonical request digests, durable idempotency receipts, namespace preservation, and
+typed rejection/backend/indeterminate errors. Package tests cover cross-backend semantics, conflict
+ordering, replay, limits, reopen, and competing processes. The base `SyncStore` and `AsyncStore`
+ports remain unchanged.
+
+This is local implementation and package-test evidence. The manifest version, registry publication,
+and consumer/runtime adoption are separate states.
+
+## Current implementation record — MR-17 evidence
+
+The local SQLite adapter exposes read-only `inspect()` and explicit `checkpoint()` operations. The
+repository test harness launches independent processes against generated records, injects before- and
+after-commit kills, reconciles idempotent outcomes, checks namespace isolation and reopen state, and
+records latency, busy, WAL, checkpoint, and recovery metrics against generic thresholds. The harness
+is test/tooling code, not a public package export and not a writer daemon.
 
 ## Current implementation record — G3 async coordination
 
@@ -109,20 +106,19 @@ cooperating writers and prevents stale owners from renewing or deleting a succes
 roll back a process that crashed after one external side effect and before another. Consumers must
 keep revision, idempotency, or recovery records where the application contract needs them.
 
-For roadmap/specs-style consumers, place the coordination database in untracked runtime lock state,
-for example `<roadmap-root>/.locks/coordination.sqlite`, not inside staged spec content.
+The coordination database is runtime state and must remain outside authored or staged content. Its
+path is selected by the host; Mirk does not prescribe a repository layout.
 
 ## Goals
 
 1. Store many logical namespaces in one host-selected database.
-2. Support real concurrent access from independent local processes.
-3. Expose atomic multi-operation transactions through public Mirk contracts.
-4. Expose compare-and-set for revisioned repositories.
-5. Define idempotency without pretending that every ordinary write is automatically retryable.
-6. Configure and observe SQLite WAL, busy timeout, checkpoints, transaction duration, and contention.
-7. Integrate consolidation migrations with `@mirk/migrate`.
-8. Keep adapters substitutable without claiming false behavioral parity.
-9. Establish quantitative gates for remaining on SQLite or escalating to another topology.
+2. Add optional atomic mutation with versioned reads, explicit conditions, bounded declarative
+   operations, idempotency, and typed completed/indeterminate outcomes.
+3. Make SQLite configuration, checkpoints, and contention observable without hidden maintenance work.
+4. Prove close/reopen, crash, conflict, and idempotency behavior with independent processes.
+5. Integrate consolidation migrations with `@mirk/migrate`.
+6. Keep adapters substitutable without claiming false behavioral parity.
+7. Establish generic evidence gates before adding coordinated writer infrastructure.
 
 ## Non-goals
 
@@ -134,54 +130,25 @@ for example `<roadmap-root>/.locks/coordination.sqlite`, not inside staged spec 
 - Selecting SurrealDB solely as a workaround for SQLite contention.
 - Requiring every backend to expose identical engine-specific capabilities.
 
-## Known downstream lock evidence
+## Evidence boundary
 
-The decision begins with actual failures, not a clean-room model. Parallel harness processes have
-previously fought over extension SQLite databases and terminated with `database is locked`. The
-recorded procedural workaround was to load only the required extension and avoid concurrent
-full-stack startup. That reduces collision probability; it does not repair shared persistence.
-
-The downstream host's sources show mixed SQLite ownership and configuration:
-
-- some extension memory databases open `better-sqlite3` directly without WAL or a busy timeout;
-- the shared memory opener enables WAL and `synchronous = NORMAL` but does not configure a busy
-  timeout;
-- some newer capability stores use Mirk-backed per-namespace `store.db` files;
-- extension startup can therefore involve several independently owned databases and connection
-  policies before ordinary work begins.
-
-The individual failures did not all originate in the current Mirk `SqliteAdapter`; several extension
-stores bypass it. That limits component-level attribution but not the system conclusion: independent
-harness processes opening extension-owned SQLite state have proven operationally unreliable. The
-coordinated profile exists to remove that class of ownership entirely. Direct use may still be tested
-as an optimization, but it does not block delivering the safer profile.
+Mirk's acceptance evidence is package-owned: real adapters, generic records, independent processes,
+fault injection, reopen checks, and deterministic contract suites. Historical reports from consuming
+systems can motivate this work, but they are not a consumer matrix, workload registry, or Mirk release
+claim. A consumer's latency budget, deployment topology, and adoption status remain outside this
+repository.
 
 ## Current Mirk substrate and gaps
 
-Mirk already has:
+Mirk already has synchronous and asynchronous store ports, SQLite WAL with logical namespace views,
+bounded busy waits, local transaction modes, a remote-capable libSQL adapter, the G3 fenced async
+coordination primitive, MR-16 atomic mutation, and MR-17 inspection/checkpoint/harness evidence. The
+remaining gap is admission of a coordinated writer profile: the generic evidence must remain
+bounded, and any service or daemon requires a separate protocol and authorization decision.
 
-- `SqliteAdapter`, which opens a caller-selected path and enables WAL;
-- internal SQLite transactions for selected vector and search operations;
-- synchronous and asynchronous KV/collection ports;
-- a remote-capable libSQL adapter.
-
-PostgreSQL, SurrealDB, and generalized migration packages are active adjacent work, but this
-specification does not treat their uncommitted implementations as shipped substrate.
-
-The baseline gaps are:
-
-- no logical namespace dimension on the current KV/collection ports;
-- the public transaction primitive is currently SQLite-specific and synchronous rather than the final
-  backend-neutral asynchronous contract;
-- no public compare-and-set contract;
-- no explicit idempotent mutation contract;
-- no configurable SQLite busy timeout or checkpoint policy in `SqliteAdapterOptions`;
-- no realistic two-process contention and fault suite;
-- no measured application workload or admission threshold.
-
-These are adapter and contract gaps. Together with the recorded downstream failures, they require a
-reusable coordinated profile for multi-process hosts. An application host may later opt into direct
-SQLite only with explicit evidence and an operational reason to accept it.
+These gaps do not justify a writer daemon by themselves. A coordinated profile is admitted only after
+the generic harness and backend evaluation show that the existing substrate cannot meet a declared
+bounded workload.
 
 ## Namespace model
 
@@ -226,122 +193,79 @@ Mirk's current public store ports do not expose `log()`. This specification does
 Append-only records should initially use an ordinary namespaced collection with immutable IDs and
 ordering fields. A dedicated log port requires its own demonstrated consumer and conformance contract.
 
-## Backend-neutral transactions
+## Backend-neutral atomic mutation
 
-Mirk needs an explicit transaction capability rather than widening every store implementation
-silently:
+MR-16 is a deliberately optional capability. It is declarative so a remote adapter does not need to
+execute an arbitrary caller callback inside a transaction, and it does not widen `SyncStore` or
+`AsyncStore`.
 
-```ts
-interface AsyncTransactionalStore extends AsyncStore {
-  transaction<T>(work: (tx: AsyncStoreTransaction) => Promise<T>): Promise<T>;
-}
-```
+The capability combines versioned reads, explicit preconditions, and a bounded JSON-safe mutation
+batch. A condition is evaluated at the same atomic decision point as the batch. Version tokens are
+opaque, scoped to one bound namespace, and refreshed by every successful write, including an
+identical-value write. A stale version is a typed conflict, not an automatic retry instruction.
 
-The exact type remains to be designed. Required semantics are:
+Supported v1 operations are `set`, `delete`, `put`, and `remove` against key and collection targets.
+Repeated targets, empty batches, unsupported values, and exceeded request limits are rejected before
+the decision point. Search, vector, graph, filesystem, object-store, network, and application
+callbacks are outside the batch.
 
-- all writes commit or all roll back;
-- reads performed through the transaction participate in its isolation level;
-- no adapter reports success before commit;
-- nested behavior is declared and tested rather than inferred;
-- transaction callbacks cannot escape and be reused after settlement;
-- remote adapters may implement an explicit transaction session or submit a bounded operation batch;
-- implementations identify retryable serialization conflicts separately from permanent failures.
+Completed decisions are `applied`, `replayed`, `conflict`, or `idempotency-conflict`. Invalid input,
+unsupported operations, and limits are typed rejections. A known pre-commit backend failure is typed
+and retryable only when safe; a failure that may have happened after commit is indeterminate and
+requires same-key retry or explicit reconciliation.
 
-Cross-namespace transactions are required when the namespaces share one physical database and the
-host explicitly admits them. They must not cross separate database or service boundaries while
-pretending to remain atomic.
+Idempotency keys are namespace-scoped. The implementation computes a canonical request digest, and
+the mutation plus receipt commit atomically. Repeating the same key and digest returns the original
+result; a different digest returns `idempotency-conflict`. V1 receipts do not expire. Any future
+compaction needs a namespace-epoch or tombstone protocol that prevents an old key from executing
+again. Ordinary writes are not implicitly idempotent, and adapters never retry an indeterminate
+mutation behind the caller's back.
 
-## Compare-and-set
-
-Revisioned repositories require one atomic compare-and-update operation:
-
-```ts
-interface CompareAndSetOptions<T> {
-  expectedRevision: number;
-  value: T;
-}
-
-const result = await projects.compareAndSet(id, {
-  expectedRevision: 7,
-  value: { ...next, revision: 8 },
-});
-```
-
-Required results are `updated`, `missing`, or `conflict` with the observed revision when disclosure is
-safe. A conflict is a normal domain-level concurrency result, not a transport failure and not an
-automatic retry instruction.
-
-The SQLite implementation must perform comparison and update inside one database transaction. File
-locks or process-local mutexes are not substitutes.
-
-## Idempotency
-
-Idempotency is needed for mutation paths that may be retried after an ambiguous disconnect or process
-failure. It should be an explicit transactional capability, not an implicit promise attached to every
-`set` or `put`:
-
-```ts
-await store.idempotent("request-123", async (tx) => {
-  // mutation and durable receipt commit together
-});
-```
-
-Required behavior:
-
-- the mutation and its receipt commit atomically;
-- repeating a completed key returns the original outcome;
-- retention bounds are declared;
-- conflicting reuse of a key with a different operation fails closed;
-- ordinary CAS conflicts are not concealed by idempotent replay.
+An embedded adapter may retain a local callback transaction helper for backend-specific work, but
+that helper is not a portable transaction or idempotency contract. Cross-namespace atomic mutation is
+out of scope for a namespaced handle and requires a separately specified capability.
 
 ## Direct SQLite profile
 
-`SqliteAdapterOptions` should admit explicit operational configuration:
+The local adapter exposes a bounded busy timeout, transaction modes, an operational inspection
+surface, and an explicit checkpoint operation rather than a hidden checkpoint policy. The inspection
+uses read-only PRAGMA queries and optional filesystem metadata; it must not invoke
+`wal_checkpoint` or otherwise change database state. Checkpoint calls are explicit infrastructure
+operations with `passive`, `restart`, or `truncate` modes and report busy, log-frame, and
+checkpointed-frame counts.
 
-```ts
-interface SqliteConcurrencyOptions {
-  busyTimeoutMs: number;
-  checkpoint?: {
-    mode: "passive" | "restart" | "truncate";
-    pages?: number;
-  };
-  transactionMode?: "deferred" | "immediate";
-}
-```
+Required behavior for an admitted direct profile is:
 
-The final option names may differ. Required behavior is:
-
-- WAL is enabled and verified on open;
-- a nonzero, bounded busy timeout is configured explicitly;
-- foreign keys and other connection-level invariants are applied on every connection;
-- checkpoint ownership and cadence are documented and observable;
+- WAL and foreign-key invariants are enabled and verified on every connection;
+- busy waits are nonzero, bounded, classified, and measured;
 - write transactions remain short and contain no network or application callbacks;
-- `SQLITE_BUSY` and related errors are classified and measured;
 - retry policy is bounded and limited to operations whose complete semantics are safe to retry;
-- connection close and crash recovery are tested across processes.
+- checkpoint ownership, cadence, and limits are explicit and observable; and
+- connection close and crash recovery are tested across independent processes.
 
-A busy timeout is not proof of correctness. It converts some immediate conflicts into bounded waiting.
-The admission decision depends on observed tail latency, timeout frequency, recovery, and throughput.
+A busy timeout is not proof of correctness. It converts some immediate conflicts into bounded
+waiting. The admission decision depends on observed tail latency, timeout frequency, recovery, and
+throughput from the generic harness.
 
 ## Two-process conformance harness
 
-The first black-box harness targets direct `SqliteAdapter` use. It launches two independent operating
-system processes against the same database path; worker threads, two handles in one process, and mocks
-are insufficient substitutes.
+The repository-owned black-box harness uses generated generic records and launches two independent
+operating-system processes against the same database path. Worker threads, two handles in one
+process, and mocks are insufficient substitutes.
 
 The harness must prove:
 
 1. two namespaces remain isolated across close and reopen;
 2. simultaneous inserts into different namespaces persist without loss;
-3. competing CAS operations admit exactly one winner;
-4. multi-operation transactions commit and roll back atomically;
+3. competing conditional mutations admit exactly one winner;
+4. atomic mutation batches commit completely or not at all;
 5. readers observe only committed state;
 6. sustained write bursts produce bounded waits or typed failures, never silent loss;
 7. killing either process at defined transaction points leaves an integral database;
 8. restart recovers to a known committed-or-not state;
 9. WAL growth and checkpoint behavior remain within declared limits;
 10. migration exclusion prevents ordinary writes from observing partial imports;
-11. backup and restore reproduce namespaces, revisions, receipts, and referenced artifact metadata;
+11. backup and restore reproduce namespaces, versions, receipts, and generic metadata;
 12. clean shutdown closes both connections without leaving an unrecoverable state.
 
 The harness records at minimum:
@@ -353,21 +277,13 @@ The harness records at minimum:
 - WAL size and checkpoint duration;
 - committed, conflicted, rejected, and indeterminate operations.
 
-## Representative workload gate
+## Generic workload gate
 
-Synthetic contention is necessary but not sufficient. Admission also requires a captured or
-deterministically generated workload matching the intended application processes and repositories.
+The harness may add a deterministic workload mix with realistic transaction sizes and think time,
+startup, migration, checkpoint, backup, and shutdown overlap. It must use generic records and must not
+encode a consuming project's schema, traffic profile, latency budget, or deployment topology.
 
-The fixture should model:
-
-- interactive application mutations;
-- tool/service mutations from the second process;
-- jobs, inbox, communication, memory, application records, and audit traffic where those stores are
-  genuinely in scope;
-- realistic transaction sizes and think time;
-- startup, migration, checkpoint, backup, and shutdown overlap.
-
-The implementation record must define thresholds before running the final gate. At minimum:
+Thresholds are declared before the final run. At minimum:
 
 - zero lost or torn writes;
 - zero unclassified database-lock failures;
@@ -376,26 +292,30 @@ The implementation record must define thresholds before running the final gate. 
 - bounded startup, checkpoint, and shutdown time;
 - recovery from every injected crash point.
 
-Threshold values belong to the consuming workload record, not this generic specification. A result
-that barely avoids failure while saturating the latency budget is a no-go.
+Threshold values belong in the harness run receipt, not a consumer matrix in this specification. A
+result that barely avoids failure while saturating the declared generic budget is a no-go.
 
 ## Migration through `@mirk/migrate`
 
-Once `@mirk/migrate` lands, consolidation builds on it; it does not create a parallel migration
+The current `@mirk/migrate` package provides plan-bound checkpoint v2, explicit v1 upgrades, and
+caller-owned verification. Consolidation builds on it; it does not create a parallel migration
 subsystem.
 
-Required additions or composition work include:
+Required caller-owned composition work includes:
 
 - inventorying legacy database paths and mapping each to a destination namespace;
 - using its collection, graph, vector, search, and object copy helpers where their contracts apply;
-- persisting `MigrationCheckpoint` progress in a restart-safe store rather than only reporting it to
-  an in-memory callback;
-- adding namespace-aware migration receipts;
+- persisting migration checkpoint progress in a restart-safe store rather than only reporting it to
+  an in-memory progress callback;
+- adding namespace-aware migration receipts around the package's plan identity;
 - verifying counts, IDs, revisions, vector dimensions, search schemas, and graph edges before marking
   a lane complete;
 - leaving source files untouched through the rollback window;
 - excluding ordinary writes while a namespace cutover is incomplete;
 - resuming idempotently after interruption.
+
+The package itself does not enumerate non-KV sources, infer schemas, delete source data, or claim a
+cutover is complete from a checkpoint alone.
 
 Migration orchestration may need a higher-level plan API, but copying and checkpoint vocabulary remain
 owned by `@mirk/migrate`.
@@ -418,35 +338,17 @@ Restore verification detects missing artifacts, unknown namespaces, incompatible
 incomplete migration receipts. Reset quarantines recoverable state and never follows consumer-supplied
 paths outside the host-selected data root.
 
-## Implementation choices
+## Implementation and deferred admission
 
-The coordinated profile is required; its implementation should reuse existing substrate before adding
-a bespoke protocol.
+The local source implements read-only inspection, explicit checkpoints, and the generic two-process
+fault/contention harness. Keep direct SQLite as an explicit bounded-workload option when the generic
+evidence is comfortably green. Evaluate the existing `@mirk/store-libsql` adapter against a supported
+local or managed server before admitting a coordinated profile. Only if a coordinated boundary is
+still required should Mirk write a separate protocol specification for client identity, namespace
+grants, lifecycle, queueing, idempotency, readiness, and failure semantics. A writer daemon is not an
+implicit MR-17 deliverable.
 
-### 1. Local or remote libSQL
-
-Test the existing `@mirk/store-libsql` adapter against a currently supported local or managed server.
-`file:` mode alone does not change the cross-process topology. The server path must pass the namespace,
-transaction, CAS, idempotency, fault, backup, and lifecycle gates.
-
-### 2. Lightweight Mirk coordination service
-
-If libSQL is unsuitable, implement the smallest bespoke `@mirk/store-service` that satisfies the
-coordinated profile. It is justified by the recorded downstream failures, but must still prove that
-its operational cost is materially lower than adopting a general client/server database.
-
-It requires authenticated client identities and per-client namespace/read/write/admin
-grants. One bearer token granting every namespace is not acceptable. Its protocol, lifecycle, queue,
-idempotency, readiness, and failure semantics require a separate implementation specification.
-
-### 3. Direct SQLite opt-in
-
-Direct multi-process SQLite is an optimization profile, not the delivery prerequisite. A host may
-select it only for a bounded workload that passes the same fault harness and has an explicit reason to
-avoid the coordinated boundary. WAL, busy timeout, checkpoint policy, and short transactions remain
-required. A passing synthetic test does not erase the historical downstream evidence.
-
-### 4. PostgreSQL
+### PostgreSQL
 
 PostgreSQL is the preferred profile for sustained multi-writer demand. Its MVCC model allows readers
 and writers to proceed concurrently while providing row-level conflict and serializable transaction
@@ -477,17 +379,17 @@ References:
 - [SurrealDB transactions](https://surrealdb.com/docs/learn/querying/concepts-and-guides/transactions)
 - [SurrealDB single-node deployment](https://surrealdb.com/docs/running/overview)
 
-## Consumer integration contract
+## Integration boundary
 
-Consumers receive one host-created store composition and inject namespaced handles into repositories.
-They do not:
+A host receives one composition and injects namespaced handles into its repositories. Mirk's generic
+contract does not prescribe the host's physical topology. Callers must not:
 
 - translate namespaces into paths or files;
 - open one database per extension or repository;
 - implement their own CAS or transaction emulation;
 - add unbounded lock retries;
 - run migrations opportunistically during ordinary requests;
-- implement their own local writer daemon instead of using the Mirk-owned coordinated profile.
+- simulate conditional mutation, atomicity, or idempotency with sequential independent writes.
 
 Hosts may choose separate physical databases for legitimate lifecycle, trust, retention, backup, or
 measured contention boundaries. A logical package or extension name alone does not justify another
@@ -495,40 +397,33 @@ database.
 
 ## Delivery sequence
 
-1. **MR-15 — shipped:** add logical namespaces, bounded SQLite writer waits, and synchronous
+1. **MR-15 — implemented locally:** retain logical namespaces, bounded SQLite waits, and synchronous
    transaction modes.
-2. **MR-16:** define transaction, CAS, idempotency, and typed conflict capabilities.
-3. **MR-16/MR-17:** add explicit WAL verification, checkpoint policy, and contention observability to
-   `SqliteAdapter`.
-4. **MR-17:** build one two-process contention and fault harness that exercises the coordinated profile and can
-   also characterize direct SQLite without making it the delivery gate.
-5. **MR-17:** evaluate whether existing local libSQL can supply the coordinated profile without a bespoke
-   protocol; specify the Mirk-owned client/lifecycle wrapper if it can.
-6. If libSQL is unsuitable, specify the smallest Mirk writer service with client identities and
-   namespace-scoped grants.
-7. Run the representative application workload against coordinated SQLite with predeclared
-   thresholds; optionally run direct SQLite as comparative evidence.
-8. Repair bounded coordinated-profile defects and rerun where evidence supports doing so.
-9. Admit direct multi-process SQLite only when its bounded workload is comfortably green and the host
-   explicitly selects it.
-10. Use PostgreSQL when sustained concurrent writing justifies a general client/server database.
-11. Evaluate SurrealDB only through an independently approved backend decision.
-12. Migrate consumers with `@mirk/migrate` after the selected backend and rollback path pass.
+2. **MR-16 — implemented locally:** retain the optional declarative atomic mutation capability,
+   including versioned reads, conditions, idempotency, typed conflicts, and indeterminate outcomes.
+3. **MR-17 evidence — implemented locally:** retain read-only SQLite inspection, explicit checkpoints,
+   generic thresholds, and the two-process fault/contention harness.
+4. **MR-17 coordinated profile — deferred:** evaluate direct SQLite and existing backends before
+   specifying any writer service or daemon.
+5. Use PostgreSQL when sustained concurrent writing justifies a general client/server database.
+6. Evaluate SurrealDB only through an independently approved backend decision.
+7. Extend caller-owned consolidation plans with `@mirk/migrate` after the selected backend and
+   rollback path pass.
 
 ## Acceptance
 
 This specification is satisfied when:
 
 - logical namespaces share one host-selected database without collisions;
-- transactions, CAS, idempotency, conflict classification, and lifecycle behavior are public;
+- optional atomic mutation, versioned reads, idempotency, conflict classification, and lifecycle
+  behavior are public and covered by local package tests;
 - direct SQLite has explicit contention and checkpoint configuration for its remaining single-owner
   and opt-in uses;
-- two real client processes pass the coordinated-profile conformance and representative workload
-  gates;
+- two real client processes pass the generic conformance and fault gates in repository test tooling;
 - migration reuses and extends `@mirk/migrate` rather than bypassing it;
 - no consumer-specific locking or retry implementation is required;
-- coordinated SQLite is available as reusable Mirk substrate rather than consumer-owned machinery;
-- the coordinated service has its own protocol, authorization, lifecycle, and failure review;
+- any coordinated service has its own protocol, authorization, lifecycle, and failure review before
+  implementation;
 - PostgreSQL remains the supported sustained multi-writer path;
 - SurrealDB remains an independent backend decision;
 - legacy databases remain recoverable through a declared rollback window.
@@ -537,13 +432,13 @@ This specification is satisfied when:
 
 Stop or change direction if:
 
-- a design dismisses the recorded downstream failures because SQLite can theoretically queue writers;
+- a design treats a consumer report as package-owned acceptance evidence;
 - direct SQLite is made the multi-process default by passing only a synthetic or low-contention test;
 - transactions are simulated by sequential independent calls;
 - retries can duplicate committed effects;
 - namespace consolidation crosses real lifecycle, trust, retention, or backup boundaries merely to
   reduce file count;
 - migration duplicates `@mirk/migrate` instead of extending its proven seams;
-- a fallback service has broader credentials than its client requires;
+- a proposed service is introduced before generic evidence and backend evaluation;
 - measured contention exceeds the declared budget and the implementation continues to call SQLite
   admitted without escalation.

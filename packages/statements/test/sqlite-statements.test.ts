@@ -164,22 +164,22 @@ describe("@mirk/statements sqlite adapter", () => {
         idempotencyKey: "actor",
         statementId: "actor-belief",
         contextKind: "actor-epistemic",
-        actorInstanceId: "fatima@branch-a",
+        actorInstanceId: "actor-1@branch-a",
         modality: "belief",
       })
     );
 
     const truth = store.query({
-      worldId: "verra",
+      worldId: "example-world",
       branchId: "main",
       contextKind: "world-version",
       statuses: ["accepted"],
       validAt: "1910-01-01T00:00:00.000Z",
     });
     const actor = store.query({
-      worldId: "verra",
+      worldId: "example-world",
       branchId: "main",
-      actorInstanceId: "fatima@branch-a",
+      actorInstanceId: "actor-1@branch-a",
       modalities: ["belief"],
     });
 
@@ -190,18 +190,18 @@ describe("@mirk/statements sqlite adapter", () => {
 
   it("persists resumable backfill cursors", () => {
     const store = testStore(new AllowAuthority());
-    store.beginBackfill("game-claims", "sigil-game-knowledge-claim-v1", {
+    store.beginBackfill("example-backfill", "legacy-statements-v1", {
       offset: 10,
     });
     const updated = store.updateBackfill(
-      "game-claims",
-      "sigil-game-knowledge-claim-v1",
+      "example-backfill",
+      "legacy-statements-v1",
       "running",
       { offset: 20 }
     );
 
     expect(updated.cursor).toEqual({ offset: 20 });
-    expect(store.getBackfill("game-claims")).toEqual(updated);
+    expect(store.getBackfill("example-backfill")).toEqual(updated);
     store.close();
   });
 
@@ -212,17 +212,21 @@ describe("@mirk/statements sqlite adapter", () => {
         ...admission({ idempotencyKey: "drift" }),
         context: {
           kind: "world-version",
-          worldId: "verra",
+          worldId: "example-world",
           branchId: "other",
         },
       })
     ).rejects.toThrow("context.branchId must match");
-    expect(store.query({ worldId: "verra", branchId: "main" })).toEqual([]);
-    expect(store.query({ worldId: "verra", branchId: "other" })).toEqual([]);
+    expect(store.query({ worldId: "example-world", branchId: "main" })).toEqual(
+      []
+    );
+    expect(
+      store.query({ worldId: "example-world", branchId: "other" })
+    ).toEqual([]);
     store.close();
   });
 
-  it("runs a named dual-read parity harness against a legacy game claim surface", async () => {
+  it("runs a named dual-read parity harness against a legacy statement surface", async () => {
     const store = testStore(new AllowAuthority());
     const admitted = await store.admit(
       admission({ idempotencyKey: "claim", statementId: "claim-1" })
@@ -230,12 +234,12 @@ describe("@mirk/statements sqlite adapter", () => {
     if (!admitted.ok) throw new Error("expected commit");
 
     const report = compareLegacySurface(store, {
-      name: "sigil-game-knowledge-claim-v1",
+      name: "legacy-statements-v1",
       read: () => [admitted.statement],
       toStatement: (record: StatementRecord) => record,
     });
 
-    expect(report.legacySurfaceName).toBe("sigil-game-knowledge-claim-v1");
+    expect(report.legacySurfaceName).toBe("legacy-statements-v1");
     expect(report.checked).toBe(1);
     expect(report.missingCanonical).toEqual([]);
     expect(report.issues).toEqual([]);
@@ -263,7 +267,7 @@ describe("@mirk/statements sqlite adapter", () => {
     }
 
     const query = {
-      worldId: "verra",
+      worldId: "example-world",
       branchId: "main",
       statuses: ["accepted" as const],
       validAt: "1910-01-01T00:00:00.000Z",
@@ -310,12 +314,12 @@ function testStore(
 function baseEnvelope(idempotencyKey: string, statementId = "s1") {
   return {
     auth: {
-      principalId: "principal:david",
-      authorityScope: "world:verra",
+      principalId: "principal:test-user",
+      authorityScope: "world:example-world",
       callerPolicy: "test-policy",
     },
     idempotencyKey,
-    worldId: "verra",
+    worldId: "example-world",
     branchId: "main",
     statementId,
     recordedAt: "2026-08-01T00:00:00.000Z",
@@ -340,13 +344,13 @@ function admission(
     ...baseEnvelope(overrides.idempotencyKey ?? "default", statementId),
     branchId,
     proposition: {
-      subject: { entityId: "fatima" },
+      subject: { entityId: "entity-1" },
       predicate: { predicateId: "is-in" },
-      object: { kind: "string", value: "Roslyn" },
+      object: { kind: "string", value: "example-value" },
     },
     context: {
       kind: contextKind,
-      worldId: "verra",
+      worldId: "example-world",
       branchId,
       ...(actorInstanceId ? { actorInstanceId } : {}),
     },
@@ -371,11 +375,11 @@ function provenance(
   }
 ): StatementProvenance {
   return {
-    sources: [{ sourceId: "source:verra", anchor: "lore.md#fatima" }],
+    sources: [{ sourceId: "source:example", anchor: "source.md#entry-1" }],
     origin,
   };
 }
 
 function ref(statementId: string) {
-  return { worldId: "verra", branchId: "main", statementId };
+  return { worldId: "example-world", branchId: "main", statementId };
 }

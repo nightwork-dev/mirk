@@ -1,6 +1,7 @@
 # `@mirk/artifact` public package specification
 
-**Status:** core, store, filesystem, and OpenDAL packages released; consumer adoption remains external
+**Status:** core, store, filesystem, OpenDAL, atomic finalization, object leases, and maintenance
+are implemented locally; publication and consumer adoption need separate evidence
 **Package:** `@mirk/artifact`
 **Roadmap:** MR-10
 **Horizon:** near
@@ -108,19 +109,20 @@ A product-owned record giving an artifact semantic meaning, such as “portrait 
 
 ## Ownership boundary
 
-| Concern | Owner | Notes |
-| --- | --- | --- |
-| Object bytes and storage keys | Mirk | Through object-store ports and adapters |
-| Artifact ID, digest, size, media type | Mirk | Portable identity and integrity |
-| Generic metadata and annotations | Mirk | Bounded, JSON-safe, non-secret |
-| Source/derivative lineage | Mirk | Opaque operation and parameters |
-| Provider request/response evidence | Execution system | May reference artifacts |
-| Job status, retry, priority, cancellation | Execution system | Never encoded as artifact status |
-| Resource leases | Execution system | Not storage |
-| Progress and logs | Execution system | May themselves be persisted as artifacts when useful |
-| Domain association | Consuming application | References an artifact ID |
-| Proposed/accepted/rejected state | Consuming application | Successful storage is not approval |
-| Public delivery policy | Consumer or deployment | Signed URLs are an adapter capability, not authorization |
+| Concern                                   | Owner                    | Notes                                                                     |
+| ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| Object bytes and storage keys             | Mirk                     | Through object-store ports and adapters                                   |
+| Artifact ID, digest, size, media type     | Mirk                     | Portable identity and integrity                                           |
+| Generic metadata and annotations          | Mirk                     | Bounded, JSON-safe, non-secret                                            |
+| Source/derivative lineage                 | Mirk                     | Opaque operation and parameters                                           |
+| Provider request/response evidence        | Execution system         | May reference artifacts                                                   |
+| Job status, retry, priority, cancellation | Execution system         | Never encoded as artifact status                                          |
+| Execution resource leases                 | Execution system         | Scheduling and worker capacity; not storage exclusion                     |
+| Repository object leases                  | Mirk artifact repository | Cooperative shared-writer/exclusive-deletion exclusion for artifact bytes |
+| Progress and logs                         | Execution system         | May themselves be persisted as artifacts when useful                      |
+| Domain association                        | Consuming application    | References an artifact ID                                                 |
+| Proposed/accepted/rejected state          | Consuming application    | Successful storage is not approval                                        |
+| Public delivery policy                    | Consumer or deployment   | Signed URLs are an adapter capability, not authorization                  |
 
 ## Standards alignment
 
@@ -141,13 +143,15 @@ These are interoperability projections, not new required runtime dependencies.
 
 ## Package boundary
 
-The initial package family should be:
+The package family is:
 
-| Import/package | Contents | Native or external deps |
-| --- | --- | --- |
-| `@mirk/artifact` | core types, storage capability port, coordinator, in-memory reference, integrity helpers | none |
-| `@mirk/artifact/store` | `@mirk/store/kv` metadata repository | `@mirk/store` types |
-| `@mirk/artifact-opendal` | optional production object-store binding | Apache OpenDAL |
+| Import/package               | Contents                                                                                | Native or external deps |
+| ---------------------------- | --------------------------------------------------------------------------------------- | ----------------------- |
+| `@mirk/artifact`             | core types, coordinator, in-memory references, integrity helpers, and maintenance types | none                    |
+| `@mirk/artifact/store`       | `@mirk/store/kv` metadata repository and object-lease capability                        | `@mirk/store` types     |
+| `@mirk/artifact/fs`          | Node filesystem object store                                                            | Node built-ins          |
+| `@mirk/artifact/maintenance` | audit, opaque repair references, and conditional repair application                     | none                    |
+| `@mirk/artifact-opendal`     | optional production object-store binding                                                | Apache OpenDAL          |
 
 There should not be `artifact-libsql`, `artifact-sqlite`, or `artifact-surreal` packages merely for
 metadata. Metadata rides the `ArtifactRepository` implementation over `@mirk/store/kv`; the chosen
@@ -322,7 +326,7 @@ interface ObjectStore {
   put(
     key: string,
     bytes: ByteSource,
-    options?: ObjectPutOptions,
+    options?: ObjectPutOptions
   ): Promise<ObjectInfo>;
 
   get(key: string): Promise<ByteStream | undefined>;
@@ -383,7 +387,7 @@ interface ArtifactRepository {
   list(query?: ArtifactQuery): Promise<StoredArtifactPage>;
   updateAnnotations(
     id: string,
-    patch: Record<string, JsonValue | undefined>,
+    patch: Record<string, JsonValue | undefined>
   ): Promise<StoredArtifactRecord>;
   delete(id: string): Promise<boolean>;
 
@@ -481,8 +485,8 @@ The initial implementation does not promise a distributed transaction. It promis
 
 - no successful return before both sides exist;
 - explicit, inspectable cleanup failure;
-- deterministic orphan detection and repair;
-- idempotent retry when the caller supplies an idempotency token.
+- deterministic orphan detection and explicit repair;
+- idempotent retry when the caller supplies an idempotency token and the repository supports it.
 
 ### Idempotent writes
 
@@ -500,19 +504,192 @@ interface WriteArtifactInput {
 ```
 
 An idempotency key is scoped to the configured coordinator namespace. Repeating a completed write
-with the same key returns the original artifact. Repeating it with incompatible declared metadata
-is a conflict.
+with the same key and request returns the original artifact. Repeating it with incompatible declared
+metadata is an `idempotency-conflict`. The repository computes a canonical request digest; callers do
+not supply one. Receipts do not expire in v1, and any future compaction needs an epoch or tombstone
+protocol that cannot allow an old key to execute again.
 
-The generic `@mirk/artifact/store` adapter detects completed duplicate keys but cannot promise
-multi-process atomic uniqueness over a store that exposes no compare-and-set or unique constraint.
-Deployments with concurrent writers must serialize finalization per namespace/key or use a future
-repository adapter whose conformance tests prove atomic create-by-idempotency-key. This limitation
-is explicit; a backend swap is not claimed to provide concurrency semantics it cannot prove.
+When the injected store has no atomic mutation capability, the generic store-backed repository keeps
+its documented single-writer behavior. It must not claim multi-process idempotency. Concurrent
+finalizers must use external exclusion or select the repository-atomic mode below.
 
 Execution runtimes use `(artifact namespace, attemptId, outputSlot)` as the idempotency scope for
-generated outputs. A job submission key is a separate execution-system concern. Multi-output attempts use
-distinct stable slots; retries create new attempts and therefore new output scopes unless
+generated outputs. A job submission key is a separate execution-system concern. Multi-output attempts
+use distinct stable slots; retries create new attempts and therefore new output scopes unless
 reconciliation is repairing the same attempt.
+
+### Concurrent finalization
+
+An optional repository capability makes finalization atomic over metadata:
+
+```ts
+interface AtomicArtifactRepository extends ArtifactRepository {
+  createIdempotent(input: {
+    record: StoredArtifactRecord;
+    idempotencyKey: string;
+  }): Promise<
+    | { status: "created"; requestDigest: string; record: StoredArtifactRecord }
+    | {
+        status: "replayed";
+        requestDigest: string;
+        record: StoredArtifactRecord;
+      }
+    | {
+        status: "conflict";
+        expectedRequestDigest: string;
+        receivedRequestDigest: string;
+      }
+  >;
+}
+```
+
+The store-backed repository implements this capability when its injected store implements
+`AsyncAtomicMutationStore`; otherwise it remains usable in the documented single-writer mode and
+does not claim multi-process idempotency. The request digest uses the
+`mirk-artifact-finalization/v1` schema tag and includes the artifact digest plus every immutable
+descriptor field supplied at finalization, including filename and initial annotations when present.
+Mutable annotation updates do not alter the original receipt. A replay compares the incoming
+finalization record with that original request, not with later mutable annotations.
+
+The coordinator declares its concurrency mode explicitly:
+
+```ts
+type ArtifactCoordinatorConcurrency =
+  | { mode: "single-writer" }
+  | { mode: "repository-atomic" };
+```
+
+`single-writer` preserves existing behavior and requires external exclusion for concurrent
+finalizers. `repository-atomic` requires `AtomicArtifactRepository` and fails at construction when
+it is unavailable. Capability guessing is not a production configuration.
+
+Finalizers using Mirk's repository path also participate in repository-owned object exclusion. Before
+writing bytes, a finalizer acquires a shared writer lease for the candidate immutable object identity
+and holds it through repository commit, replay, conflict, cleanup, or abort. Repository record
+creation verifies that the lease is still current in the same repository decision. Losing the lease
+means no record is created.
+
+Destructive repair acquires an exclusive deletion lease for the same object identity. The repository
+lease blocks new shared writer leases, checks that no record references the object, and waits for or
+rejects on prior shared writer leases before bytes are inspected or deleted. This is a cooperative
+repository protocol, not a distributed transaction between the repository and object store. It is
+distinct from execution-system resource leases, which govern worker capacity and scheduling.
+
+Lease records are durable and carry an opaque lease ID, owner identity, object identity, mode,
+generation, heartbeat, and bounded expiry. Renewal, release, and repository commit must match the
+owner and generation. A stalled finalizer or crashed repair is reclaimed only by advancing the
+generation and re-reading the no-reference and object-fingerprint conditions; recovery never resumes
+from a stale pre-expiry observation.
+
+## Maintenance and repair
+
+Maintenance is an explicit `@mirk/artifact/maintenance` subpath. Audit is read-only and may be
+partial when the object store cannot enumerate objects. It must redact infrastructure paths and
+credentials, produce deterministic findings, and never expose object-store keys. Findings may carry
+an opaque reference scoped to the audit snapshot; callers cannot decode it or use it as an object key.
+
+```ts
+declare const artifactMaintenanceRefBrand: unique symbol;
+type ArtifactMaintenanceRef = string & {
+  readonly [artifactMaintenanceRefBrand]: true;
+};
+
+interface ArtifactAuditFinding {
+  code:
+    | "object-without-record"
+    | "record-without-object"
+    | "size-mismatch"
+    | "digest-mismatch"
+    | "lineage-missing-source"
+    | "lineage-missing-result"
+    | "lineage-cycle";
+  artifactId?: string;
+  maintenanceRef?: ArtifactMaintenanceRef;
+  detail?: string;
+}
+
+interface ArtifactAuditReport {
+  auditId: string;
+  scannedRecords: number;
+  scannedObjects?: number;
+  findings: readonly ArtifactAuditFinding[];
+}
+
+type ArtifactRepairPrecondition =
+  | {
+      kind: "object-unreferenced";
+      maintenanceRef: ArtifactMaintenanceRef;
+      observedDigest?: string;
+      observedSizeBytes: number;
+      observedEtag?: string;
+    }
+  | {
+      kind: "record-missing-object";
+      artifactId: string;
+      recordFingerprint: string;
+    }
+  | {
+      kind: "lineage-edge-invalid";
+      edgeId: string;
+      edgeFingerprint: string;
+      expectedReason: "missing-source" | "missing-result" | "cycle";
+    }
+  | {
+      kind: "artifact-descriptor-current";
+      artifactId: string;
+      descriptorFingerprint: string;
+    };
+
+interface ArtifactRepairPlan {
+  schema: "mirk-artifact-repair/v1";
+  auditId: string;
+  createdAt: number;
+  actions: readonly {
+    id: string;
+    operation:
+      | "delete-unreferenced-object"
+      | "delete-record-without-object"
+      | "remove-invalid-lineage-edge"
+      | "reverify-imported-object";
+    precondition: ArtifactRepairPrecondition;
+  }[];
+}
+
+type ArtifactRepairApplyResult =
+  | { status: "applied"; actionId: string }
+  | {
+      status: "conflict";
+      actionId: string;
+      reason:
+        | "state-changed"
+        | "reference-created"
+        | "object-changed"
+        | "lease-unavailable";
+    }
+  | { status: "not-found"; actionId: string };
+```
+
+Repair is plan-first and conditional. The package generates a plan, but applying it requires an
+explicit call. The implementation computes fingerprints from canonical stored state and rechecks
+them immediately before each independent action. An unknown audit snapshot returns `not-found`.
+
+Allowed initial actions are deleting a confirmed unreferenced object, explicitly deleting metadata
+for a record whose object is missing, removing an invalid lineage edge, and re-verifying an imported
+object. Repair never recreates bytes, invents lineage, accepts a new digest for corrupted bytes,
+infers product reachability, deletes by age, or changes product attachments.
+
+Deleting an unreferenced object requires the repository-owned exclusive deletion lease described above.
+Acquisition blocks new shared writer leases, checks that no record references the object, and waits
+for or returns `lease-unavailable` on live shared writers within a bounded maintenance timeout. Before
+deletion, the implementation re-reads and verifies the audited digest, size, and available ETag. A
+new reference or changed object returns a conflict and performs no deletion. Lease expiry recovery
+advances the object generation and re-reads state before mutation; it never resumes from a stale
+observation.
+
+For record, lineage, and descriptor actions, a changed fingerprint returns `conflict` and performs no
+mutation. Results are returned per action; applying a plan is not one transaction. Backends that
+cannot enforce repository-owned shared/exclusive object exclusion must reject destructive orphan
+repair rather than perform a best-effort cross-store delete.
 
 ## Immutability, deduplication, and identity
 
@@ -585,6 +762,11 @@ Every adapter must pass a shared contract suite covering:
 - size and digest verification;
 - concurrent writes to the same key;
 - delete/read races with documented outcomes.
+
+The hardening suite additionally covers same-key finalization replay and conflict, crash residue,
+partial audits, deterministic repair plans, reference-created and object-changed conflicts, lease
+interleavings between finalization and repair, lease expiry recovery, namespace isolation, and the
+absence of object-store keys from public findings and repair results.
 
 ### In-memory reference
 
@@ -689,14 +871,14 @@ imply semantic acceptance.
 3. Consumer record snapshots and rollback handles remain adoption requirements in Phase 4 rather
    than package-release claims.
 
-### Phase 1 — core primitive — shipped
+### Phase 1 — core primitive — implemented locally
 
 1. Implement core records and ports.
 2. Implement normative in-memory object store and artifact repository.
 3. Implement the coordinator, hashing, streaming, lineage, and idempotency.
 4. Prove failure cleanup and orphan auditing.
 
-### Phase 2 — Mirk persistence — shipped
+### Phase 2 — Mirk persistence — implemented locally
 
 1. Implement `@mirk/artifact/store` over `@mirk/store/kv`.
 2. Add parity tests against the in-memory repository.
@@ -704,7 +886,7 @@ imply semantic acceptance.
 4. Do not create an artifact-specific SQL schema package unless measured behavior proves the generic
    collection port insufficient.
 
-### Phase 3 — community storage bindings — shipped initial adapters
+### Phase 3 — community storage bindings — implemented initial adapters locally
 
 1. `FileObjectStore` supplies the local Node reference.
 2. `@mirk/artifact-opendal` supplies a thin community-storage binding and rejects unsupported
@@ -719,9 +901,24 @@ imply semantic acceptance.
 3. Retain a reversible legacy-read path until stored objects remain accessible through the new seam.
 4. Remove duplicate storage code only after conformance, rollback, and reachability checks pass.
 
+### Phase 5 — finalization and maintenance hardening — implemented locally
+
+1. `StoreArtifactRepository` and the in-memory repository implement `AtomicArtifactRepository`
+   when their injected store supports the optional atomic-mutation capability.
+2. Coordinator concurrency mode is explicit: `single-writer` or `repository-atomic`.
+3. Repository-owned shared-writer and exclusive-deletion object leases fence finalization and repair.
+4. `@mirk/artifact/maintenance` provides read-only audits and plan-first conditional repair.
+5. Package tests cover concurrent finalization, replay/conflict, lease interleavings, partial audits,
+   lineage repair, and state-change conflicts.
+
+MR-10's local source now includes the hardening surfaces above. Atomic finalization and destructive
+orphan repair remain capability-gated: a repository without atomic mutation or object leases must use
+single-writer behavior or return `lease-unavailable`. This implementation record does not assert
+registry publication or consumer/runtime adoption.
+
 ## Broader maturity criteria
 
-The initial packages are released. The broader substrate is mature when:
+The local packages are implemented. The broader substrate is mature when:
 
 - a zero-byte object and a multi-gigabyte streamed object follow the same portable API;
 - one local and one remote community storage binding pass the shared contract suite;
@@ -749,7 +946,8 @@ These decisions require consumer evidence and contract tests before expanding th
 3. Whether audit tombstones ship in the first release or remain an optional repository wrapper.
 4. Whether annotation query requires a deliberately small exact-match facet after two consumers
    demonstrate the same need.
-5. Whether orphan repair belongs in the core coordinator or an explicit maintenance subpath.
+5. The maintenance boundary is the explicit `@mirk/artifact/maintenance` subpath; future changes
+   should preserve its plan-first and repository-lease contract.
 
 None of these reopen the ownership boundary: bytes, integrity, portable artifact metadata, and
 lineage belong to Mirk; execution and product meaning do not.

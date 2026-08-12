@@ -51,3 +51,14 @@ jobs:
 
       - name: Test
         run: pnpm -r test --reporter=verbose
+
+      - name: Verify packed package releases
+        run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --receipt-dir .mirk-release
+
+      - name: Upload release receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirk-release-receipts
+          path: .mirk-release/
+          if-no-files-found: ignore

@@ -7,6 +7,9 @@ bindings (as optional peers).
 
 ESM-only (the package exposes `import` entry points; there is no CommonJS build).
 
+Atomic mutation, SQLite inspection/checkpoint operations, and the repository-owned evidence harness
+are implemented locally. Publication and consumer adoption need separate evidence.
+
 ## Install
 
 ```bash
@@ -23,6 +26,7 @@ npm install sqlite-vec
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
 | `@mirk/store`              | the ports + their in-memory references + `toAsync` / `toAsyncSearch`, graph contract types, cosine helpers                                       | none                                                  |
 | `@mirk/store/kv`           | `SyncStore` port (key-value + collections), `InMemoryKv`, `toAsync`                                                                              | none                                                  |
+| `@mirk/store/atomic`       | Optional versioned reads, declarative atomic mutations, idempotent receipts, canonical request digests, and capability guards                    | none                                                  |
 | `@mirk/store/vector`       | `VectorStore` port, `InMemoryVectorStore`, cosine helpers                                                                                        | none                                                  |
 | `@mirk/store/search`       | `SearchStore` / `AsyncSearchStore` ports, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search                                      | none                                                  |
 | `@mirk/store/graph`        | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none                                                  |
@@ -62,6 +66,36 @@ const workspaces = namespaceStore(kv, "app.workspaces.v1");
 ```
 
 Namespaces isolate keys and collection names while preserving the ordinary `SyncStore` contract.
+
+## Optional atomic mutation
+
+`@mirk/store/atomic` adds versioned reads and a bounded declarative mutation batch without changing
+the base `SyncStore` or `AsyncStore` ports. The in-memory reference and `SqliteAdapter.kv` implement
+the capability; discover it with `supportsAtomicMutation` (or
+`supportsAsyncAtomicMutation` after `toAsync`). Conditions are checked at one decision point, and
+an applied batch returns one opaque version per operation target:
+
+```ts
+import { InMemoryKv, supportsAtomicMutation } from "@mirk/store";
+
+const kv = new InMemoryKv();
+if (supportsAtomicMutation(kv)) {
+  const result = kv.mutateAtomically({
+    conditions: [
+      { target: { kind: "key", key: "counter" }, expected: "missing" },
+    ],
+    operations: [{ op: "set", key: "counter", value: 1 }],
+    idempotency: { key: "initialize-counter", outcome: { accepted: true } },
+  });
+  // A retry with the same key and request returns status "replayed".
+  result.status;
+}
+```
+
+Atomic payloads are JSON-safe only. Requests reject duplicate targets, empty batches, malformed
+values, and values above the portable condition, operation, request, or outcome limits before any
+decision. Idempotency receipts never expire and are durable in SQLite. `namespaceStore()` preserves
+the capability while binding targets, versions, and receipt keys to the namespace.
 
 ### Collections
 
@@ -167,6 +201,26 @@ db.close();
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
 Modes are `deferred` (default), `immediate`, and `exclusive`. The callback must not perform
 asynchronous or external work.
+
+Operational inspection is read-only and does not run a checkpoint:
+
+```ts
+const state = db.inspect();
+// state.journalMode, state.busyTimeoutMs, state.pageCount, state.walFileSizeBytes
+```
+
+The returned shape does not include the database path unless `db.inspect({ debugPaths: true })`
+is requested for local diagnostics. WAL maintenance is explicit; callers choose `passive`,
+`restart`, or `truncate` and receive `{ busy, logFrames, checkpointedFrames }`:
+
+```ts
+const checkpoint = db.checkpoint("passive");
+```
+
+The package-owned generic two-process evidence harness is a repository test/tooling module at
+`src/sqlite-harness.ts` (it is not a public package export). It uses generated records, independent
+OS processes, crash injection, reconciliation, reopen checks, and path-free operation/latency/WAL/
+recovery metrics. It does not start or require a writer daemon.
 
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by
 **exact cosine**. When the optional `sqlite-vec` peer is installed, search is transparently

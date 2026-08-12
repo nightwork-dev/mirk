@@ -1,6 +1,6 @@
 {
   "name": "@mirk/surreal",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "SurrealDB source adapters for Mirk over one shared async connection.",
   "license": "Apache-2.0",

@@ -20,10 +20,40 @@ export type {
   AsyncStoreInQuery,
   StoreMeta,
   StoreFilter,
-} from './types.js';
-export { toAsync } from './to-async.js';
-export { InMemoryStore as InMemoryKv } from './backends/memory.js';
-export { namespaceStore } from './namespace.js';
+} from "./types.js";
+export { toAsync } from "./to-async.js";
+export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
+export { namespaceStore } from "./namespace.js";
+
+// Optional declarative atomic mutation capability. This module is dependency-free
+// and remains safe for root/browser imports; native implementations live in
+// adapter facets.
+export type {
+  JsonValue,
+  JsonObject,
+  StoreTarget,
+  StoreVersion,
+  VersionedStoreValue,
+  SyncVersionedReadStore,
+  AsyncVersionedReadStore,
+  StoreCondition,
+  AtomicStoreOperation,
+  AtomicIdempotency,
+  AtomicMutationRequest,
+  AtomicMutationResult,
+  AtomicCompletedMutationResult,
+  AtomicMutationRejectionCode,
+  SyncAtomicMutationStore,
+  AsyncAtomicMutationStore,
+} from "./atomic.js";
+export {
+  AtomicMutationRejectedError,
+  AtomicMutationBackendError,
+  AtomicMutationIndeterminateError,
+  supportsAtomicMutation,
+  supportsAsyncAtomicMutation,
+  canonicalJson,
+} from "./atomic.js";
 
 // Vector port + in-memory reference + shared helpers
 export type {
@@ -34,17 +64,17 @@ export type {
   VectorDocument,
   VectorSearchResult,
   VectorSearchOptions,
-} from './vector/types.js';
+} from "./vector/types.js";
 export {
   cosineSimilarity,
   vectorToBuffer,
   bufferToVector,
   assertDimensions,
   isUsableVector,
-} from './vector/cosine.js';
-export { InMemoryVectorStore } from './vector/memory.js';
-export { toAsyncVector } from './vector/to-async-vector.js';
-export { matchesWhere } from './vector/filter.js';
+} from "./vector/cosine.js";
+export { InMemoryVectorStore } from "./vector/memory.js";
+export { toAsyncVector } from "./vector/to-async-vector.js";
+export { matchesWhere } from "./vector/filter.js";
 
 // Search port + in-memory reference + shared tokenization helpers
 export type {
@@ -55,10 +85,10 @@ export type {
   SearchFieldDocument,
   SearchOptions,
   SearchResult,
-} from './search/types.js';
-export { InMemorySearchStore } from './search/memory.js';
-export { toAsyncSearch } from './search/to-async-search.js';
-export { tokenize, sanitizeFtsQuery } from './search/tokenize.js';
+} from "./search/types.js";
+export { InMemorySearchStore } from "./search/memory.js";
+export { toAsyncSearch } from "./search/to-async-search.js";
+export { tokenize, sanitizeFtsQuery } from "./search/tokenize.js";
 
 // Graph contract types. The traversal helpers remain available from /graph.
 export type {
@@ -67,4 +97,4 @@ export type {
   GraphTraversalOptions,
   GraphTraversalResult,
   AsyncGraphTraversal,
-} from './graph.js';
+} from "./graph.js";

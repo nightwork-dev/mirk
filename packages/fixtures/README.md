@@ -41,7 +41,11 @@ prompt:code-review
 A fixture type defines where records live and how they are validated:
 
 ```ts
-import { createFixtureLoader, createFixtureRegistry, defineFixtureType } from "@mirk/fixtures";
+import {
+  createFixtureLoader,
+  createFixtureRegistry,
+  defineFixtureType,
+} from "@mirk/fixtures";
 import { createMemoryFixtureSource } from "@mirk/fixtures/memory";
 
 const themeType = defineFixtureType({
@@ -143,12 +147,12 @@ Missing targets become diagnostics and unresolved graph nodes, not late runtime 
 The loader works over a small source interface: list entries, read entry. Source helpers adapt the
 places authored data commonly lives.
 
-| Source | Use it for | Status |
-| --- | --- | --- |
-| `@mirk/fixtures/memory` | tests, examples, generated packs | implemented |
-| `@mirk/fixtures/store` | durable packs backed by `@mirk/store/kv` | implemented |
-| `@mirk/fixtures/filesystem` | local directories and CLI workflows | implemented |
-| `@mirk/fixtures/package` | file-backed defaults shipped with a package | implemented |
+| Source                      | Use it for                                  | Status      |
+| --------------------------- | ------------------------------------------- | ----------- |
+| `@mirk/fixtures/memory`     | tests, examples, generated packs            | implemented |
+| `@mirk/fixtures/store`      | durable packs backed by `@mirk/store/kv`    | implemented |
+| `@mirk/fixtures/filesystem` | local directories and CLI workflows         | implemented |
+| `@mirk/fixtures/package`    | file-backed defaults shipped with a package | implemented |
 
 Everything above the source boundary is shared: parsing, validation, layering, patching, reference
 resolution, materialization, diagnostics, and provenance.
@@ -233,17 +237,40 @@ The store package stays focused on storage ports. Fixture rules live here.
 
 Root imports stay dependency-light and runtime-neutral.
 
-| Import | What you get | Node-only modules | Status |
-| --- | --- | --- | --- |
-| `@mirk/fixtures` | registry, type definitions, loader, refs, diagnostics | no | implemented |
-| `@mirk/fixtures/memory` | in-memory source | no | implemented |
-| `@mirk/fixtures/store` | store source and seeding helpers | no | implemented |
-| `@mirk/fixtures/filesystem` | filesystem source | yes | implemented |
-| `@mirk/fixtures/package` | file-backed package/resource source | yes | implemented |
-| `@mirk/fixtures/cli` | CLI helpers | yes | planned |
+| Import                      | What you get                                               | Node-only modules | Status      |
+| --------------------------- | ---------------------------------------------------------- | ----------------- | ----------- |
+| `@mirk/fixtures`            | registry, type definitions, loader, refs, diagnostics      | no                | implemented |
+| `@mirk/fixtures/memory`     | in-memory source                                           | no                | implemented |
+| `@mirk/fixtures/store`      | store source and seeding helpers                           | no                | implemented |
+| `@mirk/fixtures/filesystem` | filesystem source                                          | yes               | implemented |
+| `@mirk/fixtures/package`    | file-backed package/resource source                        | yes               | implemented |
+| `@mirk/fixtures/cli`        | explicit-config CLI helpers and the `mirk-fixtures` binary | yes               | implemented |
 
 The root entry does not pull filesystem APIs, parser bundles, database bindings, or CLI code into a
 browser or edge bundle.
+
+## CLI
+
+The authoring CLI takes an explicit JavaScript configuration module. It does not discover a project
+directory or parser packages:
+
+```text
+mirk-fixtures validate <config>
+mirk-fixtures list <config> [--type <type>]
+mirk-fixtures show <config> <type:id> [--raw|--materialized]
+mirk-fixtures explain <config> <type:id>
+mirk-fixtures graph <config> [--format json|dot]
+```
+
+The supplied path resolves `mirk.fixtures.mjs`, which exports `{ registry, sources, parsers }` or a
+constructed loader. Each command supports deterministic human output and `--json` using the
+`mirk-fixtures-cli/v1` envelope. Exit codes distinguish fixture errors (`1`), CLI/configuration
+errors (`2`), and source or unexpected failures (`3`); `0` means no error diagnostics. Absolute paths
+are hidden unless `--debug-paths` is explicitly requested.
+
+The same implementation is available as `executeFixtureCli()` and `runFixtureCli()` from
+`@mirk/fixtures/cli`, and as the `mirk-fixtures` package binary. The binary imports only the supplied
+configuration module; it does not discover application directories or evaluate authored content.
 
 ## What to care about
 
@@ -267,7 +294,8 @@ It is the reusable boundary between raw authored data and application state.
 
 ## Status
 
-Core, memory, store, references, materialization, filesystem, and file-backed package sources are
-implemented. CLI helpers remain planned.
+Core, memory, store, references, materialization, filesystem, file-backed package sources, and the
+explicit-config CLI are implemented locally. Publication and consumer adoption need separate
+evidence.
 
 See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design and remaining slice plan.

@@ -48,7 +48,10 @@ await store.delete("objects/example.txt");
 ## With ArtifactCoordinator
 
 ```ts
-import { ArtifactCoordinator, InMemoryArtifactRepository } from "@mirk/artifact";
+import {
+  ArtifactCoordinator,
+  InMemoryArtifactRepository,
+} from "@mirk/artifact";
 import { Operator } from "opendal";
 import { OpenDalObjectStore } from "@mirk/artifact-opendal";
 
@@ -73,12 +76,14 @@ console.log((await artifacts.verify(artifact.id)).ok); // true
 `OpenDalObjectStore` checks the injected operator capabilities before using optional object-store features:
 
 | `ObjectStore` option | OpenDAL capability required |
-|---|---|
-| `ifAbsent` | `writeWithIfNotExists` |
-| `mediaType` | `writeWithContentType` |
-| `metadata` | `writeWithUserMetadata` |
+| -------------------- | --------------------------- |
+| `ifAbsent`           | `writeWithIfNotExists`      |
+| `mediaType`          | `writeWithContentType`      |
+| `metadata`           | `writeWithUserMetadata`     |
 
 If a backend cannot perform a requested feature atomically or natively, the adapter throws instead of emulating weaker behavior.
+
+When OpenDAL exposes recursive listing, `list()` implements the optional `ListableObjectStore` capability used by `@mirk/artifact/maintenance`; backends without listing remain valid object stores but produce partial audits.
 
 ## Contract Boundaries
 

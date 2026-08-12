@@ -1,6 +1,8 @@
 # `@mirk/fixtures` public package specification
 
-**Status:** core, memory, store, references, and materialization released; filesystem/package sources implemented; CLI planned
+**Status:** core, memory, store, references, materialization, filesystem, package sources, and the
+explicit-config CLI are implemented locally; publication and consumer adoption need separate
+evidence
 **Package:** `@mirk/fixtures`  
 **Horizon:** near  
 **Related primitive:** `@mirk/store/kv`
@@ -79,14 +81,14 @@ Public package metadata should use the package and CLI names directly:
 
 Public subpaths are normative; internal source filenames are not:
 
-| Import | Contents | Native deps |
-| --- | --- | --- |
-| `@mirk/fixtures` | core types, registry, async loader, refs, diagnostics | none |
-| `@mirk/fixtures/memory` | in-memory fixture source | none |
-| `@mirk/fixtures/store` | store-backed fixture source and store seeding helpers over the `@mirk/store/kv` collection port | none beyond `@mirk/store` types |
-| `@mirk/fixtures/filesystem` | Node filesystem source | Node built-ins only |
-| `@mirk/fixtures/package` | file-backed package/resource source helper | Node built-ins only |
-| `@mirk/fixtures/cli` | CLI entry helpers | only optional parser deps if they are explicitly added later |
+| Import                      | Contents                                                                                        | Native deps                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `@mirk/fixtures`            | core types, registry, async loader, refs, diagnostics                                           | none                                                         |
+| `@mirk/fixtures/memory`     | in-memory fixture source                                                                        | none                                                         |
+| `@mirk/fixtures/store`      | store-backed fixture source and store seeding helpers over the `@mirk/store/kv` collection port | none beyond `@mirk/store` types                              |
+| `@mirk/fixtures/filesystem` | Node filesystem source                                                                          | Node built-ins only                                          |
+| `@mirk/fixtures/package`    | file-backed package/resource source helper                                                      | Node built-ins only                                          |
+| `@mirk/fixtures/cli`        | CLI entry helpers                                                                               | only optional parser deps if they are explicitly added later |
 
 The root entry must not re-export filesystem, package-resolution, or CLI helpers if doing so would
 force bundlers to include Node-only modules in browser/edge builds.
@@ -217,8 +219,8 @@ Conventions:
   are not applied; they may appear in provenance as shadowed patch layers.
 - Equal priorities are allowed only if declaration order is used as a deterministic tie-breaker;
   provenance order reflects the deterministic application order.
-- Plain sources may be accepted as shorthand for `{ source, layer: source.id, priority:
-  declarationIndex }` if the implementation supports mixed source arrays.
+- Plain sources may be accepted through an equivalent deterministic shorthand if
+  the implementation supports mixed source arrays.
 - Built-in layer names may be documented (`base`, `app`, `scenario`, `user`) but must remain
   conventions, not special cases.
 
@@ -286,7 +288,10 @@ interface StoreFixtureSourceOptions<TItem = StoredFixtureItem> {
 
 interface KvLike<TItem> {
   list(collection: string): MaybePromise<readonly TItem[]>;
-  getById(collection: string, id: string): MaybePromise<TItem | null | undefined>;
+  getById(
+    collection: string,
+    id: string
+  ): MaybePromise<TItem | null | undefined>;
 }
 
 interface StoredFixtureItem {
@@ -331,10 +336,10 @@ await seedStoreFromFixtures({
   loader,
   store: adapter.kv,
   targets: {
-    "theme": "themes",
-    "template": "templates"
+    theme: "themes",
+    template: "templates",
   },
-  mode: "upsert"
+  mode: "upsert",
 });
 ```
 
@@ -380,7 +385,10 @@ type ParserEntry =
   | { kind: "plain"; parse: Parser }
   | { kind: "async"; parse: AsyncParser }
   | { kind: "positioned"; parse: (content: string) => PositionedParseResult }
-  | { kind: "async-positioned"; parse: (content: string) => Promise<PositionedParseResult> };
+  | {
+      kind: "async-positioned";
+      parse: (content: string) => Promise<PositionedParseResult>;
+    };
 ```
 
 Requirements:
@@ -444,16 +452,18 @@ Requirements:
 
 Built-in strategies:
 
-| Strategy | Behavior |
-| --- | --- |
-| `replace` | Incoming value replaces the existing value. |
-| `deep` | Plain objects merge recursively; arrays and scalars replace. |
+| Strategy        | Behavior                                                                                 |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| `replace`       | Incoming value replaces the existing value.                                              |
+| `deep`          | Plain objects merge recursively; arrays and scalars replace.                             |
 | `array-replace` | Plain objects merge shallowly; array fields replace; non-object incoming values replace. |
 
 Custom strategy:
 
 ```ts
-type MergeStrategy = BuiltinMergeStrategy | ((existing, incoming, ctx) => unknown);
+type MergeStrategy =
+  | BuiltinMergeStrategy
+  | ((existing, incoming, ctx) => unknown);
 ```
 
 Requirements:
@@ -617,20 +627,41 @@ failures.
 
 Commands:
 
-```bash
-mirk-fixtures validate <root>
-mirk-fixtures list <root> [--type prompt]
-mirk-fixtures show <root> <type:id> [--raw | --materialized]
-mirk-fixtures graph <root> [--format json|dot]
-mirk-fixtures explain <root> <type:id>
+```text
+mirk-fixtures validate <config>
+mirk-fixtures list <config> [--type <type>]
+mirk-fixtures show <config> <type:id> [--raw|--materialized]
+mirk-fixtures explain <config> <type:id>
+mirk-fixtures graph <config> [--format json|dot]
 ```
 
 CLI scope rules:
 
-- The CLI can live in `@mirk/fixtures/cli` and an executable bin.
-- YAML / JSON5 parser support should be explicit. Either ship no extra parser by default and accept
-  a config file, or add parser deps only if the package owner accepts that root install cost.
-- CLI output must be deterministic and avoid absolute paths unless a verbose/debug flag is passed.
+- The CLI lives in `@mirk/fixtures/cli` and the `mirk-fixtures` executable bin.
+- Configuration is an explicit JavaScript module named `mirk.fixtures.mjs`, resolved relative to the
+  supplied config path. It exports `{ registry, sources, parsers }` or a constructed loader.
+- The CLI does not discover application directories, packages, validators, or parser plugins. Parser
+  packages are imported by the configuration module, and TypeScript configuration is not supported
+  in v1.
+- Every command supports deterministic human output and `--json` with this versioned envelope:
+
+  ```ts
+  interface FixtureCliEnvelope<T> {
+    schema: "mirk-fixtures-cli/v1";
+    command: string;
+    ok: boolean;
+    result?: T;
+    diagnostics: readonly Diagnostic[];
+  }
+  ```
+
+- Exit code `0` means no error diagnostics; `1` means fixture, parse, schema, reference, or
+  materialization failure; `2` means CLI usage or configuration failure; and `3` means source access
+  or unexpected internal failure.
+- CLI output is deterministic and hides absolute paths by default. `--debug-paths` is an explicit
+  local-diagnosis option.
+- Filesystem and package sources retain their realpath containment checks. The CLI imports only the
+  supplied configuration module and never evaluates authored content as code.
 
 ## Testing strategy
 
@@ -675,13 +706,16 @@ Minimum tests before implementation is called done:
 37. Materialization caches and invalidates separately from raw load.
 38. Materialization cycle detection returns a structured diagnostic.
 39. Public diagnostics avoid absolute local paths.
-40. CLI output is deterministic and path-safe.
-41. Package metadata contains no private registry, local path, or internal package scope.
-42. Package export smoke tests prove root import does not load Node-only modules.
+40. CLI human output is deterministic and path-safe.
+41. CLI JSON output uses the `mirk-fixtures-cli/v1` envelope.
+42. CLI config import failures and source failures map to stable exit codes.
+43. Packed binary invocation works outside the monorepo.
+44. Package metadata contains no private registry, local path, or internal package scope.
+45. Package export smoke tests prove root import does not load Node-only modules.
 
 ## Implementation record
 
-### Slice 1 — core + memory source — shipped
+### Slice 1 — core + memory source — implemented locally
 
 - Package scaffold with tsup, explicit exports, README.
 - Registry, refs, diagnostics, parser normalization.
@@ -691,7 +725,7 @@ Minimum tests before implementation is called done:
 - Basic `$patch` support.
 - Unit tests for core behavior.
 
-### Slice 2 — store integration — shipped
+### Slice 2 — store integration — implemented locally
 
 - `@mirk/fixtures/store` subpath.
 - Structural `KvLike` source support over `SyncStore` / `AsyncStore` collection methods.
@@ -699,32 +733,37 @@ Minimum tests before implementation is called done:
 - Tests over `InMemoryKv` and `LibsqlAdapter.kv`, with libSQL kept in `@mirk/store-libsql`'s dev surface.
 - Source cache invalidation hook.
 
-### Slice 3 — filesystem/package sources — implemented, release pending
+### Slice 3 — filesystem/package sources — implemented locally in 0.2.0
 
 - Node filesystem source with path safety.
 - Package/resource source for shipped defaults.
 - Export-map smoke tests.
 
-### Slice 4 — reference graph + materialization — shipped
+### Slice 4 — reference graph + materialization — implemented locally
 
 - `resolveRef`.
 - Validation aggregation.
 - Reference graph.
 - Materialization cache and cycle detection.
 
-### Slice 5 — CLI — planned
+### Slice 5 — CLI — implemented locally
 
-- `validate`, `list`, `show`, `graph`, `explain`.
-- JSON output mode.
-- Optional parser configuration.
+- `validate`, `list`, `show`, `explain`, and `graph` against an explicit JS config module.
+- Deterministic human output and versioned JSON envelopes.
+- Optional parser configuration imported by the supplied config.
+- `@mirk/fixtures/cli` exports `executeFixtureCli()` and `runFixtureCli()`; the package binary is
+  `mirk-fixtures`.
+
+## Resolved implementation choices
+
+1. The v1 CLI accepts either a constructed `FixtureLoader` or loader inputs exported by
+   `mirk.fixtures.mjs`; both forms normalize through one configuration path.
 
 ## Open design questions
 
-1. Should CLI parser plugins be configured by JS config file, package subpath, or command-line
-   dynamic import?
-2. What real no-Promise consumer would justify a future `@mirk/fixtures/sync` subpath and the
+1. What real no-Promise consumer would justify a future `@mirk/fixtures/sync` subpath and the
    accompanying parity matrix?
-3. Should nested fixture ids remain a later feature, or should a later implementation expose an
+2. Should nested fixture ids remain a later feature, or should a later implementation expose an
    explicit opt-in before adding them to the public contract?
 
 Store collection topology is caller-selected through `createStoreFixtureSource({ collection })`;

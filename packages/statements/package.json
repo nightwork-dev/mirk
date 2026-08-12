@@ -1,6 +1,6 @@
 {
   "name": "@mirk/statements",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Production storage adapter for statements/v1 records, admission receipts, bitemporal indexes, and legacy dual-read parity harnesses.",
   "license": "Apache-2.0",
