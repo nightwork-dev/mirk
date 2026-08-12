@@ -7,6 +7,7 @@ const memory = await import("@mirk/fixtures/memory");
 const filesystem = await import("@mirk/fixtures/filesystem");
 const packageSource = await import("@mirk/fixtures/package");
 const store = await import("@mirk/fixtures/store");
+const cli = await import("@mirk/fixtures/cli");
 
 for (const key of [
   "createFixtureLoader",
@@ -15,18 +16,64 @@ for (const key of [
   "parseRef",
   "FixtureError",
 ]) {
-  assert.equal(typeof root[key], key === "FixtureError" ? "function" : "function", `missing root export ${key}`);
+  assert.equal(
+    typeof root[key],
+    key === "FixtureError" ? "function" : "function",
+    `missing root export ${key}`
+  );
 }
 
-assert.equal(typeof memory.createMemoryFixtureSource, "function", "missing memory export");
-assert.equal(typeof filesystem.createFilesystemFixtureSource, "function", "missing filesystem export");
-assert.equal(typeof packageSource.createPackageFixtureSource, "function", "missing package source export");
-assert.equal(typeof store.createStoreFixtureSource, "function", "missing store source export");
-assert.equal(typeof store.seedStoreFromFixtures, "function", "missing store sink export");
-assert.equal(root.createStoreFixtureSource, undefined, "root must not re-export store helpers");
-assert.equal(root.createMemoryFixtureSource, undefined, "root must not re-export memory helpers");
-assert.equal(root.createFilesystemFixtureSource, undefined, "root must not re-export filesystem helpers");
-assert.equal(root.createPackageFixtureSource, undefined, "root must not re-export package helpers");
+assert.equal(
+  typeof memory.createMemoryFixtureSource,
+  "function",
+  "missing memory export"
+);
+assert.equal(
+  typeof filesystem.createFilesystemFixtureSource,
+  "function",
+  "missing filesystem export"
+);
+assert.equal(
+  typeof packageSource.createPackageFixtureSource,
+  "function",
+  "missing package source export"
+);
+assert.equal(
+  typeof store.createStoreFixtureSource,
+  "function",
+  "missing store source export"
+);
+assert.equal(
+  typeof store.seedStoreFromFixtures,
+  "function",
+  "missing store sink export"
+);
+assert.equal(
+  typeof cli.executeFixtureCli,
+  "function",
+  "missing CLI execution export"
+);
+assert.equal(typeof cli.runFixtureCli, "function", "missing CLI runner export");
+assert.equal(
+  root.createStoreFixtureSource,
+  undefined,
+  "root must not re-export store helpers"
+);
+assert.equal(
+  root.createMemoryFixtureSource,
+  undefined,
+  "root must not re-export memory helpers"
+);
+assert.equal(
+  root.createFilesystemFixtureSource,
+  undefined,
+  "root must not re-export filesystem helpers"
+);
+assert.equal(
+  root.createPackageFixtureSource,
+  undefined,
+  "root must not re-export package helpers"
+);
 
 for (const file of dependencyGraph([
   "dist/index.js",
@@ -34,7 +81,11 @@ for (const file of dependencyGraph([
   "dist/sources/store.js",
 ])) {
   const text = readFileSync(file, "utf8");
-  assert.equal(/\bfrom\s+["']node:|\brequire\(["']node:/.test(text), false, `${file} imports node builtins`);
+  assert.equal(
+    /\bfrom\s+["']node:|\brequire\(["']node:/.test(text),
+    false,
+    `${file} imports node builtins`
+  );
 }
 
 function dependencyGraph(entries) {
@@ -45,10 +96,15 @@ function dependencyGraph(entries) {
     if (!file || visited.has(file)) continue;
     visited.add(file);
     const text = readFileSync(file, "utf8");
-    for (const match of text.matchAll(/\b(?:from\s+|import\()(["'])(\.[^"']+)\1/g)) {
+    for (const match of text.matchAll(
+      /\b(?:from\s+|import\()(["'])(\.[^"']+)\1/g
+    )) {
       const dependency = resolve(dirname(file), match[2]);
-      const candidate = dependency.endsWith(".js") ? dependency : `${dependency}.js`;
-      if (existsSync(candidate) && !visited.has(candidate)) pending.push(candidate);
+      const candidate = dependency.endsWith(".js")
+        ? dependency
+        : `${dependency}.js`;
+      if (existsSync(candidate) && !visited.has(candidate))
+        pending.push(candidate);
     }
   }
   return visited;

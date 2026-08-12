@@ -11,6 +11,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "docs:check": "node scripts/check-public-docs.mjs",
+    "release:verify": "node scripts/verify-package-release.mjs",
+    "release:receipt": "node scripts/verify-package-release.mjs --publication",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "pnpm build && changeset publish"

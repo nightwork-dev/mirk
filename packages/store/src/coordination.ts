@@ -6,11 +6,26 @@
 import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 
+/** The minimal signal surface used by the coordinator. */
+export interface CoordinationAbortSignal {
+  readonly aborted: boolean;
+  readonly reason: unknown;
+  addEventListener(
+    type: "abort",
+    listener: (...args: any[]) => unknown,
+    options?: { once?: boolean }
+  ): void;
+  removeEventListener(
+    type: "abort",
+    listener: (...args: any[]) => unknown
+  ): void;
+}
+
 export interface CoordinationGuard {
   readonly key: string;
   readonly ownerToken: string;
   readonly fencingGeneration: number;
-  readonly signal: AbortSignal;
+  readonly signal: CoordinationAbortSignal;
   assertOwned(): void;
 }
 
@@ -26,7 +41,7 @@ export interface CoordinationRunOptions {
   waitMs?: number;
   leaseMs?: number;
   renewEveryMs?: number;
-  signal?: AbortSignal;
+  signal?: CoordinationAbortSignal;
 }
 
 export interface SqliteCoordinatorOptions {
@@ -194,6 +209,10 @@ export class SqliteCoordinator implements AsyncCoordinator {
         );
       };
       options.signal?.addEventListener("abort", abortForwarder, { once: true });
+      // An external signal can transition between the acquire check and
+      // listener registration. EventTarget does not replay an already-fired
+      // abort event, so close that race before entering caller work.
+      if (options.signal?.aborted) abortForwarder();
       renewTimer = setInterval(() => {
         if (!guard || guard.signal.aborted) return;
         if (
@@ -230,7 +249,7 @@ export class SqliteCoordinator implements AsyncCoordinator {
     key: string,
     deadline: number,
     waitMs: number,
-    signal: AbortSignal | undefined
+    signal: CoordinationAbortSignal | undefined
   ): Promise<() => void> {
     const queueKey = `${this.#namespace}\0${key}`;
     const prior = this.#queues.get(queueKey) ?? Promise.resolve();
@@ -270,7 +289,7 @@ export class SqliteCoordinator implements AsyncCoordinator {
     leaseMs: number,
     deadline: number,
     waitMs: number,
-    signal: AbortSignal | undefined
+    signal: CoordinationAbortSignal | undefined
   ): Promise<{ ownerToken: string; fencingGeneration: number }> {
     while (true) {
       if (signal?.aborted)
@@ -437,7 +456,7 @@ class SqliteCoordinationGuard implements CoordinationGuard {
   readonly key: string;
   readonly ownerToken: string;
   readonly fencingGeneration: number;
-  readonly signal: AbortSignal;
+  readonly signal: CoordinationAbortSignal;
   readonly #controller = new AbortController();
   readonly #namespace: string;
   readonly #isOwned: () => boolean;
@@ -484,7 +503,7 @@ async function waitFor(
     namespace: string;
     deadline: number;
     now: () => number;
-    signal?: AbortSignal;
+    signal?: CoordinationAbortSignal;
   }
 ): Promise<void> {
   if (options.signal?.aborted)
@@ -534,7 +553,7 @@ async function waitFor(
 
 function sleep(
   ms: number,
-  signal: AbortSignal | undefined,
+  signal: CoordinationAbortSignal | undefined,
   key: string
 ): Promise<void> {
   if (signal?.aborted) throw new CoordinationAbortedError(key, signal.reason);

@@ -6,6 +6,9 @@ The root package is runtime-neutral. It exports the artifact coordinator, in-mem
 
 ESM-only.
 
+Atomic finalization, repository object leases, and maintenance are implemented locally. Publication
+and consumer adoption need separate evidence.
+
 ## Install
 
 ```bash
@@ -20,11 +23,12 @@ import { FileObjectStore } from "@mirk/artifact/fs";
 
 ## Exports
 
-| Import | What it gives you | Native deps |
-|---|---|---|
-| `@mirk/artifact` | `ArtifactCoordinator`, in-memory object/repository references, object-store and artifact types, digest and validation helpers | none |
-| `@mirk/artifact/store` | `StoreArtifactRepository`, backed by any `AsyncStore` from `@mirk/store/kv` | none |
-| `@mirk/artifact/fs` | `FileObjectStore`, backed by local disk bytes plus sidecar metadata | Node built-ins only |
+| Import                       | What it gives you                                                                                                             | Native deps         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `@mirk/artifact`             | `ArtifactCoordinator`, in-memory object/repository references, object-store and artifact types, digest and validation helpers | none                |
+| `@mirk/artifact/store`       | `StoreArtifactRepository`, backed by any `AsyncStore` from `@mirk/store/kv`                                                   | none                |
+| `@mirk/artifact/fs`          | `FileObjectStore`, backed by local disk bytes plus sidecar metadata                                                           | Node built-ins only |
+| `@mirk/artifact/maintenance` | read-only audits and explicit conditional repair plans                                                                        | none                |
 
 ## Quickstart
 
@@ -63,6 +67,10 @@ console.log(text); // hello
 
 `ArtifactCoordinator.write()` stores bytes first, records SHA-256 and byte length as the stream is consumed, then commits metadata. If metadata commit fails, it attempts to delete the orphaned object and reports the cleanup result through `ArtifactWriteError`.
 
+Finalization concurrency is explicit. The default `{ mode: "single-writer" }` requires deployment-level exclusion. Use `{ mode: "repository-atomic" }` with `StoreArtifactRepository` over a store that exposes `AsyncAtomicMutationStore` for atomic idempotent metadata decisions. Mirk computes the `mirk-artifact-finalization/v1` request digest; callers never provide it.
+
+`@mirk/artifact/maintenance` performs read-only audits. `planRepair()` creates opaque, audit-scoped references and conditional actions; `applyRepair()` is a separate explicit call. Destructive orphan deletion requires the repository-owned shared-writer/exclusive-delete lease capability and returns a `lease-unavailable` conflict when a repository cannot enforce it. Preconditions return conflicts; backend failures reject. Object-store keys are not included in findings or repair plans.
+
 ## Persist Metadata With `@mirk/store`
 
 `StoreArtifactRepository` stores artifact metadata and lineage in any async Mirk KV implementation. For local sync stores, lift with `toAsync()`.
@@ -89,7 +97,9 @@ const second = await artifacts.write({
   sources: [{ artifactId: first.id, operation: "text.transform" }],
 });
 
-console.log((await metadata.getSources(second.id)).map((edge) => edge.operation));
+console.log(
+  (await metadata.getSources(second.id)).map((edge) => edge.operation)
+);
 ```
 
 ## Store Bytes On Local Disk
@@ -123,7 +133,11 @@ An `ObjectStore` stores physical bytes by portable relative keys:
 
 ```ts
 interface ObjectStore {
-  put(key: string, bytes: ByteSource, options?: ObjectPutOptions): Promise<ObjectInfo>;
+  put(
+    key: string,
+    bytes: ByteSource,
+    options?: ObjectPutOptions
+  ): Promise<ObjectInfo>;
   get(key: string): Promise<ByteStream | undefined>;
   head(key: string): Promise<ObjectInfo | undefined>;
   delete(key: string): Promise<boolean>;

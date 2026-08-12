@@ -21,12 +21,12 @@ graph edges, and authored fixture packs with validation/provenance. You assemble
 **interface ports** and swappable **source adapters**. Build against an in-memory reference with
 nothing installed; swap in SQLite for persistence without changing a line of your own code.
 
-A blog, a game, or an agent host can all draw from the same foundation. Published under the
+A blog, a game, or an agent host can all draw from the same foundation. Packages use the
 `@mirk/*` scope.
 
 ## One source, many capabilities
 
-A *source adapter* opens **one** backend connection and serves several capability **facets** over
+A _source adapter_ opens **one** backend connection and serves several capability **facets** over
 it. `SqliteAdapter` is a single `better-sqlite3` database exposing `.kv` (`SyncStore`), `.vector`
 (`VectorStore`), and `.search` (`SearchStore`) facets — not three libraries, three connections,
 and three transaction scopes.
@@ -49,24 +49,25 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
   <img src="docs/diagrams/code-split.svg" alt="Three subpaths: @mirk/store/kv and @mirk/store/vector are zero native deps; @mirk/store/sqlite is the source adapter and the only one pulling native optional peers (better-sqlite3, sqlite-vec). Import a port subpath and no native binding enters your bundle." width="900" />
 </p>
 
-| Import | What you get | Native deps |
-|---|---|---|
-| `@mirk/store` | the ports, their in-memory references, sync-to-async lifts, cosine helpers | none |
-| `@mirk/store/kv` | `SyncStore` port (key-value + collections) · `InMemoryKv` · `toAsync` | none |
-| `@mirk/store/vector` | `VectorStore` port · `InMemoryVectorStore` · cosine helpers | none |
-| `@mirk/store/search` | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search | none |
-| `@mirk/store/graph` | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal) | none |
-| `@mirk/store/sql` | SQL adapter contract types | none |
-| `@mirk/store/sqlite` | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets | `better-sqlite3` (peer) · `sqlite-vec` (optional peer) |
-| `@mirk/store-libsql` | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets | none |
-| `@mirk/store-postgres` | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters | `pg` |
-| `@mirk/store-markdown` | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history | none |
-| `@mirk/fixtures` | typed authored-data loader, registry, refs, diagnostics, provenance | none |
-| `@mirk/artifact` | durable artifact metadata, integrity, lineage, and object-storage coordination | none |
-| `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port | `opendal` (peer) |
-| `@mirk/statements` | SQLite-backed production storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses | `better-sqlite3` (peer) |
-| `@mirk/surreal` | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
-| `@mirk/migrate` | backend-neutral checkpointed migration across Mirk ports and caller manifests | none |
+| Import                   | What you get                                                                                                                                                      | Native deps                                                                       |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `@mirk/store`            | the ports, their in-memory references, sync-to-async lifts, cosine helpers                                                                                        | none                                                                              |
+| `@mirk/store/kv`         | `SyncStore` port (key-value + collections) · `InMemoryKv` · `toAsync`                                                                                             | none                                                                              |
+| `@mirk/store/atomic`     | optional versioned reads, declarative atomic mutations, idempotent receipts, and capability guards                                                                | none                                                                              |
+| `@mirk/store/vector`     | `VectorStore` port · `InMemoryVectorStore` · cosine helpers                                                                                                       | none                                                                              |
+| `@mirk/store/search`     | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search                                                                                            | none                                                                              |
+| `@mirk/store/graph`      | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal)                                                                      | none                                                                              |
+| `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
+| `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer) · `sqlite-vec` (optional peer)                            |
+| `@mirk/store-libsql`     | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets                                                                                          | none                                                                              |
+| `@mirk/store-postgres`   | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters                                                                                  | `pg`                                                                              |
+| `@mirk/store-markdown`   | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history                                                                | none                                                                              |
+| `@mirk/fixtures`         | typed authored-data loader, registry, refs, diagnostics, provenance, and the explicit-config `mirk-fixtures` CLI                                                  | none                                                                              |
+| `@mirk/artifact`         | durable artifact metadata, integrity, lineage, atomic finalization, object leases, and plan-first maintenance                                                     | none                                                                              |
+| `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port                                                                                                 | `opendal` (peer)                                                                  |
+| `@mirk/statements`       | specialized SQLite storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses; it does not widen general store ports | `better-sqlite3` (peer)                                                           |
+| `@mirk/surreal`          | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection                           | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
+| `@mirk/migrate`          | backend-neutral checkpointed migration across Mirk ports and caller manifests                                                                                     | none                                                                              |
 
 ## Sync by design
 
@@ -111,9 +112,9 @@ import { InMemoryKv, toAsync } from "@mirk/store/kv";
 
 const kv = new InMemoryKv();
 kv.set("user:1", { name: "Ada" });
-kv.get<{ name: string }>("user:1");   // { name: "Ada" }
+kv.get<{ name: string }>("user:1"); // { name: "Ada" }
 
-const remote = toAsync(kv);            // same surface, Promises (sync ⊂ async)
+const remote = toAsync(kv); // same surface, Promises (sync ⊂ async)
 await remote.get("user:1");
 ```
 
@@ -123,15 +124,18 @@ import { SqliteAdapter } from "@mirk/store/sqlite";
 
 const db = new SqliteAdapter({ path: "data.db" });
 
-db.kv.set("user:1", { name: "Ada" });               // key-value + collections
+db.kv.set("user:1", { name: "Ada" }); // key-value + collections
 
-db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello world" } });
+db.search.index("pages", {
+  id: "intro",
+  fields: { title: "Intro", body: "hello world" },
+});
 db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
 
-const embedding = new Float32Array(768);            // your real embedding; dimensions infer on first write
+const embedding = new Float32Array(768); // your real embedding; dimensions infer on first write
 const query = new Float32Array(768);
 db.vector.upsert("docs", { id: "a", vector: embedding });
-db.vector.search("docs", query, { topK: 10 });      // ranked by cosine
+db.vector.search("docs", query, { topK: 10 }); // ranked by cosine
 
 db.close();
 ```
@@ -167,13 +171,17 @@ Mirk uses Changesets for release bookkeeping:
 pnpm changeset          # describe package-impacting changes
 pnpm version-packages   # apply versions from pending changesets
 pnpm release            # build, then changeset publish
+pnpm release:verify -- --all   # package-owned tarball/export/install evidence
+pnpm release:receipt -- --all  # same evidence, requiring a clean source tree
 ```
 
 Do not hand-bump package versions for future releases; add a changeset and let `pnpm version-packages` apply it.
+Release receipts are build evidence. They do not by themselves prove registry publication or consumer/runtime adoption.
 
 ## Status
 
-Pre-1.0. Packages are publicly released and versioned independently; APIs may still change until 1.0.
+Pre-1.0. Packages are versioned independently. Local implementation, registry publication, and
+consumer adoption are separate states.
 
 Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
 lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at

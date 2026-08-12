@@ -4,10 +4,14 @@ Production storage for `statements-storage/v1`: SQLite-backed statement
 revisions, durable admission receipts, bitemporal indexes, and named legacy
 dual-read parity harnesses.
 
-The package deliberately does not depend on Gonk. Hosts map their
-`statements/v1` contract into this storage schema and inject the admission
-authority; Mirk owns persistence, serialization, indexes, replay, and crash
-consistency.
+Hosts map their statement contract into this storage schema and inject the
+admission authority; Mirk owns persistence, serialization, indexes, replay, and
+crash consistency.
+
+This is a specialized package for the separately versioned `statements-storage/v1`
+schema. Its local implementation may use general Mirk store and coordination
+capabilities, but it does not widen the general `SyncStore` or `AsyncStore`
+ports.
 
 ```ts
 import { createSqliteStatementStore } from "@mirk/statements/sqlite";

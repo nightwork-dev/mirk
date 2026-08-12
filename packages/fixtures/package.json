@@ -1,6 +1,6 @@
 {
   "name": "@mirk/fixtures",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Typed, layered, explainable authored data with memory, filesystem, package-resource, and store sources.",
   "license": "Apache-2.0",
@@ -24,6 +24,9 @@
   "bugs": "https://github.com/nightwork-dev/mirk/issues",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "mirk-fixtures": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -44,6 +47,10 @@
     "./store": {
       "import": "./dist/sources/store.js",
       "types": "./dist/sources/store.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli.js",
+      "types": "./dist/cli.d.ts"
     }
   },
   "files": [
@@ -56,7 +63,7 @@
     "test:watch": "vitest",
     "test:exports": "node ./test/export-map-smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "build": "rm -rf dist && tsup src/index.ts src/sources/memory.ts src/sources/filesystem.ts src/sources/package.ts src/sources/store.ts --format esm --dts && node ./test/export-map-smoke.mjs"
+    "build": "rm -rf dist && tsup src/index.ts src/cli.ts src/bin.ts src/sources/memory.ts src/sources/filesystem.ts src/sources/package.ts src/sources/store.ts --format esm --dts && node ./test/export-map-smoke.mjs"
   },
   "devDependencies": {
     "@mirk/store": "workspace:^",

@@ -1,6 +1,6 @@
 {
   "name": "@mirk/artifact",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "Domain-neutral artifact identity, integrity, lineage, and object-storage coordination.",
   "license": "Apache-2.0",
@@ -25,13 +25,17 @@
     "./fs": {
       "import": "./dist/fs.js",
       "types": "./dist/fs.d.ts"
+    },
+    "./maintenance": {
+      "import": "./dist/maintenance.js",
+      "types": "./dist/maintenance.d.ts"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsup src/index.ts src/store.ts src/fs.ts --format esm --dts",
+    "build": "rm -rf dist && tsup src/index.ts src/store.ts src/fs.ts src/maintenance.ts --format esm --dts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

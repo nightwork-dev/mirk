@@ -4,30 +4,37 @@ Mirk provides substrate-level storage primitives with no application domain bake
 must have a generic contract, clear backend parity, and demonstrated use beyond a single application.
 Shipped history remains visible here so stable roadmap IDs are never reused.
 
+Detailed sequencing for the current closure program lives in
+[`substrate-work-spec.md`](substrate-work-spec.md). Mirk maintains package-owned
+port and adapter contract suites; consuming projects retain their own
+integration and deployment evidence outside this repository.
+
 ## How this roadmap works
 
 Every item has a stable `MR-NN` identifier, package, horizon, and status. Items move forward when the
 port is proven, real backends can meet its semantics, and critical behavior has conformance tests.
+“Local” means source and package tests exist in this checkout. “Verdaccio” means published to the
+canonical local registry; it does not mean public npm publication or consumer adoption.
 
-| ID | Title | Package | Horizon | Status |
-| --- | --- | --- | --- | --- |
-| MR-01 | Graph primitive — edge model and traversal | `@mirk/store/graph` | near | shipped |
-| MR-02 | Event primitive | — | med | closed; outside Mirk's storage scope |
-| MR-03 | Addressable no-drop inbox | `@mirk/inbox` | maybe | proposed |
-| MR-04 | Batch/IN collection matching | `@mirk/store` | near | shipped |
-| MR-05 | Full-text search primitive | `@mirk/store/search` | near | shipped |
-| MR-06 | Lazy SQLite vector dimensions | `@mirk/store/sqlite` | near | shipped |
-| MR-07 | Authored-data fixture loader | `@mirk/fixtures` | near | core/store shipped; filesystem/package release pending |
-| MR-08 | Qdrant vector adapter | `@mirk/vector-qdrant` | med | proposed, consumer-gated |
-| MR-09 | Shared-connection SurrealDB adapters | `@mirk/surreal` | med | core, Node, and WASM memory shipped |
-| MR-10 | Durable artifact substrate | `@mirk/artifact` | near | shipped |
-| MR-11 | Markdown and YAML-headmatter store | `@mirk/store-markdown` | near | shipped |
-| MR-12 | PostgreSQL async store adapter | `@mirk/store-postgres` | near | shipped |
-| MR-13 | PostgreSQL native full-text facet | `@mirk/store-postgres/search` | med | proposed, parity-gated |
-| MR-14 | PostgreSQL pgvector facet | `@mirk/store-postgres/vector` | med | proposed, consumer-gated |
-| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store` | near | shipped |
-| MR-16 | Backend-neutral atomic mutation capabilities | `@mirk/store` | near | proposed, contract-gated |
-| MR-17 | Coordinated multi-process SQLite writer profile | package TBD | med | proposed, evidence-gated |
+| ID    | Title                                                     | Package                       | Horizon | Status                                      |
+| ----- | --------------------------------------------------------- | ----------------------------- | ------- | ------------------------------------------- |
+| MR-01 | Graph primitive — edge model and traversal                | `@mirk/store/graph`           | near    | shipped                                     |
+| MR-02 | Event primitive                                           | —                             | med     | closed; outside Mirk                        |
+| MR-03 | Addressable no-drop inbox                                 | `@mirk/inbox`                 | maybe   | deferred; needs a storage-only contract     |
+| MR-04 | Batch/IN collection matching                              | `@mirk/store`                 | near    | shipped                                     |
+| MR-05 | Full-text search primitive                                | `@mirk/store/search`          | near    | shipped                                     |
+| MR-06 | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`          | near    | shipped                                     |
+| MR-07 | Authored-data fixture loader                              | `@mirk/fixtures`              | near    | Verdaccio, including CLI                    |
+| MR-08 | Qdrant vector adapter                                     | `@mirk/vector-qdrant`         | med     | proposed; consumer-gated                    |
+| MR-09 | Shared-connection SurrealDB adapters                      | `@mirk/surreal`               | med     | core, Node, and WASM memory shipped         |
+| MR-10 | Durable artifact substrate                                | `@mirk/artifact`              | near    | Verdaccio; capability-gated                 |
+| MR-11 | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`        | near    | shipped                                     |
+| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | shipped                                     |
+| MR-13 | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search` | med     | proposed; parity-gated                      |
+| MR-14 | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector` | med     | proposed; consumer-gated                    |
+| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | Verdaccio                                   |
+| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | Verdaccio; optional capability              |
+| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | Verdaccio evidence; writer profile deferred |
 
 ## Near term
 
@@ -65,9 +72,10 @@ overlays, references, provenance, and diagnostics. Core remains parser-injected 
 based. Store integration lives at `@mirk/fixtures/store` and can both load fixture records and seed
 ordinary collections.
 
-Filesystem and file-backed package-resource sources are implemented behind explicit Node-only
-subpaths for the next release. Remaining work includes CLI support, optional parser plugins, bundled
-browser/edge package manifests, and broader packaging verification.
+Filesystem and file-backed package-resource sources, the explicit Node-only CLI subpath, and the
+`mirk-fixtures` binary are implemented locally. Optional parser plugins
+and bundled browser/edge package manifests remain separately gated future work. Publication and
+consumer/runtime adoption are not asserted by this roadmap row.
 
 Specification: [`fixtures-spec.md`](fixtures-spec.md). Package documentation:
 [`packages/fixtures/README.md`](../packages/fixtures/README.md).
@@ -102,6 +110,13 @@ remain above Mirk's adapters.
 metadata, and source/derivative lineage. It deliberately excludes jobs, providers, workers, retries,
 progress, approval, and application-specific attachment semantics.
 
+The core package, store repository, filesystem object store, OpenDAL binding, repository-atomic
+finalization, explicit single-writer versus atomic coordinator mode, repository-owned shared-writer /
+exclusive-deletion object leases, and the read-only audit plus plan-first maintenance repair subpath
+are implemented locally. These storage leases are distinct from
+execution-system resource leases. Adapters without the required capability remain single-writer or
+reject destructive repair; publication and consumer/runtime adoption are separate evidence.
+
 Metadata uses `@mirk/store/kv`; bytes use an `ObjectStore`. `@mirk/artifact-opendal` supplies the
 optional OpenDAL adapter.
 
@@ -131,21 +146,24 @@ Specification: [`store-postgres-spec.md`](store-postgres-spec.md). Package docum
 
 ### MR-15 · Shared logical namespaces and bounded SQLite writer waits
 
-`@mirk/store@0.8.0` ships logical `namespaceStore()` views, a 30-second default SQLite busy timeout,
+`@mirk/store@0.9.0` implements logical `namespaceStore()` views, a 30-second default SQLite busy timeout,
 and synchronous `deferred`, `immediate`, and `exclusive` transaction modes on `SqliteAdapter`. These
 are the admitted direct-connection foundation; they do not claim that direct SQLite is a universal
 multi-process default.
 
-The broader concurrency specification is split across MR-15's shipped foundation, MR-16's proposed
-atomic mutation contract, and MR-17's proposed coordinated writer profile:
+The broader concurrency specification is split across MR-15's shipped foundation, MR-16's implemented
+optional atomic mutation contract, and MR-17's implemented evidence surfaces with its coordinated
+writer profile still deferred:
 [`shared-store-concurrency-spec.md`](shared-store-concurrency-spec.md).
 
 ### MR-16 · Backend-neutral atomic mutation capabilities
 
-Define deliberately optional transaction, compare-and-set, idempotency, and typed conflict
-capabilities that async and sync backends can implement without pretending a sequence of independent
-writes is atomic. This lands only with cross-backend conformance tests and at least one real consumer
-that needs the same contract.
+`@mirk/store@0.9.0` implements a deliberately optional declarative atomic mutation
+capability with versioned reads, explicit conditions, bounded mutation batches, no-expiry idempotency
+receipts, and typed conflict, backend, and indeterminate outcomes. It does not widen the base store
+ports with arbitrary transaction callbacks or pretend a sequence of independent writes is atomic.
+In-memory and SQLite contract tests cover the capability; publication and consumer/runtime adoption
+remain separate evidence.
 
 ## Medium term
 
@@ -164,10 +182,30 @@ IVFFlat are explicit operational options because they may trade recall for laten
 
 ### MR-17 · Coordinated multi-process SQLite writer profile
 
-A reusable async client boundary around one SQLite owner, selected only after a two-process fault and
-contention harness proves its protocol, authorization, lifecycle, checkpoint, and indeterminate-write
-semantics. Local libSQL should be evaluated before introducing a bespoke service. Direct
-multi-process SQLite remains an explicit bounded-workload option rather than the default.
+`@mirk/store@0.9.0` implements read-only SQLite inspection, explicit checkpoint
+operations, declared generic thresholds, and a two-process fault/contention harness with generated
+records, reconciliation, reopen, and WAL evidence. The coordinated client/writer boundary remains
+deferred: no writer daemon is part of MR-17, and any future service requires separate protocol and
+authorization evidence. Direct multi-process SQLite remains an explicit opt-in rather than the
+default.
+
+### Migration and release evidence
+
+`@mirk/migrate@0.2.0` is published to local Verdaccio with plan-bound checkpoint v2, explicit v1
+upgrades, caller-owned post-copy verification, and the existing manifest copy lanes. Public npm
+publication and consumer adoption are not asserted here.
+
+`pnpm release:verify` exercises package build, tests, typecheck, packed contents, export resolution,
+dependency boundaries, and a temporary generic install. `pnpm release:receipt` additionally requires
+a clean source tree for a publication receipt. These commands provide package-owned build evidence;
+they do not prove registry publication or downstream runtime adoption.
+
+### `@mirk/statements` · specialized package
+
+`@mirk/statements` is a SQLite-backed persistence package for the separately versioned
+`statements-storage/v1` schema, including admission receipts, bitemporal indexes, replay, and its
+legacy dual-read parity harness. It may use Mirk's general store and coordination capabilities, but
+its domain-shaped schema is independently versioned and does not widen the general store ports.
 
 ### MR-02 · Event primitive
 
@@ -179,6 +217,6 @@ messaging contract.
 
 ### MR-03 · Addressable no-drop inbox
 
-A possible append-log and status primitive layered over `@mirk/store/kv`. It remains proposed until
-multiple independent consumers demonstrate a shared contract that is smaller than a messaging or
-workflow framework.
+A possible append-log and status primitive layered over `@mirk/store/kv`. It is deferred and treated
+as closed for the current roadmap until a proven storage-only contract emerges. A messaging or
+workflow framework is out of scope; no inbox package is admitted on the basis of a single consumer.

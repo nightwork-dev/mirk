@@ -5,18 +5,33 @@ import type {
   AsyncStoreInQuery,
   StoreMeta,
   StoreFilter,
-} from './types.js';
+} from "./types.js";
+import type {
+  AsyncAtomicMutationStore,
+  SyncAtomicMutationStore,
+  StoreTarget,
+} from "./atomic.js";
+import { supportsAtomicMutation } from "./atomic.js";
 
-function hasListWhereIn(store: SyncStore): store is SyncStore & SyncStoreInQuery {
-  return typeof (store as Partial<SyncStoreInQuery>).listWhereIn === 'function';
+function hasListWhereIn(
+  store: SyncStore
+): store is SyncStore & SyncStoreInQuery {
+  return typeof (store as Partial<SyncStoreInQuery>).listWhereIn === "function";
 }
 
 // Adapter: present a synchronous store through the AsyncStore interface by
 // resolving every result. This is the one-way bridge — a sync store can serve an
 // async consumer, but an async store can never be made sync (you cannot block on
 // a network round-trip). Method shorthand keeps each method's generics intact.
-class AsyncStoreAdapter implements AsyncStore, Partial<AsyncStoreInQuery> {
-  readonly listWhereIn?: AsyncStoreInQuery['listWhereIn'];
+class AsyncStoreAdapter
+  implements
+    AsyncStore,
+    Partial<AsyncStoreInQuery>,
+    Partial<AsyncAtomicMutationStore>
+{
+  readonly listWhereIn?: AsyncStoreInQuery["listWhereIn"];
+  readonly getVersioned?: AsyncAtomicMutationStore["getVersioned"];
+  readonly mutateAtomically?: AsyncAtomicMutationStore["mutateAtomically"];
 
   constructor(private readonly sync: SyncStore) {
     if (hasListWhereIn(sync)) {
@@ -24,8 +39,13 @@ class AsyncStoreAdapter implements AsyncStore, Partial<AsyncStoreInQuery> {
         collection: string,
         field: string,
         values: readonly unknown[],
-        filter?: StoreFilter,
+        filter?: StoreFilter
       ): Promise<T[]> => sync.listWhereIn<T>(collection, field, values, filter);
+    }
+    if (supportsAtomicMutation(sync)) {
+      this.getVersioned = async <T>(target: StoreTarget) =>
+        sync.getVersioned<T>(target);
+      this.mutateAtomically = async (request) => sync.mutateAtomically(request);
     }
   }
 
@@ -68,7 +88,15 @@ class AsyncStoreAdapter implements AsyncStore, Partial<AsyncStoreInQuery> {
 
 /** Lift a synchronous store to the {@link AsyncStore} interface. The bridge only
  *  goes this direction — sync ⊂ async. Optional sync capabilities are lifted too. */
-export function toAsync(store: SyncStore & SyncStoreInQuery): AsyncStore & AsyncStoreInQuery;
+export function toAsync(
+  store: SyncStore & SyncStoreInQuery & SyncAtomicMutationStore
+): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
+export function toAsync(
+  store: SyncStore & SyncStoreInQuery
+): AsyncStore & AsyncStoreInQuery;
+export function toAsync(
+  store: SyncStore & SyncAtomicMutationStore
+): AsyncStore & AsyncAtomicMutationStore;
 export function toAsync(store: SyncStore): AsyncStore;
 export function toAsync(store: SyncStore): AsyncStore {
   return new AsyncStoreAdapter(store);

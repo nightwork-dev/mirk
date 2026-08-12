@@ -12,5 +12,26 @@ export type {
   StoreFilter,
   StoreMeta,
 } from "./types.js";
+export type {
+  JsonValue,
+  JsonObject,
+  StoreTarget,
+  StoreVersion,
+  VersionedStoreValue,
+  SyncVersionedReadStore,
+  AsyncVersionedReadStore,
+  StoreCondition,
+  AtomicStoreOperation,
+  AtomicIdempotency,
+  AtomicMutationRequest,
+  AtomicMutationResult,
+  AtomicCompletedMutationResult,
+  SyncAtomicMutationStore,
+  AsyncAtomicMutationStore,
+} from "./atomic.js";
+export {
+  supportsAtomicMutation,
+  supportsAsyncAtomicMutation,
+} from "./atomic.js";
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
