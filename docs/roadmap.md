@@ -9,32 +9,53 @@ Detailed sequencing for the current closure program lives in
 port and adapter contract suites; consuming projects retain their own
 integration and deployment evidence outside this repository.
 
+Status vocabulary and evidence precedence are defined in the root
+[`README.md`](../README.md). This roadmap records Mirk-owned implementation and
+release evidence; it does not become a consumer conformance matrix.
+
 ## How this roadmap works
 
 Every item has a stable `MR-NN` identifier, package, horizon, and status. Items move forward when the
 port is proven, real backends can meet its semantics, and critical behavior has conformance tests.
-“Local” means source and package tests exist in this checkout. “Verdaccio” means published to the
-canonical local registry; it does not mean public npm publication or consumer adoption.
+Use the status words from the root README: `implemented`, `receipt-green`,
+`Verdaccio-published`, `public-npm-published`, `remote/tagged`,
+`consumer-installed`, `consumer-adopted`, and `runtime/deployment-proven`.
+`consumer-gated`, `parity-gated`, and `deferred` describe an unmet admission
+condition; `closed` means the item is intentionally outside Mirk.
 
 | ID    | Title                                                     | Package                       | Horizon | Status                                      |
 | ----- | --------------------------------------------------------- | ----------------------------- | ------- | ------------------------------------------- |
-| MR-01 | Graph primitive — edge model and traversal                | `@mirk/store/graph`           | near    | shipped                                     |
+| MR-01 | Graph primitive — edge model and traversal                | `@mirk/store/graph`           | near    | implemented; receipt-green                 |
 | MR-02 | Event primitive                                           | —                             | med     | closed; outside Mirk                        |
 | MR-03 | Addressable no-drop inbox                                 | `@mirk/inbox`                 | maybe   | deferred; needs a storage-only contract     |
-| MR-04 | Batch/IN collection matching                              | `@mirk/store`                 | near    | shipped                                     |
-| MR-05 | Full-text search primitive                                | `@mirk/store/search`          | near    | shipped                                     |
-| MR-06 | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`          | near    | shipped                                     |
-| MR-07 | Authored-data fixture loader                              | `@mirk/fixtures`              | near    | Verdaccio, including CLI                    |
+| MR-04 | Batch/IN collection matching                              | `@mirk/store`                 | near    | implemented; receipt-green                 |
+| MR-05 | Full-text search primitive                                | `@mirk/store/search`          | near    | implemented; receipt-green                 |
+| MR-06 | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`          | near    | implemented; receipt-green                 |
+| MR-07 | Authored-data fixture loader                              | `@mirk/fixtures`              | near    | implemented; receipt-green; Verdaccio-published |
 | MR-08 | Qdrant vector adapter                                     | `@mirk/vector-qdrant`         | med     | proposed; consumer-gated                    |
-| MR-09 | Shared-connection SurrealDB adapters                      | `@mirk/surreal`               | med     | core, Node, and WASM memory shipped         |
-| MR-10 | Durable artifact substrate                                | `@mirk/artifact`              | near    | Verdaccio; capability-gated                 |
-| MR-11 | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`        | near    | shipped                                     |
-| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | shipped                                     |
+| MR-09 | Shared-connection SurrealDB adapters                      | `@mirk/surreal`               | med     | implemented; receipt-green; Verdaccio-published |
+| MR-10 | Durable artifact substrate                                | `@mirk/artifact`              | near    | implemented; receipt-green; Verdaccio-published |
+| MR-11 | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`        | near    | implemented; receipt-green; Verdaccio-published |
+| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | implemented; receipt-green; Verdaccio-published |
 | MR-13 | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search` | med     | proposed; parity-gated                      |
 | MR-14 | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector` | med     | proposed; consumer-gated                    |
-| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | Verdaccio                                   |
-| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | Verdaccio; optional capability              |
-| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | Verdaccio evidence; writer profile deferred |
+| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
+| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published; optional capability |
+| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | implemented evidence; writer profile deferred |
+
+## Current closure
+
+The current train at `d1f5dea` is `implemented` and `receipt-green`: all 10
+packages pass the clean `pnpm release:receipt --all` checks. Their versions are
+present in local Verdaccio, but no receipt binds that registry metadata to this
+commit. The commit is not yet `remote/tagged`, and this roadmap does not claim
+`public-npm-published` or deployment proof. `templates/sigil-chat` provides one
+external `consumer-adopted` current-train path; Mirk keeps that evidence outside
+the repository rather than maintaining a consumer matrix.
+
+The next gates are independent review of the proposed closure specification,
+commit/tag and registry publication provenance, and another current-train
+consumer. No new storage category or broadening is admitted before those gates.
 
 ## Near term
 
@@ -191,9 +212,10 @@ default.
 
 ### Migration and release evidence
 
-`@mirk/migrate@0.2.0` is published to local Verdaccio with plan-bound checkpoint v2, explicit v1
+`@mirk/migrate@0.2.0` is `Verdaccio-published` with plan-bound checkpoint v2, explicit v1
 upgrades, caller-owned post-copy verification, and the existing manifest copy lanes. Public npm
-publication and consumer adoption are not asserted here.
+publication and consumer adoption are separate states; the current-train consumer evidence is
+external and is not a Mirk conformance matrix.
 
 `pnpm release:verify` exercises package build, tests, typecheck, packed contents, export resolution,
 dependency boundaries, and a temporary generic install. `pnpm release:receipt` additionally requires

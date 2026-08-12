@@ -1,6 +1,6 @@
 # Mirk substrate closure specification
 
-**Status:** proposed for review
+**Status:** receipt-green implementation; independent review pending
 
 **Scope:** `@mirk/store`, `@mirk/fixtures`, `@mirk/artifact`,
 `@mirk/migrate`, and source adapters
@@ -59,16 +59,28 @@ migrate
   checkpointed transfer between compatible ports
 ```
 
-The remaining work is release and admission discipline, not missing local
-categories. The local sources now include the optional atomic mutation
-capability, artifact atomic finalization and maintenance, the fixture CLI,
-SQLite inspection/checkpoint/fault evidence, and plan-bound migration
-checkpoints. These remain capability-gated where a backend cannot provide the
-required semantics, and their local implementation does not assert registry
-publication or consumer/runtime adoption.
+The current substrate train is `implemented` and `receipt-green`: all 10 package
+release receipts pass from clean commit `d1f5dea`. The local sources include the
+optional atomic mutation capability, artifact atomic finalization and
+maintenance, the fixture CLI, SQLite inspection/checkpoint/fault evidence, and
+plan-bound migration checkpoints. These remain capability-gated where a backend
+cannot provide the required semantics.
+
+`Verdaccio-published`, `public-npm-published`, `remote/tagged`,
+`consumer-installed`, `consumer-adopted`, and `runtime/deployment-proven` are
+separate evidence states. The current train is present in local Verdaccio, but
+its registry metadata is not bound to `d1f5dea` by a publication receipt; the
+commit is not yet remote/tagged; and public npm plus deployment are not claimed.
+An external Sigil Chat current-train consumer proof exists. Mirk keeps that
+integration evidence with the consumer and does not maintain a cross-project
+conformance matrix.
 
 This specification closes those gaps without turning Mirk into a workflow
 system, consumer registry, deployment controller, or database product.
+
+The canonical status vocabulary and evidence precedence are defined in the
+[root README](../README.md). This specification owns the package contract and
+receipt requirements; it does not ratify a release or a cross-project adoption.
 
 ## Goals
 
@@ -195,13 +207,14 @@ agree on:
 
 - implemented source;
 - local release bookkeeping;
-- published package version;
+- named-registry package version;
 - public export map; and
 - remaining work.
 
 The fixture filesystem and package-resource sources plus the explicit-config
-CLI are implemented locally. Optional future source types remain separately
-gated. Publication and consumer adoption are not inferred from local source.
+CLI are `implemented`. Optional future source types remain separately gated.
+`receipt-green`, registry publication, remote/tagged state, and consumer
+adoption are not inferred from source alone.
 
 ### A2. Package-owned release evidence
 
@@ -259,7 +272,7 @@ untracked files included in the packed inputs.
 
 Rules:
 
-- a publication receipt requires `source.clean: true`;
+- a publication-mode receipt requires `source.clean: true`;
 - a local build receipt may report `source.clean: false`, but it must include
   the applicable dirty-state digests;
 - `source.commit` identifies ancestry and never claims that the commit alone
@@ -268,20 +281,36 @@ Rules:
   `packedInputSha256`; and
 - receipt generation fails when an included input cannot be attributed.
 
-The receipt is build evidence. It does not claim registry publication,
-downstream installation, or runtime adoption. The publication mode additionally
-requires a clean source tree; it still does not perform or verify an npm
-publication.
+The receipt is package build evidence. It does not claim registry publication,
+remote/tagged state, downstream installation, or runtime adoption. Publication
+mode additionally requires a clean source tree; it still does not perform or
+verify an npm publication.
 
 ### A4. Acceptance
 
 - Documentation distinguishes local source implementation, manifest version,
   release/publication evidence, and consumer/runtime adoption.
 - A clean tarball fixture imports every public subpath.
-- A publication receipt proves a clean source state.
+- A publication-mode receipt proves a clean source state without claiming
+  registry publication.
 - A local dirty-build receipt identifies the commit, dirty state, and packed
   input digest without attributing the tree to the commit alone.
 - No tracked consumer matrix or downstream status table is introduced.
+
+### A5. Current next gates
+
+The current package-owned closure is `receipt-green`. The remaining gates are
+outside the package contract:
+
+1. independent review of this proposed specification;
+2. remote merge/tag and explicit provenance for any registry publication,
+   distinguishing local Verdaccio from public npm; and
+3. a second current-train consumer with its own frozen install and relevant
+   runtime evidence.
+
+No new storage category, backend breadth, worktree move, or archive action is
+admitted by this specification before those gates are settled. The existing
+Sigil Chat proof remains consumer-owned evidence, not a Mirk conformance matrix.
 
 ## Workstream B — MR-16 atomic mutation capability
 

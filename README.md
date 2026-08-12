@@ -180,8 +180,36 @@ Release receipts are build evidence. They do not by themselves prove registry pu
 
 ## Status
 
-Pre-1.0. Packages are versioned independently. Local implementation, registry publication, and
-consumer adoption are separate states.
+Pre-1.0. Mirk uses the following evidence vocabulary. These are separate states, not synonyms:
+
+| State | Evidence required | Does not establish |
+| --- | --- | --- |
+| `implemented` | Source and package contract evidence exist in the current checkout. | A release, registry publication, or consumer use. |
+| `receipt-green` | A clean `mirk-release-receipt/v1` names the source commit and passes build, test, typecheck, pack, export, boundary, and temporary-consumer checks. | Registry publication, remote merge, or downstream adoption. |
+| `Verdaccio-published` | The named version resolves from the canonical local Verdaccio registry. | Public npm publication or provenance from a particular commit. |
+| `public-npm-published` | The named version resolves from `https://registry.npmjs.org`. | Consumer installation or runtime use. |
+| `remote/tagged` | The source commit is present in the intended remote ref and has an explicit release tag where required. | Registry publication or consumer use. |
+| `consumer-installed` | A consumer's frozen lockfile and clean install resolve the named package train. | Relevant behavior or deployment. |
+| `consumer-adopted` | Consumer source exercises the package and its relevant tests or smoke path pass. | Public release or deployment. |
+| `runtime/deployment-proven` | A real runtime or deployed user path exercises the package. | Nothing beyond that path. |
+
+Use this evidence order when describing a release: current source → commit-bound receipt →
+remote/tag → named registry → consumer install/adoption → runtime or deployment. A later state
+never upgrades an earlier one implicitly. In particular, a Verdaccio package is not a public npm
+package, and a green receipt is not a publication receipt.
+
+Current closure evidence (2026-08-12):
+
+- `implemented` and `receipt-green`: all 10 current `@mirk/*` packages have clean receipts from
+  `d1f5dea` (`pnpm release:receipt --all`).
+- `Verdaccio-published`: the current package train is present in the canonical local registry.
+  This metadata is not tied to `d1f5dea` by a publication receipt.
+- `remote/tagged`: `d1f5dea` is still local-only in this checkout (two commits ahead of
+  `origin/main`; no tag points at it).
+- `consumer-adopted`: `templates/sigil-chat` installs the current train from its frozen lockfile
+  and exercises Mirk-backed store, fixture, Markdown, and artifact paths. Consumer evidence stays
+  with that product; Mirk does not maintain a cross-project conformance matrix.
+- `public-npm-published` and `runtime/deployment-proven`: not claimed for this train.
 
 Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
 lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at
