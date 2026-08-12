@@ -45,10 +45,11 @@ condition; `closed` means the item is intentionally outside Mirk.
 
 ## Current closure
 
-The current train at `d1f5dea` is `implemented` and `receipt-green`: all 10
-packages pass the clean `pnpm release:receipt --all` checks. Their versions are
-present in local Verdaccio, but no receipt binds that registry metadata to this
-commit. The commit is not yet `remote/tagged`, and this roadmap does not claim
+The current train at `2a3a37a` is `implemented` and `receipt-green`: all 10
+packages pass the clean `pnpm release:receipt --all` checks, with receipts
+tracked in `docs/evidence/receipts/2026-08-12/`. Their versions are present in
+local Verdaccio, but no receipt binds that registry metadata to this commit.
+The commit is pushed but not tagged, and this roadmap does not claim
 `public-npm-published` or deployment proof. `templates/sigil-chat` provides one
 external `consumer-adopted` current-train path; Mirk keeps that evidence outside
 the repository rather than maintaining a consumer matrix.
