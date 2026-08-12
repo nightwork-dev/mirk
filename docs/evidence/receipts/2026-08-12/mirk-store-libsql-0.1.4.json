@@ -1,0 +1,82 @@
+{
+  "schema": "mirk-release-receipt/v1",
+  "source": {
+    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "clean": true,
+    "packedInputSha256": "8e2026912b1ed927620fa695679b24db48508a24d4c837692c01653429b4f85c"
+  },
+  "package": "@mirk/store-libsql",
+  "version": "0.1.4",
+  "tarballSha256": "d89df21d8937c2d44eeb6d4abd77a0a1a222ddbcae3a19828c30dfc78725903a",
+  "packedFiles": [
+    "LICENSE",
+    "README.md",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "package.json"
+  ],
+  "publicExports": [
+    "."
+  ],
+  "nodeVersion": "v24.14.0",
+  "pnpmVersion": "9.15.4",
+  "checks": [
+    {
+      "name": "build",
+      "status": "passed"
+    },
+    {
+      "name": "test",
+      "status": "passed"
+    },
+    {
+      "name": "typecheck",
+      "status": "passed"
+    },
+    {
+      "name": "packed-tarball-contents",
+      "status": "passed",
+      "detail": "5 files; every file has a source attribution"
+    },
+    {
+      "name": "workspace-catalog-private-leakage",
+      "status": "passed",
+      "detail": "packed metadata and files contain no forbidden references"
+    },
+    {
+      "name": "workspace-release-train",
+      "status": "passed",
+      "detail": "local tarballs prepared in dependency order: @mirk/store@0.9.0#ec96a4478bf9"
+    },
+    {
+      "name": "public-export-map",
+      "status": "passed",
+      "detail": "1 public export(s) resolve to packed files"
+    },
+    {
+      "name": "public-type-declarations",
+      "status": "passed",
+      "detail": "manifest and every concrete public export provide packed declarations"
+    },
+    {
+      "name": "root-dependency-boundary",
+      "status": "passed",
+      "detail": "no generic root boundary rule is required for this adapter package"
+    },
+    {
+      "name": "clean-consumer-install",
+      "status": "passed",
+      "detail": "temporary generic fixture installed the local release train plus registry-only external dependencies"
+    },
+    {
+      "name": "public-subpath-imports",
+      "status": "passed",
+      "detail": "1 public export(s) imported from the installed tarball"
+    },
+    {
+      "name": "source-clean",
+      "status": "passed",
+      "detail": "source tree is clean"
+    }
+  ]
+}

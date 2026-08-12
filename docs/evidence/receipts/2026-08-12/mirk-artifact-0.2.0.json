@@ -1,0 +1,95 @@
+{
+  "schema": "mirk-release-receipt/v1",
+  "source": {
+    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "clean": true,
+    "packedInputSha256": "ad7a1e79de1c3b897aafa9579ed7d1f554f44b8b4c48df66ef52ca16fbf406cc"
+  },
+  "package": "@mirk/artifact",
+  "version": "0.2.0",
+  "tarballSha256": "ebae6fd94abaacf1782bc967ada301dd3a0a239ca901cbc1eab85d862df71828",
+  "packedFiles": [
+    "LICENSE",
+    "README.md",
+    "dist/chunk-A3S7TBQT.js",
+    "dist/chunk-C7SWYTEJ.js",
+    "dist/chunk-IMBCKYZ4.js",
+    "dist/fs.d.ts",
+    "dist/fs.js",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/maintenance.d.ts",
+    "dist/maintenance.js",
+    "dist/store.d.ts",
+    "dist/store.js",
+    "dist/types-C0HzHsMU.d.ts",
+    "package.json"
+  ],
+  "publicExports": [
+    ".",
+    "./fs",
+    "./maintenance",
+    "./store"
+  ],
+  "nodeVersion": "v24.14.0",
+  "pnpmVersion": "9.15.4",
+  "checks": [
+    {
+      "name": "build",
+      "status": "passed"
+    },
+    {
+      "name": "test",
+      "status": "passed"
+    },
+    {
+      "name": "typecheck",
+      "status": "passed"
+    },
+    {
+      "name": "packed-tarball-contents",
+      "status": "passed",
+      "detail": "15 files; every file has a source attribution"
+    },
+    {
+      "name": "workspace-catalog-private-leakage",
+      "status": "passed",
+      "detail": "packed metadata and files contain no forbidden references"
+    },
+    {
+      "name": "workspace-release-train",
+      "status": "passed",
+      "detail": "local tarballs prepared in dependency order: @mirk/store@0.9.0#ec96a4478bf9"
+    },
+    {
+      "name": "public-export-map",
+      "status": "passed",
+      "detail": "4 public export(s) resolve to packed files"
+    },
+    {
+      "name": "public-type-declarations",
+      "status": "passed",
+      "detail": "manifest and every concrete public export provide packed declarations"
+    },
+    {
+      "name": "root-dependency-boundary",
+      "status": "passed",
+      "detail": "no generic root boundary rule is required for this adapter package"
+    },
+    {
+      "name": "clean-consumer-install",
+      "status": "passed",
+      "detail": "temporary generic fixture installed the local release train plus registry-only external dependencies"
+    },
+    {
+      "name": "public-subpath-imports",
+      "status": "passed",
+      "detail": "4 public export(s) imported from the installed tarball"
+    },
+    {
+      "name": "source-clean",
+      "status": "passed",
+      "detail": "source tree is clean"
+    }
+  ]
+}

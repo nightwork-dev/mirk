@@ -1,0 +1,118 @@
+{
+  "schema": "mirk-release-receipt/v1",
+  "source": {
+    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "clean": true,
+    "packedInputSha256": "d93af1cd60ee26b0c3a45499532add9f9aa80c04a63fb2479cf50fbf60e38cd8"
+  },
+  "package": "@mirk/store",
+  "version": "0.9.0",
+  "tarballSha256": "ec96a4478bf97cb8422cfd6e42d66ad4a18be19ada79db811449610ddcd8251a",
+  "packedFiles": [
+    "LICENSE",
+    "README.md",
+    "dist/adapters/sqlite.d.ts",
+    "dist/adapters/sqlite.js",
+    "dist/atomic.d.ts",
+    "dist/atomic.js",
+    "dist/chunk-2NYG3P2C.js",
+    "dist/chunk-BXM3YDOC.js",
+    "dist/chunk-DP4D7CJY.js",
+    "dist/chunk-FYSPAE2X.js",
+    "dist/chunk-KPMRRYTL.js",
+    "dist/chunk-N27Y55CA.js",
+    "dist/chunk-OUY3D4RT.js",
+    "dist/chunk-QKFC7NS2.js",
+    "dist/coordination.d.ts",
+    "dist/coordination.js",
+    "dist/filter-B9hP-TKF.d.ts",
+    "dist/graph.d.ts",
+    "dist/graph.js",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/kv.d.ts",
+    "dist/kv.js",
+    "dist/search.d.ts",
+    "dist/search.js",
+    "dist/sql.d.ts",
+    "dist/sql.js",
+    "dist/types-B1pW6cLg.d.ts",
+    "dist/types-CUT7wypD.d.ts",
+    "dist/types-DwgknN4f.d.ts",
+    "dist/vector.d.ts",
+    "dist/vector.js",
+    "package.json"
+  ],
+  "publicExports": [
+    ".",
+    "./atomic",
+    "./coordination",
+    "./graph",
+    "./kv",
+    "./search",
+    "./sql",
+    "./sqlite",
+    "./vector"
+  ],
+  "nodeVersion": "v24.14.0",
+  "pnpmVersion": "9.15.4",
+  "checks": [
+    {
+      "name": "build",
+      "status": "passed"
+    },
+    {
+      "name": "test",
+      "status": "passed"
+    },
+    {
+      "name": "typecheck",
+      "status": "passed"
+    },
+    {
+      "name": "packed-tarball-contents",
+      "status": "passed",
+      "detail": "33 files; every file has a source attribution"
+    },
+    {
+      "name": "workspace-catalog-private-leakage",
+      "status": "passed",
+      "detail": "packed metadata and files contain no forbidden references"
+    },
+    {
+      "name": "workspace-release-train",
+      "status": "passed",
+      "detail": "package has no workspace runtime dependencies"
+    },
+    {
+      "name": "public-export-map",
+      "status": "passed",
+      "detail": "9 public export(s) resolve to packed files"
+    },
+    {
+      "name": "public-type-declarations",
+      "status": "passed",
+      "detail": "manifest and every concrete public export provide packed declarations"
+    },
+    {
+      "name": "root-dependency-boundary",
+      "status": "passed",
+      "detail": "root runtime graph is free of Node-only/native adapter dependencies"
+    },
+    {
+      "name": "clean-consumer-install",
+      "status": "passed",
+      "detail": "temporary generic fixture installed the local release train plus registry-only external dependencies"
+    },
+    {
+      "name": "public-subpath-imports",
+      "status": "passed",
+      "detail": "9 public export(s) imported from the installed tarball"
+    },
+    {
+      "name": "source-clean",
+      "status": "passed",
+      "detail": "source tree is clean"
+    }
+  ]
+}

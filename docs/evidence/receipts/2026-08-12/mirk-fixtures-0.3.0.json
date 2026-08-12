@@ -1,0 +1,106 @@
+{
+  "schema": "mirk-release-receipt/v1",
+  "source": {
+    "commit": "2a3a37a4e1189026445d9dfd9a847ef09d163dfb",
+    "clean": true,
+    "packedInputSha256": "a492b6d4e7a7ed1e56f42b0c7cd7b3011bc0941f321ff032d9117ecb9b83440a"
+  },
+  "package": "@mirk/fixtures",
+  "version": "0.3.0",
+  "tarballSha256": "954c4254fb73d5c6b3352b4d9c0716017b70238ba07f94424351f1819191e64e",
+  "packedFiles": [
+    "LICENSE",
+    "README.md",
+    "dist/bin.d.ts",
+    "dist/bin.js",
+    "dist/chunk-4BAT7D5R.js",
+    "dist/chunk-BPHA66KN.js",
+    "dist/chunk-CM4U2GMU.js",
+    "dist/chunk-DCW4W2ZD.js",
+    "dist/cli.d.ts",
+    "dist/cli.js",
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/sources/filesystem.d.ts",
+    "dist/sources/filesystem.js",
+    "dist/sources/memory.d.ts",
+    "dist/sources/memory.js",
+    "dist/sources/package.d.ts",
+    "dist/sources/package.js",
+    "dist/sources/store.d.ts",
+    "dist/sources/store.js",
+    "dist/types-BNao0y21.d.ts",
+    "docs/diagrams/layering-pipeline.svg",
+    "docs/diagrams/store-integration.svg",
+    "package.json"
+  ],
+  "publicExports": [
+    ".",
+    "./cli",
+    "./filesystem",
+    "./memory",
+    "./package",
+    "./store"
+  ],
+  "nodeVersion": "v24.14.0",
+  "pnpmVersion": "9.15.4",
+  "checks": [
+    {
+      "name": "build",
+      "status": "passed"
+    },
+    {
+      "name": "test",
+      "status": "passed"
+    },
+    {
+      "name": "typecheck",
+      "status": "passed"
+    },
+    {
+      "name": "packed-tarball-contents",
+      "status": "passed",
+      "detail": "24 files; every file has a source attribution"
+    },
+    {
+      "name": "workspace-catalog-private-leakage",
+      "status": "passed",
+      "detail": "packed metadata and files contain no forbidden references"
+    },
+    {
+      "name": "workspace-release-train",
+      "status": "passed",
+      "detail": "package has no workspace runtime dependencies"
+    },
+    {
+      "name": "public-export-map",
+      "status": "passed",
+      "detail": "6 public export(s) resolve to packed files"
+    },
+    {
+      "name": "public-type-declarations",
+      "status": "passed",
+      "detail": "manifest and every concrete public export provide packed declarations"
+    },
+    {
+      "name": "root-dependency-boundary",
+      "status": "passed",
+      "detail": "root runtime graph is free of Node-only/native adapter dependencies"
+    },
+    {
+      "name": "clean-consumer-install",
+      "status": "passed",
+      "detail": "temporary generic fixture installed the local release train plus registry-only external dependencies"
+    },
+    {
+      "name": "public-subpath-imports",
+      "status": "passed",
+      "detail": "6 public export(s) imported from the installed tarball"
+    },
+    {
+      "name": "source-clean",
+      "status": "passed",
+      "detail": "source tree is clean"
+    }
+  ]
+}
