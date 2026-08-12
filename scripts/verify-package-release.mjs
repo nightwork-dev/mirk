@@ -312,9 +312,9 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
     );
   }
 
-  await runHook(packageInfo, "build", options.build, checks);
-  await runHook(packageInfo, "test", options.test, checks);
-  await runHook(packageInfo, "typecheck", options.typecheck, checks);
+  await runHook(packageInfo, "build", options.build, checks, options);
+  await runHook(packageInfo, "test", options.test, checks, options);
+  await runHook(packageInfo, "typecheck", options.typecheck, checks, options);
   source = await readSourceState(packageInfo.path);
   if (options.publication && !source.clean) {
     throw new Error(
@@ -400,18 +400,27 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
       )
     );
 
-    checkRootDependencyBoundary(
-      packageInfo.manifest.name,
-      extracted,
-      packedManifest,
-      publicExports
-    );
-    checks.push(
-      passed(
-        "root-dependency-boundary",
-        boundaryDetail(packageInfo.manifest.name)
-      )
-    );
+    if (ROOT_BOUNDARIES.has(packageInfo.manifest.name)) {
+      checkRootDependencyBoundary(
+        packageInfo.manifest.name,
+        extracted,
+        packedManifest,
+        publicExports
+      );
+      checks.push(
+        passed(
+          "root-dependency-boundary",
+          "root runtime graph is free of Node-only/native adapter dependencies"
+        )
+      );
+    } else {
+      checks.push(
+        skipped(
+          "root-dependency-boundary",
+          "no root boundary rule is configured for this package"
+        )
+      );
+    }
 
     if (options.install) {
       await cleanConsumerSmoke({
@@ -513,13 +522,13 @@ async function makeReceipt(evidence, source, checks) {
   };
 }
 
-async function runHook(packageInfo, hook, enabled, checks) {
+async function runHook(packageInfo, hook, enabled, checks, options) {
   if (!enabled) {
     checks.push(skipped(hook, "command line option"));
     return;
   }
   console.log(`release:verify: ${packageInfo.manifest.name} ${hook}`);
-  await execFileAsync(
+  const result = await execFileAsync(
     "pnpm",
     ["--filter", packageInfo.manifest.name, "run", hook],
     {
@@ -527,7 +536,62 @@ async function runHook(packageInfo, hook, enabled, checks) {
       maxBuffer: 32 * 1024 * 1024,
     }
   );
-  checks.push(passed(hook));
+  if (hook !== "test") {
+    checks.push(passed(hook));
+    return;
+  }
+  const tests = parseVitestTestCounts(
+    `${result.stdout ?? ""}\n${result.stderr ?? ""}`
+  );
+  if (!tests) {
+    if (options.publication) {
+      checks.push({
+        name: hook,
+        status: "failed",
+        detail:
+          "test hook exited 0 but no vitest test summary was found; cannot prove any test executed",
+      });
+      throw new Error(
+        `${packageInfo.manifest.name}: test output has no vitest summary; refusing publication receipt`
+      );
+    }
+    console.warn(
+      `release:verify: warning: ${packageInfo.manifest.name} test output has no vitest summary; executed count unknown`
+    );
+    checks.push(passed(hook, "vitest summary not found; executed count unknown"));
+    return;
+  }
+  const detail = `${tests.executed} executed (${tests.passed} passed, ${tests.failed} failed), ${tests.skipped} skipped, ${tests.todo} todo of ${tests.total} total`;
+  if (tests.executed === 0) {
+    if (options.publication) {
+      checks.push({ name: hook, status: "failed", detail, tests });
+      throw new Error(
+        `${packageInfo.manifest.name}: test hook executed zero tests (${tests.skipped} skipped); refusing publication receipt`
+      );
+    }
+    console.warn(
+      `release:verify: warning: ${packageInfo.manifest.name} test hook executed zero tests (${tests.skipped} skipped)`
+    );
+  }
+  checks.push({ name: hook, status: "passed", detail, tests });
+}
+
+function parseVitestTestCounts(output) {
+  const plain = output.replace(/\[[0-9;]*m/g, "");
+  const summaries = [
+    ...plain.matchAll(/^[\s|]*Tests\s+([^\n(]*)\((\d+)\)\s*$/gm),
+  ];
+  if (summaries.length === 0) return undefined;
+  const tests = { executed: 0, passed: 0, failed: 0, skipped: 0, todo: 0, total: 0 };
+  for (const summary of summaries) {
+    tests.total += Number(summary[2]);
+    for (const segment of summary[1].split("|")) {
+      const part = segment.trim().match(/^(\d+)\s+(passed|failed|skipped|todo)$/);
+      if (part) tests[part[2]] += Number(part[1]);
+    }
+  }
+  tests.executed = tests.passed + tests.failed;
+  return tests;
 }
 
 async function packPackage(packageInfo, tempRoot) {
@@ -809,12 +873,6 @@ function checkRootDependencyBoundary(
       }
     }
   }
-}
-
-function boundaryDetail(packageName) {
-  return ROOT_BOUNDARIES.has(packageName)
-    ? "root runtime graph is free of Node-only/native adapter dependencies"
-    : "no generic root boundary rule is required for this adapter package";
 }
 
 function reachableRuntimeFiles(entry, extracted) {

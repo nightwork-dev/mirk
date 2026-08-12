@@ -20,6 +20,7 @@ port is proven, real backends can meet its semantics, and critical behavior has 
 Use the status words from the root README: `implemented`, `receipt-green`,
 `Verdaccio-published`, `public-npm-published`, `remote/tagged`,
 `consumer-installed`, `consumer-adopted`, and `runtime/deployment-proven`.
+`proposed` marks an admitted roadmap item with no implementation yet;
 `consumer-gated`, `parity-gated`, and `deferred` describe an unmet admission
 condition; `closed` means the item is intentionally outside Mirk.
 
@@ -40,8 +41,10 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-13 | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search` | med     | proposed; parity-gated                      |
 | MR-14 | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector` | med     | proposed; consumer-gated                    |
 | MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
-| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published; optional capability |
-| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | implemented evidence; writer profile deferred |
+| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
+| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | deferred; evidence surfaces implemented     |
+| MR-18 | Bitemporal statements persistence                         | `@mirk/statements`            | near    | implemented; receipt-green; Verdaccio-published |
+| MR-19 | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`      | near    | implemented; receipt-green; Verdaccio-published |
 
 ## Current closure
 
