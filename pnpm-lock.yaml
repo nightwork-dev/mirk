@@ -63,6 +63,10 @@ importers:
         version: 3.2.6(@types/node@22.19.21)(@vitest/browser@3.2.6)(yaml@2.9.0)
 
   packages/fixtures:
+    dependencies:
+      '@standard-schema/spec':
+        specifier: 1.1.0
+        version: 1.1.0
     devDependencies:
       '@mirk/store':
         specifier: workspace:^
@@ -749,6 +753,9 @@ packages:
     resolution: {integrity: sha512-5L+T1fMX4RIEBoZzT0+sQ0PhTS36NULFmMXtl1TZo44TMAROIMHbZufSOjVWt/Y622BtxgxtaNOokbTDvfsrZA==}
     cpu: [x64]
     os: [win32]
+
+  '@standard-schema/spec@1.1.0':
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@surrealdb/cbor@2.0.0-alpha.4':
     resolution: {integrity: sha512-l/hNZ3ZCOJq8rzwx1y5ZV/8b2bYCWdhGqRVY33Pu50NAHyAW5qLsMn3ZBkZow77mAKwNCsbDsRGnyYEuU95mjw==}
@@ -2270,6 +2277,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.0':
     optional: true
+
+  '@standard-schema/spec@1.1.0': {}
 
   '@surrealdb/cbor@2.0.0-alpha.4': {}
 

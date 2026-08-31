@@ -1,6 +1,6 @@
 {
   "name": "@mirk/fixtures",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "type": "module",
   "description": "Typed, layered, explainable authored data with memory, filesystem, package-resource, and store sources.",
   "license": "Apache-2.0",
@@ -68,12 +68,15 @@
   "devDependencies": {
     "@mirk/store": "workspace:^",
     "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "tsup": "^8.0.0"
+    "vitest": "^3.0.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "1.1.0"
   }
 }

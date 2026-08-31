@@ -1,5 +1,7 @@
 // ─── @mirk/fixtures — public types ───────────────────────────────────────
 
+import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
+
 export type FixtureRef = string;
 
 export interface ExplicitRef {
@@ -10,23 +12,10 @@ export type RefOrInline<T> = FixtureRef | ExplicitRef | T;
 
 export type MaybePromise<T> = T | Promise<T>;
 
-export interface StandardSchemaV1<Input = unknown, Output = Input> {
-  readonly "~standard": {
-    readonly version: 1;
-    readonly vendor: string;
-    readonly validate: (value: unknown) => MaybePromise<StandardSchemaV1Result<Output>>;
-    readonly types?: { readonly input: Input; readonly output: Output };
-  };
-}
-
-export type StandardSchemaV1Result<Output> =
-  | { readonly value: Output; readonly issues?: undefined }
-  | { readonly issues: ReadonlyArray<StandardSchemaV1Issue> };
-
-export interface StandardSchemaV1Issue {
-  readonly message: string;
-  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
-}
+export type StandardSchemaV1<Input = unknown, Output = Input> =
+  StandardSchema<Input, Output>;
+export type StandardSchemaV1Result<Output> = StandardSchema.Result<Output>;
+export type StandardSchemaV1Issue = StandardSchema.Issue;
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
