@@ -26,10 +26,13 @@ interface FileCandidate {
   layered: LayeredSource;
   entry: FixtureSourceEntry;
   ext: string;
+  fileId: string;
 }
 
 interface ParsedLayer extends FileCandidate {
+  id: string;
   parsed: unknown;
+  sourcePath: string;
 }
 
 const BUILTIN_PARSERS: Record<string, ParserEntry> = {
@@ -41,6 +44,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   const parsers = normalizeParsers(opts.parsers);
   const rawCache = new Map<string, LoadedFixture>();
   const materialCache = new Map<string, unknown>();
+  const parsedDocumentCache = new Map<string, unknown>();
 
   function defOrThrow(type: string, refForError: string): FixtureTypeDefinition {
     const def = opts.registry.get(type);
@@ -131,9 +135,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       }
 
       for (const entry of entries) {
-        const match = matchEntry(def, entry, id);
+        const match = matchEntry(def, entry, def.document ? undefined : id);
         if (!match) continue;
-        out.push({ layered, entry, ext: match.ext });
+        out.push({ layered, entry, ext: match.ext, fileId: match.id });
       }
     }
 
@@ -141,6 +145,14 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   }
 
   async function readAndParse(candidate: FileCandidate): Promise<unknown> {
+    const cacheKey = [
+      candidate.layered.source.id,
+      candidate.entry.locator,
+      candidate.entry.relativePath,
+    ].join("\u0000");
+    if (parsedDocumentCache.has(cacheKey)) {
+      return parsedDocumentCache.get(cacheKey);
+    }
     const parser = parsers[candidate.ext];
     if (!parser) {
       throw new FixtureError({
@@ -168,7 +180,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
 
     try {
       const result = await parseWith(parser, content);
-      return isPositionedResult(result) ? result.value : result;
+      const value = isPositionedResult(result) ? result.value : result;
+      parsedDocumentCache.set(cacheKey, value);
+      return value;
     } catch (error) {
       throw new FixtureError({
         severity: "error",
@@ -178,6 +192,143 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         path: candidate.entry.relativePath,
       });
     }
+  }
+
+  async function expandMapDocument(
+    def: FixtureTypeDefinition,
+    candidate: FileCandidate,
+  ): Promise<ParsedLayer[]> {
+    const parsed = await readAndParse(candidate);
+    if (!def.document) {
+      return [{
+        ...candidate,
+        id: candidate.fileId,
+        parsed,
+        sourcePath: candidate.entry.relativePath,
+      }];
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      throw new FixtureError({
+        severity: "error",
+        code: "invalid-map-document",
+        message: "Fixture map documents must parse to an object keyed by fixture id.",
+        source: candidate.layered.source.id,
+        path: candidate.entry.relativePath,
+      });
+    }
+
+    const layers: ParsedLayer[] = [];
+    for (const [id, rawValue] of Object.entries(parsed)) {
+      let value = rawValue;
+      const idField = def.document.idField;
+      if (idField && !isPatchDocument(value)) {
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          throw new FixtureError({
+            severity: "error",
+            code: "invalid-map-fixture",
+            message: `Fixture "${def.type}:${id}" must be an object to inject "${idField}".`,
+            fixture: `${def.type}:${id}`,
+            source: candidate.layered.source.id,
+            path: `${candidate.entry.relativePath}#${id}`,
+          });
+        }
+        const record = value as Record<string, unknown>;
+        const explicitId = record[idField];
+        if (explicitId !== undefined && explicitId !== id) {
+          throw new FixtureError({
+            severity: "error",
+            code: "map-id-mismatch",
+            message: `Map key "${id}" does not match explicit ${idField} "${String(explicitId)}".`,
+            fixture: `${def.type}:${id}`,
+            source: candidate.layered.source.id,
+            path: `${candidate.entry.relativePath}#${id}`,
+          });
+        }
+        value = explicitId === undefined ? { [idField]: id, ...record } : record;
+      }
+      layers.push({
+        ...candidate,
+        id,
+        parsed: value,
+        sourcePath: `${candidate.entry.relativePath}#${id}`,
+      });
+    }
+    return layers;
+  }
+
+  async function parsedCandidates(
+    type: string,
+    targetId: string | undefined,
+    skipSources = new Set<string>(),
+  ): Promise<ParsedLayer[]> {
+    const def = defOrThrow(type, targetId ? `${type}:${targetId}` : type);
+    const candidates = targetId
+      ? await findCandidates(type, targetId, skipSources)
+      : await findAllFileCandidates(def, skipSources);
+    const parsed: ParsedLayer[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const layers = await expandMapDocument(def, candidate);
+      for (const layer of layers) {
+        if (targetId !== undefined && layer.id !== targetId) continue;
+        const key = [
+          layer.layered.source.id,
+          layer.layered.layer,
+          layer.layered.priority,
+          layer.id,
+        ].join("\u0000");
+        if (seen.has(key)) {
+          throw new FixtureError({
+            severity: "error",
+            code: "duplicate-map-fixture",
+            message: `Fixture "${type}:${layer.id}" appears more than once in the same source layer.`,
+            fixture: `${type}:${layer.id}`,
+            source: layer.layered.source.id,
+            path: layer.sourcePath,
+          });
+        }
+        seen.add(key);
+        parsed.push(layer);
+      }
+    }
+    return parsed;
+  }
+
+  async function findAllFileCandidates(
+    def: FixtureTypeDefinition,
+    skipSources = new Set<string>(),
+  ): Promise<FileCandidate[]> {
+    const out: FileCandidate[] = [];
+    for (const layered of layeredSources) {
+      if (skipSources.has(layered.source.id)) continue;
+      let entries: readonly FixtureSourceEntry[];
+      try {
+        entries = await layered.source.list();
+      } catch (error) {
+        throw new FixtureError({
+          severity: "error",
+          code: "source-list-failed",
+          message: `Source "${layered.source.id}" failed to list entries: ${messageOf(error)}`,
+          source: layered.source.id,
+        });
+      }
+      for (const entry of entries) {
+        const match = matchEntry(def, entry);
+        if (match) {
+          out.push({
+            layered,
+            entry,
+            ext: match.ext,
+            fileId: match.id,
+          });
+        }
+      }
+    }
+    return out;
   }
 
   async function validateAgainstSchema(
@@ -205,9 +356,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
 
     const { type, id } = parseRef(ref);
     const def = defOrThrow(type, ref);
-    const candidates = await findCandidates(type, id, new Set(skipSources));
+    const parsedLayers = await parsedCandidates(type, id, new Set(skipSources));
 
-    if (candidates.length === 0) {
+    if (parsedLayers.length === 0) {
       throw new FixtureError({
         severity: "error",
         code: "not-found",
@@ -215,11 +366,6 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         fixture: ref,
         hint: `Looked under "${dirPrefix(def)}${id}" with extensions ${extensionsFor(def).join(", ")}.`,
       });
-    }
-
-    const parsedLayers: ParsedLayer[] = [];
-    for (const candidate of candidates) {
-      parsedLayers.push({ ...candidate, parsed: await readAndParse(candidate) });
     }
 
     for (const layer of parsedLayers) {
@@ -230,7 +376,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
           message: `Patch declares "$patch: ${layer.parsed.$patch}" but is being applied to "${ref}".`,
           fixture: ref,
           source: layer.layered.source.id,
-          path: layer.entry.relativePath,
+          path: layer.sourcePath,
         });
       }
     }
@@ -259,7 +405,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     let current = await validateAgainstSchema(
       ref,
       baseLayer.layered.source.id,
-      baseLayer.entry.relativePath,
+      baseLayer.sourcePath,
       baseLayer.parsed,
       def,
     );
@@ -273,7 +419,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         sourceId: layer.layered.source.id,
         layer: layer.layered.layer,
         priority: layer.layered.priority,
-        path: layer.entry.relativePath,
+        path: layer.sourcePath,
         kind: isPatchDocument(layer.parsed) ? "shadowed" : "replace",
       });
     }
@@ -282,7 +428,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       sourceId: baseLayer.layered.source.id,
       layer: baseLayer.layered.layer,
       priority: baseLayer.layered.priority,
-      path: baseLayer.entry.relativePath,
+      path: baseLayer.sourcePath,
       kind: "base",
     });
 
@@ -296,7 +442,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
           sourceId: layer.layered.source.id,
           layer: layer.layered.layer,
           priority: layer.layered.priority,
-          path: layer.entry.relativePath,
+          path: layer.sourcePath,
           kind: "shadowed",
         });
         continue;
@@ -307,12 +453,12 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         fixture: ref,
         layers: provenanceCtx(provenance),
       });
-      current = await validateAgainstSchema(ref, layer.layered.source.id, layer.entry.relativePath, merged, def);
+      current = await validateAgainstSchema(ref, layer.layered.source.id, layer.sourcePath, merged, def);
       provenance.push({
         sourceId: layer.layered.source.id,
         layer: layer.layered.layer,
         priority: layer.layered.priority,
-        path: layer.entry.relativePath,
+        path: layer.sourcePath,
         kind: "patch",
       });
     }
@@ -339,22 +485,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     for (const typeName of types) {
       const def = opts.registry.get(typeName);
       if (!def) continue;
-      for (const layered of layeredSources) {
-        let entries: readonly FixtureSourceEntry[];
-        try {
-          entries = await layered.source.list();
-        } catch (error) {
-          throw new FixtureError({
-            severity: "error",
-            code: "source-list-failed",
-            message: `Source "${layered.source.id}" failed to list entries: ${messageOf(error)}`,
-            source: layered.source.id,
-          });
-        }
-        for (const entry of entries) {
-          const match = matchEntry(def, entry);
-          if (match) refs.add(`${typeName}:${match.id}`);
-        }
+      const candidates = await parsedCandidates(typeName, undefined);
+      for (const candidate of candidates) {
+        refs.add(`${typeName}:${candidate.id}`);
       }
     }
 
@@ -497,10 +630,12 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     if (!ref) {
       rawCache.clear();
       materialCache.clear();
+      parsedDocumentCache.clear();
       return;
     }
     rawCache.delete(ref);
     materialCache.clear();
+    parsedDocumentCache.clear();
   }
 
   function bareRefsEnabledFor(ref: string, expectedType: string | undefined): boolean {
@@ -515,6 +650,21 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     for (const typeName of opts.registry.types()) {
       const def = opts.registry.get(typeName);
       if (!def) continue;
+      try {
+        const candidates = await parsedCandidates(typeName, undefined, skippedSources);
+        for (const candidate of candidates) refs.add(`${typeName}:${candidate.id}`);
+      } catch (error) {
+        if (error instanceof FixtureError && error.diagnostic.source) {
+          skippedSources.add(error.diagnostic.source);
+        }
+        diagnostics.push(...diagnosticsFromError(typeName, error));
+        try {
+          const remaining = await parsedCandidates(typeName, undefined, skippedSources);
+          for (const candidate of remaining) refs.add(`${typeName}:${candidate.id}`);
+        } catch (remainingError) {
+          diagnostics.push(...diagnosticsFromError(typeName, remainingError));
+        }
+      }
       for (const layered of layeredSources) {
         if (skippedSources.has(layered.source.id)) continue;
         let entries: readonly FixtureSourceEntry[];
@@ -532,10 +682,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         }
         for (const entry of entries) {
           const match = matchEntry(def, entry);
-          if (match) {
-            refs.add(`${typeName}:${match.id}`);
-            continue;
-          }
+          if (match) continue;
 
           const noParser = noParserDiagnosticForEntry(def, entry, layered.source.id);
           if (!noParser) continue;

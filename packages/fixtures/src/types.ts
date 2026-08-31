@@ -106,11 +106,21 @@ export interface ValidationContext {
 
 export type ReferenceMode = "explicit-only" | "explicit-and-bare";
 
+export interface FixtureMapDocument {
+  kind: "map";
+  /**
+   * Inject the map key into this field when a base fixture omits it.
+   * An explicitly different value is rejected.
+   */
+  idField?: string;
+}
+
 export interface FixtureTypeDefinition {
   type: string;
   directory: string;
   extensions?: string[];
   schema: StandardSchemaV1<unknown, unknown>;
+  document?: FixtureMapDocument;
   purpose?: FixturePurpose;
   mergeStrategy?: MergeStrategy;
   referenceMode?: ReferenceMode;
@@ -124,6 +134,7 @@ export interface TypedFixtureTypeDefinition<T, M = T> {
   directory: string;
   extensions?: string[];
   schema: StandardSchemaV1<unknown, T>;
+  document?: FixtureMapDocument;
   purpose?: FixturePurpose;
   mergeStrategy?: MergeStrategy;
   referenceMode?: ReferenceMode;

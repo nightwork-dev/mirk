@@ -77,6 +77,35 @@ any other validator for you.
 Parsers are injected. JSON is built in; YAML, JSON5, TOML, or custom formats are caller choices, not
 root-package bundle tax.
 
+### Keyed fixture maps
+
+One file can author several fixtures of the same registered type. Opt the type
+into map documents and, when useful, let Mirk inject each map key as an `id`
+field:
+
+```ts
+const backgroundType = defineFixtureType({
+  type: "background",
+  directory: "backgrounds",
+  document: { kind: "map", idField: "id" },
+  schema: BackgroundSchema,
+  mergeStrategy: "deep",
+});
+```
+
+```json
+{
+  "drifter": { "name": "Drifter" },
+  "detective": { "name": "Detective" }
+}
+```
+
+The records remain independently addressable as `background:drifter` and
+`background:detective`. Higher layers may patch either record by placing the
+same key in another map document with an ordinary `$patch` value. Provenance
+identifies both the source file and map key, such as
+`backgrounds/core.json#detective`.
+
 ## Layers and patches
 
 Authored data usually has more than one layer:

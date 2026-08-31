@@ -13,6 +13,7 @@ export type {
   ExtractedReference,
   FixtureLoader,
   FixtureLoaderOptions,
+  FixtureMapDocument,
   FixtureProvenance,
   FixtureProvenanceLayer,
   FixtureProvenanceLayerKind,

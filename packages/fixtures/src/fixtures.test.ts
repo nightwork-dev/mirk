@@ -71,6 +71,81 @@ describe("registry", () => {
 });
 
 describe("fixture loading", () => {
+  it("loads keyed fixture maps and layers individual entries with source-key provenance", async () => {
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType<Record<string, unknown>>({
+      type: "theme",
+      directory: "themes",
+      document: { kind: "map", idField: "id" },
+      schema: objectSchema,
+      mergeStrategy: "deep",
+    }));
+    const defaults = createMemoryFixtureSource({
+      id: "defaults",
+      files: {
+        "themes/core.json": JSON.stringify({
+          dark: { name: "Dark", colors: { background: "black" } },
+          light: { id: "light", name: "Light", colors: { background: "white" } },
+        }),
+      },
+    });
+    const app = createMemoryFixtureSource({
+      id: "app",
+      files: {
+        "themes/overrides.json": JSON.stringify({
+          dark: { $patch: "theme:dark", colors: { accent: "purple" } },
+        }),
+      },
+    });
+    const loader = createFixtureLoader({
+      registry,
+      sources: [
+        { source: defaults, layer: "base", priority: 0 },
+        { source: app, layer: "app", priority: 10 },
+      ],
+    });
+
+    await expect(loader.list("theme")).resolves.toEqual(["theme:dark", "theme:light"]);
+    await expect(loader.load("theme:dark")).resolves.toEqual({
+      id: "dark",
+      name: "Dark",
+      colors: { background: "black", accent: "purple" },
+    });
+    const loaded = await loader.loadRaw("theme:dark");
+    expect(loaded.provenance.layers.map((layer) => layer.path)).toEqual([
+      "themes/core.json#dark",
+      "themes/overrides.json#dark",
+    ]);
+    await expect(loader.validate()).resolves.toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("rejects explicit IDs that disagree with their fixture map keys", async () => {
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType<Record<string, unknown>>({
+      type: "theme",
+      directory: "themes",
+      document: { kind: "map", idField: "id" },
+      schema: objectSchema,
+    }));
+    const source = createMemoryFixtureSource({
+      id: "pack",
+      files: {
+        "themes/core.json": JSON.stringify({
+          dark: { id: "light", name: "Dark" },
+        }),
+      },
+    });
+    const loader = createFixtureLoader({ registry, sources: [source] });
+
+    await expect(loader.load("theme:dark")).rejects.toMatchObject({
+      diagnostic: {
+        code: "map-id-mismatch",
+        fixture: "theme:dark",
+        path: "themes/core.json#dark",
+      },
+    });
+  });
+
   it("loads JSON from memory and applies higher-priority patches with provenance", async () => {
     const registry = registryWithTypes();
     const defaults = createMemoryFixtureSource({
