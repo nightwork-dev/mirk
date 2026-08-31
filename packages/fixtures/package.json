@@ -1,6 +1,6 @@
 {
   "name": "@mirk/fixtures",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "description": "Typed, layered, explainable authored data with memory, filesystem, package-resource, and store sources.",
   "license": "Apache-2.0",

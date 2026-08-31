@@ -225,7 +225,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     for (const [id, rawValue] of Object.entries(parsed)) {
       let value = rawValue;
       const idField = def.document.idField;
-      if (idField && !isPatchDocument(value)) {
+      if (idField) {
         if (typeof value !== "object" || value === null || Array.isArray(value)) {
           throw new FixtureError({
             severity: "error",
@@ -248,7 +248,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
             path: `${candidate.entry.relativePath}#${id}`,
           });
         }
-        value = explicitId === undefined ? { [idField]: id, ...record } : record;
+        if (!isPatchDocument(value) && explicitId === undefined) {
+          value = { [idField]: id, ...record };
+        }
       }
       layers.push({
         ...candidate,

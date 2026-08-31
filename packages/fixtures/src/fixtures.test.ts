@@ -146,6 +146,46 @@ describe("fixture loading", () => {
     });
   });
 
+  it("rejects explicit IDs in map patches that disagree with their keys", async () => {
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType<Record<string, unknown>>({
+      type: "theme",
+      directory: "themes",
+      document: { kind: "map", idField: "id" },
+      schema: objectSchema,
+      mergeStrategy: "deep",
+    }));
+    const base = createMemoryFixtureSource({
+      id: "base",
+      files: {
+        "themes/core.json": JSON.stringify({ dark: { name: "Dark" } }),
+      },
+    });
+    const override = createMemoryFixtureSource({
+      id: "override",
+      files: {
+        "themes/override.json": JSON.stringify({
+          dark: { $patch: "theme:dark", id: "light", name: "Wrong" },
+        }),
+      },
+    });
+    const loader = createFixtureLoader({
+      registry,
+      sources: [
+        { source: base, layer: "base", priority: 0 },
+        { source: override, layer: "override", priority: 10 },
+      ],
+    });
+
+    await expect(loader.load("theme:dark")).rejects.toMatchObject({
+      diagnostic: {
+        code: "map-id-mismatch",
+        fixture: "theme:dark",
+        path: "themes/override.json#dark",
+      },
+    });
+  });
+
   it("loads JSON from memory and applies higher-priority patches with provenance", async () => {
     const registry = registryWithTypes();
     const defaults = createMemoryFixtureSource({
