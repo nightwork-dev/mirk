@@ -15,7 +15,9 @@
     "release:receipt": "node scripts/verify-package-release.mjs --publication",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "conformance:gen": "pnpm --filter @mirk/store conformance:gen",
+    "conformance:current": "pnpm --filter @mirk/store conformance:current"
   },
   "devDependencies": {
     "@changesets/cli": "2.31.0",

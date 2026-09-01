@@ -1,0 +1,231 @@
+{
+  "id": "store/collection-bulk-roundtrip",
+  "title": "many items put in one collection all read back by id",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-0",
+          "index": 0,
+          "label": "label 0"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-1",
+          "index": 1,
+          "label": "label 1"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-2",
+          "index": 2,
+          "label": "label 2"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-3",
+          "index": 3,
+          "label": "label 3"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-4",
+          "index": 4,
+          "label": "label 4"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-5",
+          "index": 5,
+          "label": "label 5"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-6",
+          "index": 6,
+          "label": "label 6"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-7",
+          "index": 7,
+          "label": "label 7"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-8",
+          "index": 8,
+          "label": "label 8"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "bulk",
+        {
+          "id": "item-9",
+          "index": 9,
+          "label": "label 9"
+        }
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "bulk"
+      ],
+      "expect": {
+        "value": 10
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "bulk",
+        "item-0"
+      ],
+      "expect": {
+        "value": {
+          "id": "item-0",
+          "index": 0,
+          "label": "label 0"
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "bulk",
+        "item-4"
+      ],
+      "expect": {
+        "value": {
+          "id": "item-4",
+          "index": 4,
+          "label": "label 4"
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "bulk",
+        "item-9"
+      ],
+      "expect": {
+        "value": {
+          "id": "item-9",
+          "index": 9,
+          "label": "label 9"
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "bulk"
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "item-0",
+            "index": 0,
+            "label": "label 0"
+          },
+          {
+            "id": "item-1",
+            "index": 1,
+            "label": "label 1"
+          },
+          {
+            "id": "item-2",
+            "index": 2,
+            "label": "label 2"
+          },
+          {
+            "id": "item-3",
+            "index": 3,
+            "label": "label 3"
+          },
+          {
+            "id": "item-4",
+            "index": 4,
+            "label": "label 4"
+          },
+          {
+            "id": "item-5",
+            "index": 5,
+            "label": "label 5"
+          },
+          {
+            "id": "item-6",
+            "index": 6,
+            "label": "label 6"
+          },
+          {
+            "id": "item-7",
+            "index": 7,
+            "label": "label 7"
+          },
+          {
+            "id": "item-8",
+            "index": 8,
+            "label": "label 8"
+          },
+          {
+            "id": "item-9",
+            "index": 9,
+            "label": "label 9"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,268 @@
+# Python port of Mirk — specification
+
+Status: draft, 2026-09-01. Owner: mirk. Phase 1 covers `@mirk/store`. Phase 2
+(fixtures, artifact) is sketched at the end and gets its own plan.
+
+## What this is for
+
+A Python process must be able to use Mirk storage with the same contract as a
+TypeScript process, including opening the same SQLite files. The port is a
+re-implementation, not a binding. The thing that makes two implementations one
+Mirk is a shared, language-neutral conformance corpus that both run.
+
+## Decisions
+
+1. **Re-implementation in Python, no Rust core.** Mirk is contracts plus
+   adapters; a wasm core could carry at most the pure-logic third and every
+   adapter would still be host-language I/O. Reconsidered only if a hermetic
+   piece becomes compute-bound.
+2. **The corpus is the contract.** JSON scenario files under `conformance/`
+   at the repo root. The TypeScript suite and the Python suite each replay
+   every scenario against every backend they implement. A behavior that is
+   not in the corpus is not contractual.
+3. **Thinnest real path first.** Before the corpus exists, a Python process
+   using stdlib `sqlite3` reads a value that the TypeScript SQLite adapter
+   wrote, and the TypeScript adapter reads a value Python wrote. Dated record
+   of that run goes in `docs/evidence/`. Only then is the corpus built.
+4. **Sync by design carries over.** Python ports are synchronous; an
+   `asyncio` wrapper is the `toAsync` equivalent. Embedded SQLite uses the
+   stdlib `sqlite3` module. No native install for the base package.
+5. **Optional extras, not dependencies.** `sqlite-vec` is an optional extra
+   for vec0 acceleration. The core package has zero runtime dependencies.
+6. **Fixtures carry a JSON Schema document (phase 2).** Standard Schema and
+   Python validators do not interconvert; every existing consumer hand-rolls
+   a validate-only object with no emitter. A fixture type will declare its
+   shape as a JSON Schema document and each language validates it with its
+   own tool. Audit on 2026-09-01 found no consumer using refinements,
+   transforms, or coercions.
+
+## Phase 1 scope
+
+Ports: KV, collection (with `listWhereIn`), vector, search, graph traversal.
+Backends: in-memory reference and SQLite. Both languages, both backends.
+
+Out of scope for phase 1: atomic mutation, coordination (bounded writer waits
+are process-local), namespaces beyond what the corpus needs, libSQL,
+PostgreSQL, SurrealDB, OpenDAL, fixtures, artifact, statements, migrate.
+
+## Layout
+
+```
+conformance/                    language-neutral corpus (repo root)
+  README.md                     format, governance, how to add a scenario
+  scenario.schema.json          JSON Schema (draft 2020-12) for scenario files
+  store/kv/*.json
+  store/collection/*.json
+  store/vector/*.json
+  store/search/*.json
+  store/graph/*.json
+python/store/                   the Python package (uv, src layout)
+  pyproject.toml                name: mirk-store; requires-python >= 3.12
+  src/mirk/store/               ports (Protocols), memory, sqlite, graph
+  src/mirk/store/conformance/   corpus loader + runner used by tests
+  tests/
+packages/store/src/conformance.test.ts   TypeScript replay of the corpus
+docs/evidence/python-port/      dated records of real cross-language runs
+```
+
+## Scenario format
+
+One file, one scenario, one sequence of operations against fresh stores.
+Runners execute the sequence once per backend. Every step's `expect` is
+checked before the next step runs.
+
+**The corpus is generated, not authored** (pin-derive's load-bearing lesson).
+Scenario inputs (steps without `expect`) are declared in
+`packages/store/scripts/gen-conformance.ts`. The generator runs each scenario
+against the TypeScript in-memory reference and the TypeScript SQLite adapter,
+refuses to write a file when the two disagree, fills in `expect` from the
+reference, and writes `conformance/**` with `rm -rf` first. A step declared
+`throws` that does not throw fails generation. A freshness check
+(`pnpm conformance:current`) regenerates into a temporary directory and
+fails on any added, removed, or changed file against the committed
+`conformance/`; regenerating in place would overwrite the very edit it is
+meant to catch. It runs in CI and before receipts. Scenario authors verify
+with `conformance:gen --out <tmp>`; only the integrator writes the real
+corpus, so parallel authors never clobber it.
+Regenerate after an intentional semantics change and review the diff: a
+surprising change in a scenario is a regression, not a refresh.
+
+```json
+{
+  "id": "collection/sort-missing-field-last",
+  "title": "Items missing the sortBy field sort after present values",
+  "ports": ["collection"],
+  "capabilities": [],
+  "steps": [
+    { "op": "put", "args": ["c", { "id": "a", "n": 2 }] },
+    { "op": "put", "args": ["c", { "id": "b" }] },
+    { "op": "put", "args": ["c", { "id": "c", "n": 1 }] },
+    { "op": "list", "args": ["c", { "sortBy": "n" }],
+      "expect": { "value": [{ "id": "c", "n": 1 }, { "id": "a", "n": 2 }, { "id": "b" }] } }
+  ]
+}
+```
+
+Rules:
+
+- `op` is a port method name as spelled in the TypeScript port. Runners map
+  it to their language's spelling. `args` are positional JSON values.
+- `expect` forms: `{"value": <json>}` exact deep equality;
+  `{"values": [...], "approxFields": ["score"], "tol": 1e-6}` for a list of
+  records where the named fields compare within tolerance and everything
+  else exactly; `{"ids": [...]}` for ordered result ids only, used where the
+  contract fixes ranking but not scores (full-text search);
+  `{"throws": "<exact message>"}` when the operation must raise with that
+  message. `values` may also carry `ignoreFields` (removed from both sides
+  before comparison; used for search scores, which are not contractual while
+  ids and meta are). There is no unordered form: the contract fixes order
+  everywhere. A step without `expect` is setup.
+- `throws` compares the exception's message string exactly. A step marked
+  `throws` that returns normally fails; a step not marked `throws` that
+  raises fails. Same rule at generation and at replay in both languages.
+- Vectors are JSON arrays of numbers. Both languages round components to
+  float32 before storing; cosine accumulates in float64 with the two-sqrt
+  denominator. Tolerance is `1e-6` and applies to vector scores only.
+- Tie-break order everywhere (collection sort, vector results, search
+  results, graph nodes and edges) is Unicode code point order of the id. The
+  TypeScript in-memory stores currently use `localeCompare`; that changes to
+  a code point comparison as part of this work, and the SQLite adapter's
+  `BINARY` collation already matches.
+- Known TypeScript backend divergences fixed as part of this work, each
+  pinned by a scenario: vec0 path applies `topK` before `minScore`; a search
+  field weight of zero unmatches a document in memory but not in FTS5;
+  duplicate query tokens double a score in memory but not in FTS5.
+
+## Rulings on KV and collection divergences (2026-09-01)
+
+Probing both TypeScript backends found these disagreements. The ruling is the
+contract; the losing backend is fixed in TypeScript and the scenario pins it.
+
+| Behavior | memory today | SQLite today | Ruling |
+| --- | --- | --- | --- |
+| `keys()` order | insertion | byte ascending | code point ascending |
+| `count` with `limit`/`offset` | applies them | ignores them | `count` ignores `sortBy`, `limit`, `offset` |
+| `limit` < 0 | returns all | returns none | returns none |
+| `where` with object or array value | `[]` | throws | throws `Store filters only support JSON scalar values.` |
+| `listWhereIn` with non-scalar value | `[]` | throws | throws (message already in SQLite) |
+| `where {v: true}` vs stored `1` | distinguishes | conflates | distinguishes; SQLite gains a `json_type` check for booleans |
+| sort ties | insertion (stable) | rowid (incidental) | insertion order; SQLite adds `rowid` as final `ORDER BY` key |
+| mixed number/string in one sort field | JS coercion | SQLite type rank | unspecified; the corpus never pins it |
+
+Contract statements the corpus pins that no test asserted before: `list()`
+with no `sortBy` is insertion order; re-`put` of an existing id keeps its
+position; remove then re-add moves to the end; `set(k, null)` stores a value
+and `has` is the only existence test; `get` returns `null` for both missing
+and stored null; `put` returns the object it was given; empty collection name
+throws; `where` on a dotted name is one literal top-level key; `where {x:
+null}` matches explicit null only; nulls and missing sort last in both
+directions; `offset` then `limit` after sort; a `where` on the `listWhereIn`
+field is ANDed with the IN. Values are JSON: no `undefined`, no `Date`, no
+bigint; `NaN` and infinities are rejected by the Python encoder
+(`allow_nan=False`) and become `null` in TypeScript, which the corpus never
+exercises. Integers above 2^53 are out of contract.
+
+JSON text written by Python matches JavaScript's `JSON.stringify` where a
+SQLite reader can observe the difference: compact separators, non-ASCII
+unescaped, and integral floats emitted as integers (`1.0` is written `1`) so
+`json_type` reports `integer` on both sides. Insertion key order is preserved
+by both languages and is not otherwise contractual. Dates are not a value
+type; a consumer stores ISO strings.
+
+The Python in-memory store copies on write and on read. The TypeScript
+memory store hands out live references. The corpus cannot observe the
+difference, so the contract states it instead: mutating an object after
+`put` or mutating a returned record is undefined behavior; consumers that
+need it get different results by language and by backend today.
+
+Sort ties on SQLite use `rowid` as the final key. This equals insertion order
+for the observable contract: SQLite reuses a rowid only when the maximum row
+was deleted, and a re-added item then lands at the end either way.
+
+## Review outcomes (2026-09-01, codex Luna, fresh context)
+
+Folded in: temp-directory freshness check; `ignoreFields`; explicit `throws`
+rule; parallel authors never write the corpus; Python runner resolves port
+targets by module convention so port authors never edit it; the Node
+compatibility tests rebuild `dist` first; skips are counted per port and
+fatal at integration; `undefined`, `Date`, and non-finite numbers do not
+appear in scenarios because they are outside the JSON contract; Float32
+byte identity is asserted by the cross-language test, not by a replay
+scenario. Full text: `docs/python-port/reviews/2026-09-01-plan-review-luna.md`.
+
+`namespaceStore` is a pure prefixing decorator (unit separator U+001F) and
+ports once over the Protocol. `atomic.ts` is portable but phase 2;
+`coordination.ts` is process machinery and out of scope.
+- `ports` names the ports a scenario touches, from `kv`, `collection`,
+  `vector`, `search`, `graph` (`kv` and `collection` are served by one store
+  target); a runner skips a scenario whose ports it does not implement and
+  reports the skip. `capabilities` gates on
+  optional capabilities (`listWhereIn`, `vec0`) the same way.
+- Records are JSON. `null` is a value. There is no `undefined`; a TypeScript
+  runner strips `undefined` before comparison. Numbers compare as IEEE
+  doubles; integers and floats with the same value are equal.
+- Strings sort by Unicode code point. The corpus carries a scenario with an
+  astral-plane character so a UTF-16 code-unit sort fails it.
+- Backends are not selectable per scenario. A behavior that differs between
+  memory and SQLite is a bug in one of them, not a corpus option.
+
+## Governance
+
+- Every behavior change to a port lands with a corpus scenario in the same
+  commit. A TypeScript-only test for port behavior is a review finding.
+- Scenario ids are stable; a scenario is never edited to pass, it is replaced
+  under a new id and the old id is listed in `conformance/README.md` as
+  retired with the reason.
+- Receipts (`pnpm release:receipt`) record the executed scenario count per
+  runner. A run that executes zero scenarios is not a receipt.
+
+## Python package
+
+- Distribution `mirk-store` (PyPI `mirk` is an unrelated project). Import
+  name `mirk.store` as a PEP 420 namespace package, so later distributions
+  `mirk-fixtures` and `mirk-artifact` mirror the npm scope one for one.
+  `requires-python >= 3.12`, build backend `hatchling`, managed with `uv`.
+  Zero runtime dependencies. Extras: `vec` (sqlite-vec).
+- The SQLite adapter's write path maintains the atomic bookkeeping rows the
+  TypeScript adapter writes (`_mirk_atomic_versions`, `_mirk_atomic_sequence`,
+  `_mirk_atomic_identity`) so a shared file stays consistent for the
+  TypeScript versioned-read surface, even though the atomic API itself is
+  phase 2. See `docs/evidence/python-port/2026-09-01-handshake.md`.
+- Dev: `pytest`, `ruff`, `pyright` strict, `jsonschema` (corpus validation
+  in tests only).
+- Ports are `typing.Protocol` classes mirroring `SyncStore`,
+  `SyncStoreInQuery`, `VectorStore`, `SearchStore`. Graph traversal is a
+  module of functions over any store satisfying the collection Protocol.
+- The SQLite adapter opens files the TypeScript adapter wrote, with identical
+  tables, pragmas, and serialization. Byte-level compatibility of stored JSON
+  is not required; semantic compatibility is. Vector buffers must be
+  byte-identical (Float32 little-endian) so both languages read each other's
+  vectors.
+
+## Acceptance proof (phase 1)
+
+1. `docs/evidence/python-port/<date>-handshake.md` records the real
+   cross-process file exchange with commands and output.
+2. `pnpm test` runs the corpus in TypeScript against memory and SQLite;
+   `uv run pytest` in `python/` runs the same corpus against memory and
+   SQLite. Both report the scenario count and it is the same number.
+3. `pnpm -r typecheck` and `uv run pyright` clean.
+4. A deliberately wrong sort tie-break in the Python memory store fails a
+   named corpus scenario. Recorded once in evidence, then reverted.
+
+## Cost class
+
+Like porting pin-derive's fixture replay to a stateful domain, plus a
+mechanical port of ~5.6k lines of TypeScript. Nothing here is unlike what
+we have shipped.
+
+## Phase 2 sketch
+
+- `@mirk/fixtures`: fixture type declares `jsonSchema` (a document). The
+  TypeScript loader keeps `schema` (Standard Schema) as optional for typed
+  output; validation of authored files runs against the document in both
+  languages. Consumers (sigil-chat, someone host) migrate their hand-rolled
+  validators to documents plus residual checks.
+- `@mirk/artifact`: pure identity, integrity, and lineage logic ports
+  directly; hashing must be byte-identical across languages and gets its own
+  corpus directory.

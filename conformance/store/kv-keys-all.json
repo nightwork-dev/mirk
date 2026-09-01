@@ -1,0 +1,42 @@
+{
+  "id": "store/kv-keys-all",
+  "title": "keys with no prefix returns every key",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "alpha",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "beta",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "gamma",
+        3
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "alpha",
+          "beta",
+          "gamma"
+        ]
+      }
+    }
+  ]
+}

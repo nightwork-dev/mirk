@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mirk.dev/conformance/scenario.schema.json",
+  "title": "Mirk conformance scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "title",
+    "ports",
+    "capabilities",
+    "steps"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "args"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": {
+          "type": "array"
+        },
+        "expect": {
+          "$ref": "#/$defs/expect"
+        }
+      }
+    },
+    "expect": {
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/expectValue"
+        },
+        {
+          "$ref": "#/$defs/expectValues"
+        },
+        {
+          "$ref": "#/$defs/expectIds"
+        },
+        {
+          "$ref": "#/$defs/expectThrows"
+        }
+      ]
+    },
+    "expectValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": true
+      }
+    },
+    "expectValues": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "values"
+      ],
+      "properties": {
+        "values": {
+          "type": "array"
+        },
+        "approxFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "ignoreFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "tol": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "expectIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ids"
+      ],
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "expectThrows": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "throws"
+      ],
+      "properties": {
+        "throws": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
