@@ -221,4 +221,37 @@ export const scenarios = [
     ports: ["hash"],
     steps: [{ op: "sha256Hex", args: ["café 中文"], expect: { value: true } }],
   }),
+
+  // ── Strings are UTF-16 ──────────────────────────────────────────────────
+  // `$codepoints` builds a JavaScript string, and a JavaScript string is UTF-16:
+  // a high surrogate followed by a low surrogate IS the astral character, not
+  // two lone surrogates. A port whose strings are code-point sequences has to
+  // join pairs the same way or it canonicalizes this to two `\u` escapes.
+  defineScenario({
+    id: "artifact/hashing/canonical-json/surrogate-pair-from-code-units",
+    title: "a high and a low surrogate given as code units form one astral character",
+    ports: ["hash"],
+    steps: [
+      { op: "canonicalJson", args: [{ $codepoints: [55357, 56832] }], expect: { value: true } },
+      { op: "canonicalDigest", args: [{ $codepoints: [55357, 56832] }], expect: { value: true } },
+      {
+        op: "canonicalJson",
+        args: [{ $codepoints: [55357, 56832, 55296, 56832, 56832] }],
+        expect: { value: true },
+      },
+    ],
+  }),
+
+  // `sha256Hex` hashes the UTF-8 of its text the way TextEncoder produces it:
+  // a lone surrogate becomes U+FFFD (EF BF BD), never an encoding error.
+  defineScenario({
+    id: "artifact/hashing/bytes/sha256-hex-lone-surrogate",
+    title: "sha256Hex over a lone surrogate hashes the replacement character, as TextEncoder does",
+    ports: ["hash"],
+    steps: [
+      { op: "sha256Hex", args: [{ $codepoints: [55296] }], expect: { value: true } },
+      { op: "sha256Hex", args: [{ $codepoints: [97, 56320, 98] }], expect: { value: true } },
+      { op: "sha256Hex", args: [{ $codepoints: [65533] }], expect: { value: true } },
+    ],
+  }),
 ];

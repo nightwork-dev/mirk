@@ -191,6 +191,24 @@ refuses any that does. Closing it means deciding whether the memory
 tokenizer folds diacritics to match the persistent path. That is a
 semantics ruling for a later item, not a phase 1 fix.
 
+Lone surrogates (an unpaired UTF-16 code unit in a string) are contractual
+as VALUES: canonical JSON escapes them as `\udXXX`, both storage encoders
+write them escaped, and the corpus pins them in KV values, record fields,
+atomic set/put values and idempotency outcomes. They are outside the corpus
+as IDENTIFIERS and FILTER COMPARANDS: KV keys, record ids, collection names,
+idempotency keys and `where`/`listWhereIn` values are bound as SQLite TEXT,
+and better-sqlite3 replaces the unit with U+FFFD on the way in while the
+memory backend keeps it, in TypeScript. Python's `sqlite3` refuses to encode
+one at all. Generation refuses any scenario that crosses that line; closing
+it means either rejecting such identifiers in every backend or escaping them
+in the TEXT columns, a ruling for a later item (2026-09-02, found by the wave
+0 guard scenarios).
+
+Integers above 2^53 cannot be pinned in the corpus because TypeScript's
+parser rounds the literal before the generator serializes it. The rule (every
+number is a float64; a Python `int` beyond 2^53 is stored as its nearest
+double) is guarded in `python/store/tests` instead.
+
 Two digest claims were overturned by probing the real backends and are
 superseded: FTS5 does not deduplicate query tokens, and the vec0 path's
 `topK`-before-`minScore` ordering is unobservable because vec0's distance

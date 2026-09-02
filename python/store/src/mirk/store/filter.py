@@ -11,6 +11,7 @@ import json
 import math
 from typing import Any, cast
 
+from .canonical import escape_lone_surrogates
 from .types import StoreFilter
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
 
 FILTER_SCALAR_MESSAGE = "Store filters only support JSON scalar values."
 IN_SCALAR_MESSAGE = "Store IN queries only support JSON scalar values."
+_MAX_SAFE_INTEGER = 2**53
 
 
 def normalize_json_numbers(value: Any) -> Any:
@@ -41,6 +43,11 @@ def normalize_json_numbers(value: Any) -> Any:
         return value
     if isinstance(value, float):
         return int(value) if value.is_integer() else value
+    if isinstance(value, int) and abs(value) > _MAX_SAFE_INTEGER:
+        # JavaScript has only float64, so an integer above 2^53 is stored as its
+        # nearest double by the TypeScript writer; match it or the two languages
+        # read different values from one file.
+        return int(float(value))
     if isinstance(value, list):
         return [normalize_json_numbers(item) for item in cast(list[Any], value)]
     if isinstance(value, dict):
@@ -56,11 +63,13 @@ def dumps_json(value: Any) -> str:
     None}`` matches a stored null and not a missing key, so writing one for the
     other would change what matches.
     """
-    return json.dumps(
-        normalize_json_numbers(value),
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
+    return escape_lone_surrogates(
+        json.dumps(
+            normalize_json_numbers(value),
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
     )
 
 

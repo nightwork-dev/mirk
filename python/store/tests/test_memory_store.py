@@ -88,3 +88,26 @@ def test_default_version_identity_is_a_per_process_serial() -> None:
         "value": {"id": "a"},
         "version": "conformance-v2",
     }
+
+
+def test_integers_above_2_53_round_to_the_nearest_double() -> None:
+    """JavaScript has only float64; a Python int must not survive more exactly."""
+    store = InMemoryStore()
+    store.set("big", 9007199254740993)
+    assert store.get("big") == 9007199254740992
+    store.put("n", {"id": "r", "n": 9007199254740993, "nested": [-9007199254740993]})
+    assert store.getById("n", "r") == {
+        "id": "r",
+        "n": 9007199254740992,
+        "nested": [-9007199254740992],
+    }
+    store.set("safe", 9007199254740992)
+    assert store.get("safe") == 9007199254740992
+
+
+def test_lone_surrogate_values_round_trip() -> None:
+    store = InMemoryStore()
+    store.set("lone", "x\udc00y")
+    assert store.get("lone") == "x\udc00y"
+    store.put("s", {"id": "r", "text": "\ud800", "pair": "\U0001f600"})
+    assert store.getById("s", "r") == {"id": "r", "text": "\ud800", "pair": "\U0001f600"}

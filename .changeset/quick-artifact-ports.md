@@ -2,7 +2,7 @@
 "@mirk/artifact": minor
 ---
 
-Three changes in preparation for the Python port's deterministic corpus, all backward compatible.
+Three changes in preparation for the Python port's deterministic corpus. The new options are additive; the ordering and error-precedence changes below are observable behavior changes for existing consumers, which is why this is a minor and not a patch.
 
 `ArtifactMaintenance` accepts an `auditIdFactory` option; `audit()` no longer always mints its own random audit id, so a caller (or a corpus generator) can inject one and see it as `report.auditId` and, through it, in every repair action's fingerprinted id. `StoreArtifactRepository` accepts a `leaseIdFactory` option, matching `InMemoryArtifactRepository`'s existing `leaseIdFactory`, so a store-backed object lease's id is no longer necessarily `lease-<timestamp>-<random>`.
 

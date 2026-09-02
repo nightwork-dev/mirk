@@ -98,13 +98,7 @@ def _canonical_string(value: str) -> str:
     literally, which is not valid UTF-8. Escape those after the fact so the
     result always encodes.
     """
-    dumped = json.dumps(value, ensure_ascii=False)
-    if any(_SURROGATE_LOW <= ord(char) <= _SURROGATE_HIGH for char in dumped):
-        dumped = "".join(
-            f"\\u{ord(char):04x}" if _SURROGATE_LOW <= ord(char) <= _SURROGATE_HIGH else char
-            for char in dumped
-        )
-    return dumped
+    return escape_lone_surrogates(json.dumps(value, ensure_ascii=False))
 
 
 def _canonical_list(value: list[object], stack: set[int]) -> str:
@@ -185,9 +179,28 @@ def compare_code_points(a: str, b: str) -> int:
     return 0
 
 
+def escape_lone_surrogates(text: str) -> str:
+    """Rewrite every unpaired surrogate as a lowercase `\\udXXX` escape.
+
+    Shared by the canonical encoder and the storage encoder: `JSON.stringify`
+    emits the escape, so both writers must, or the text is not valid UTF-8.
+    """
+    if not any(_SURROGATE_LOW <= ord(char) <= _SURROGATE_HIGH for char in text):
+        return text
+    return "".join(
+        f"\\u{ord(char):04x}" if _SURROGATE_LOW <= ord(char) <= _SURROGATE_HIGH else char
+        for char in text
+    )
+
+
+def utf8_like_text_encoder(text: str) -> bytes:
+    """UTF-8 the way `TextEncoder` produces it: a lone surrogate becomes U+FFFD."""
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode("utf-8")
+
+
 def sha256_hex(text: str) -> str:
-    """Lowercase hex SHA-256 over the UTF-8 encoding of `text`."""
-    return sha256_hex_bytes(text.encode("utf-8"))
+    """Lowercase hex SHA-256 over the UTF-8 encoding of `text`, as `TextEncoder` encodes it."""
+    return sha256_hex_bytes(utf8_like_text_encoder(text))
 
 
 def sha256_hex_bytes(data: bytes) -> str:

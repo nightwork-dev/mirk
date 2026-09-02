@@ -539,4 +539,52 @@ export const scenarios = [
       idempotency: { key: "req-1", outcome: OVERSIZED_OUTCOME },
     },
   ),
+
+  // ── Lone surrogates in atomic values ────────────────────────────────────
+  // A lone surrogate is contractual as a VALUE (set value, put field, outcome):
+  // the request digest canonicalizes it as a `\u` escape and the store writes
+  // it escaped. A port whose storage encoder emits it raw cannot write it to
+  // SQLite, and the receipt it replays would differ. Identifiers stay ASCII;
+  // see the store scenario of the same name for why.
+  defineScenario({
+    id: "store/atomic/lone-surrogate-values",
+    title: "a lone surrogate in a set value, a put field and an outcome is applied, digested and replayed",
+    ports: ["atomic"],
+    steps: [
+      {
+        op: "mutateAtomically",
+        args: [
+          {
+            conditions: [{ target: { kind: "key", key: "lone" }, expected: "missing" }],
+            operations: [
+              { op: "set", key: "lone", value: "x\udc00y" },
+              { op: "put", collection: "s", item: { id: "r", text: "\ud800", pair: "😀" } },
+            ],
+            idempotency: { key: "k1", outcome: { echo: "\udfff" } },
+          },
+        ],
+        expect: { value: true },
+      },
+      { op: "getVersioned", args: [{ kind: "key", key: "lone" }], expect: { value: true } },
+      {
+        op: "getVersioned",
+        args: [{ kind: "record", collection: "s", id: "r" }],
+        expect: { value: true },
+      },
+      {
+        op: "mutateAtomically",
+        args: [
+          {
+            conditions: [{ target: { kind: "key", key: "lone" }, expected: "missing" }],
+            operations: [
+              { op: "set", key: "lone", value: "x\udc00y" },
+              { op: "put", collection: "s", item: { id: "r", text: "\ud800", pair: "😀" } },
+            ],
+            idempotency: { key: "k1", outcome: { echo: "\udfff" } },
+          },
+        ],
+        expect: { value: true },
+      },
+    ],
+  }),
 ];

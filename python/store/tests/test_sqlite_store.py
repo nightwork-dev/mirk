@@ -508,3 +508,27 @@ def test_get_versioned_assigns_a_token_to_a_row_written_before_versions_existed(
         assert store.getVersioned({"kind": "key", "key": "old"}) == assigned
     finally:
         store.close()
+
+
+def test_integers_above_2_53_are_stored_as_the_nearest_double(tmp_path: Path) -> None:
+    """The file must read the same from TypeScript, which only has float64."""
+    store = SqliteStore(str(tmp_path / "big.db"))
+    store.set("big", 9007199254740993)
+    assert store.get("big") == 9007199254740992
+    raw = store.connection.execute("SELECT value FROM _kv WHERE key = 'big'").fetchone()[0]
+    assert raw == "9007199254740992"
+    store.put("n", {"id": "r", "n": 9007199254740993})
+    assert store.getById("n", "r") == {"id": "r", "n": 9007199254740992}
+    store.close()
+
+
+def test_lone_surrogate_values_are_written_escaped(tmp_path: Path) -> None:
+    """JSON.stringify writes `\\udc00`; raw would not be UTF-8 and SQLite refuses it."""
+    store = SqliteStore(str(tmp_path / "lone.db"))
+    store.set("lone", "x\udc00y")
+    assert store.get("lone") == "x\udc00y"
+    raw = store.connection.execute("SELECT value FROM _kv WHERE key = 'lone'").fetchone()[0]
+    assert raw == '"x\\udc00y"'
+    store.put("s", {"id": "r", "text": "\ud800"})
+    assert store.getById("s", "r") == {"id": "r", "text": "\ud800"}
+    store.close()

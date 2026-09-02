@@ -219,7 +219,7 @@ def _utf16_length(value: str) -> int:
     be length-prefixed differently in the two languages and the duplicate-target
     check could disagree.
     """
-    return len(value.encode("utf-16-le")) // 2
+    return len(value) + sum(1 for char in value if ord(char) > 0xFFFF)
 
 
 def target_key(target: StoreTarget) -> str:

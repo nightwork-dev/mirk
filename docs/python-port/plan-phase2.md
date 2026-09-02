@@ -124,7 +124,13 @@ here so the three S0 executors share one source.
   `"conformance"`, so a token is `conformance-v<n>` and the corpus pins
   sequence allocation exactly: the sequence starts at 1 per store, every
   `set`/`put` (plain or atomic) consumes one value, `delete`/`remove` consume
-  none, a conflict or a rejected request consumes none.
+  none, a rejected request consumes none, and a conflict consumes none
+  EXCEPT through lazy migration: a row that predates version bookkeeping
+  (a legacy SQLite file) is assigned a token the first time it is read, by
+  `getVersioned` or by a condition check, and that assignment consumes a
+  value even when the request then conflicts. Both languages do this; it is
+  unreachable in the corpus (every corpus write mints a token) and covered by
+  the legacy-file compat test.
 - **Two new port names, `atomic` and `hash`.** `atomic` binds the store
   target (the runner adds `getVersioned` and `mutateAtomically` to the store
   method list). `hash` binds a zero-native pure target in both languages with

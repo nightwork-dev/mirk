@@ -13,6 +13,7 @@ which builds and runs the bundle under Node.
 from __future__ import annotations
 
 import math
+import sqlite3
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -379,20 +380,26 @@ def test_sqlite_versions_and_receipts_survive_a_reopen(tmp_path: Path) -> None:
 
 
 def test_sqlite_rolls_a_failed_batch_back(tmp_path: Path) -> None:
-    """A failing condition undoes the whole batch, not the operations after it."""
+    """A failure AFTER operations have been applied undoes the whole batch.
+
+    A trigger aborts the 101st write, so a hundred operations have already run
+    inside the transaction when it fails. The keys, the version rows and the
+    sequence must all come back as they were; a store with no transaction
+    would leave the first hundred behind and the sequence advanced.
+    """
     path = str(tmp_path / "rollback.db")
-    store = SqliteStore(path)
+    store = SqliteStore(path, version_identity="first")
     wide = [{"op": "set", "key": f"wide:{index}", "value": index} for index in range(200)]
     assert store.mutateAtomically({"operations": wide})["status"] == "applied"
-    rolled = [{"op": "set", "key": f"rolled:{index}", "value": index} for index in range(200)]
-    conflict = store.mutateAtomically(
-        {
-            "conditions": [{"target": {"kind": "key", "key": "wide:0"}, "expected": "missing"}],
-            "operations": rolled,
-        }
+    store.connection.execute(
+        "CREATE TRIGGER boom BEFORE INSERT ON _kv WHEN NEW.key = 'rolled:100'"
+        " BEGIN SELECT RAISE(ABORT, 'boom'); END"
     )
-    assert conflict["status"] == "conflict"
+    rolled = [{"op": "set", "key": f"rolled:{index}", "value": index} for index in range(200)]
+    with pytest.raises(sqlite3.DatabaseError, match="boom"):
+        store.mutateAtomically({"operations": rolled})
     assert store.keys("rolled:") == []
+    assert store.connection.in_transaction is False
     store.close()
 
     reopened = SqliteStore(path)
@@ -400,6 +407,14 @@ def test_sqlite_rolls_a_failed_batch_back(tmp_path: Path) -> None:
     assert reopened.get("wide:199") == 199
     assert reopened.keys("rolled:") == []
     assert len(reopened.keys("wide:")) == 200
+    versions = reopened.connection.execute(
+        "SELECT COUNT(*) FROM _mirk_atomic_versions WHERE target_key LIKE 'rolled:%'"
+    ).fetchone()[0]
+    assert versions == 0
+    reopened.set("after", 1)
+    after = reopened.getVersioned({"kind": "key", "key": "after"})
+    assert after is not None
+    assert after["version"] == "first-v201"
     reopened.close()
 
 

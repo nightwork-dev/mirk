@@ -176,7 +176,10 @@ def expand_hash_wrappers(value: Any) -> Any:
         if list(mapping.keys()) == ["$num"]:
             return float(cast(str, mapping["$num"]))
         if list(mapping.keys()) == ["$codepoints"]:
-            return "".join(chr(int(point)) for point in cast(list[Any], mapping["$codepoints"]))
+            # A JavaScript string is UTF-16: a high surrogate followed by a low
+            # one IS the astral character. Join pairs; keep lone ones.
+            units = "".join(chr(int(point)) for point in cast(list[Any], mapping["$codepoints"]))
+            return units.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "surrogatepass")
         if list(mapping.keys()) == ["$b64"]:
             return base64.b64decode(cast(str, mapping["$b64"]))
         if list(mapping.keys()) == ["$utf8"]:

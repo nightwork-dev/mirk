@@ -829,4 +829,34 @@ export const scenarios = [
       { op: "count", args: [COLLIDING_B], expect: { value: true } },
     ],
   }),
+
+  // ── UTF-16 at the storage boundary ──────────────────────────────────────
+  // (Integers above 2^53 cannot be pinned here: TypeScript's parser rounds the
+  // literal before the generator serializes it, so the corpus would carry the
+  // rounded value. The float64 clamp on Python's write path is guarded by
+  // python/store/tests instead.)
+  //
+  // A lone surrogate is a legal JavaScript string and JSON.stringify writes it
+  // as a `\ud800` escape, so it is storable as a VALUE in every backend. A port
+  // whose storage encoder emits it raw cannot write it to SQLite at all.
+  //
+  // Raw identifiers (KV keys, record ids, collection names) and filter
+  // comparands are bound as TEXT, not JSON, and better-sqlite3 replaces a lone
+  // surrogate with U+FFFD on the way in while the memory backend keeps it. That
+  // is a known divergence outside the corpus (docs/python-port-spec.md);
+  // identifiers here are ASCII and nothing filters on the surrogate.
+  defineScenario({
+    id: "store/lone-surrogate-values-are-storable",
+    title: "a lone surrogate survives as a KV value and inside a record field",
+    ports: ["kv", "collection"],
+    steps: [
+      { op: "set", args: ["lone", "\udfff"] },
+      { op: "get", args: ["lone"], expect: { value: true } },
+      { op: "set", args: ["nested", { a: ["\ud800", { b: "x\udc00y" }] }] },
+      { op: "get", args: ["nested"], expect: { value: true } },
+      { op: "put", args: ["s", { id: "r", text: "x\udc00y", pair: "😀" }] },
+      { op: "getById", args: ["s", "r"], expect: { value: true } },
+      { op: "list", args: ["s", { where: { pair: "😀" } }], expect: { value: true } },
+    ],
+  }),
 ];

@@ -1,0 +1,51 @@
+{
+  "id": "artifact/hashing/bytes/sha256-hex-lone-surrogate",
+  "title": "sha256Hex over a lone surrogate hashes the replacement character, as TextEncoder does",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "sha256Hex",
+      "args": [
+        {
+          "$codepoints": [
+            55296
+          ]
+        }
+      ],
+      "expect": {
+        "value": "83d544ccc223c057d2bf80d3f2a32982c32c3c0db8e2674820da5064783fb097"
+      }
+    },
+    {
+      "op": "sha256Hex",
+      "args": [
+        {
+          "$codepoints": [
+            97,
+            56320,
+            98
+          ]
+        }
+      ],
+      "expect": {
+        "value": "05087813392efc16fe8ff448920c6328e53af865df39419436659d9ffda90f7b"
+      }
+    },
+    {
+      "op": "sha256Hex",
+      "args": [
+        {
+          "$codepoints": [
+            65533
+          ]
+        }
+      ],
+      "expect": {
+        "value": "83d544ccc223c057d2bf80d3f2a32982c32c3c0db8e2674820da5064783fb097"
+      }
+    }
+  ]
+}
