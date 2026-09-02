@@ -179,6 +179,21 @@ Sort ties on SQLite use `rowid` as the final key. This equals insertion order
 for the observable contract: SQLite reuses a rowid only when the maximum row
 was deleted, and a re-added item then lands at the end either way.
 
+## Known divergence deliberately outside the corpus
+
+Search tokenization of documents differs by backend: FTS5 `unicode61`
+strips diacritics (`café` indexes as `cafe`) while the in-memory tokenizer
+keeps them, in both languages. No scenario crosses that line; generation
+refuses any that does. Closing it means deciding whether the memory
+tokenizer folds diacritics to match the persistent path. That is a
+semantics ruling for a later item, not a phase 1 fix.
+
+Two digest claims were overturned by probing the real backends and are
+superseded: FTS5 does not deduplicate query tokens, and the vec0 path's
+`topK`-before-`minScore` ordering is unobservable because vec0's distance
+order is monotone in the cosine score
+(`docs/evidence/python-port/2026-09-01-fts5-bm25-probe.md`).
+
 ## Review outcomes (2026-09-01, codex Luna, fresh context)
 
 Folded in: temp-directory freshness check; `ignoreFields`; explicit `throws`
@@ -189,6 +204,22 @@ fatal at integration; `undefined`, `Date`, and non-finite numbers do not
 appear in scenarios because they are outside the JSON contract; Float32
 byte identity is asserted by the cross-language test, not by a replay
 scenario. Full text: `docs/python-port/reviews/2026-09-01-plan-review-luna.md`.
+
+Code review of the phase 1 diff (same lane, fresh context,
+`docs/python-port/reviews/2026-09-01-code-review-luna.md`) returned
+do-not-ship on five findings. Fixed: a caller-supplied connection could not
+write; the shared connection was thread-unsafe; the Python runner could
+mistake a stored record carrying `ok: false` for a thrown outcome; a
+scenario with no assertions generated and replayed green; TypeScript
+`listWhereIn` on SQLite conflated booleans with numbers; TypeScript replay
+ignored capability gating; approximate comparison was asymmetric; vec0 tests
+skipped instead of failing when the extension did not load; CI ran neither
+the freshness gate nor the Python suite. Deferred as a follow-up item, not a
+phase 1 change: physical table names use a 32-bit FNV hash that is not
+injective, so two collection names that sanitize identically and collide on
+the hash alias one table. That is the TypeScript layout Python must share
+for file compatibility; changing it is a layout migration with its own item.
+Diacritics: see the known divergence above.
 
 `namespaceStore` is a pure prefixing decorator (unit separator U+001F) and
 ports once over the Protocol. `atomic.ts` is portable but phase 2;

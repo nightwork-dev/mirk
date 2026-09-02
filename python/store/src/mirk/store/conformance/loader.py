@@ -16,6 +16,7 @@ from typing import Any, cast
 __all__ = [
     "CORPUS_DIRNAME",
     "Scenario",
+    "assertion_free_scenarios",
     "corpus_dir",
     "load_scenarios",
     "repo_root",
@@ -45,6 +46,15 @@ class Scenario:
         if not isinstance(value, list):
             return []
         return [str(capability) for capability in cast(list[Any], value)]
+
+    @property
+    def has_assertion(self) -> bool:
+        """Whether any step checks a result.
+
+        A scenario whose steps are all setup replays green while proving
+        nothing, so the suite refuses it rather than counting it as coverage.
+        """
+        return any(isinstance(step.get("expect"), dict) for step in self.steps)
 
     @property
     def steps(self) -> list[dict[str, Any]]:
@@ -113,3 +123,8 @@ def validate_scenarios(scenarios: list[Scenario], directory: Path | None = None)
         location = "/".join(str(part) for part in list(first.path))
         raise AssertionError(f"{scenario.path}: {location or '<root>'}: {first.message!s}")
     return len(scenarios)
+
+
+def assertion_free_scenarios(scenarios: list[Scenario]) -> list[str]:
+    """The ids of scenarios that assert nothing, in corpus order."""
+    return [scenario.id for scenario in scenarios if not scenario.has_assertion]

@@ -84,6 +84,7 @@ Options:
   --forbidden-name <n>  reject a configured private project name in the tarball
   --keep-temp           retain temporary pack/install directories
   --no-receipt          verify without writing a receipt
+  --skip-conformance    do not run the conformance freshness gate
 `;
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -128,6 +129,7 @@ function parseArgs(argv) {
     test: true,
     typecheck: true,
     install: true,
+    conformance: true,
     publication: false,
     receipt: true,
     receiptDir: ".mirk-release",
@@ -148,6 +150,7 @@ function parseArgs(argv) {
     else if (arg === "--skip-test") options.test = false;
     else if (arg === "--skip-typecheck") options.typecheck = false;
     else if (arg === "--skip-install") options.install = false;
+    else if (arg === "--skip-conformance") options.conformance = false;
     else if (arg === "--publication" || arg === "--require-clean")
       options.publication = true;
     else if (arg === "--no-receipt") options.receipt = false;
@@ -305,11 +308,43 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
     packedInputSha256: undefined,
     packedFiles: undefined,
     publicExports: undefined,
+    conformance: undefined,
   };
   if (options.publication && !source.clean) {
     throw new Error(
       `${packageInfo.manifest.name}: publication receipt requires a clean source tree`
     );
+  }
+
+  if (options.conformance) {
+    try {
+      evidence.conformance = await conformanceEvidence();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      checks.push({ name: "conformance-current", status: "failed", detail });
+      throw new Error(
+        `${packageInfo.manifest.name}: conformance corpus is not current; refusing receipt. ${detail}`
+      );
+    }
+    const { total, byDirectory } = evidence.conformance;
+    const perDirectory = Object.entries(byDirectory)
+      .map(([name, count]) => `${name}=${count}`)
+      .join(", ");
+    if (total === 0) {
+      checks.push({
+        name: "conformance-current",
+        status: "failed",
+        detail: "corpus is current but holds zero scenarios",
+      });
+      throw new Error(
+        `${packageInfo.manifest.name}: conformance corpus holds zero scenarios; refusing receipt`
+      );
+    }
+    checks.push(
+      passed("conformance-current", `${total} scenarios current (${perDirectory})`)
+    );
+  } else {
+    checks.push(skipped("conformance-current", "--skip-conformance"));
   }
 
   await runHook(packageInfo, "build", options.build, checks, options);
@@ -516,6 +551,7 @@ async function makeReceipt(evidence, source, checks) {
     tarballSha256: evidence.tarballSha256,
     packedFiles: evidence.packedFiles,
     publicExports: evidence.publicExports,
+    ...(evidence.conformance ? { conformance: evidence.conformance } : {}),
     nodeVersion: process.version,
     pnpmVersion: await pnpmVersion(),
     checks,
@@ -1196,6 +1232,46 @@ function toPosix(path) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// ─── Conformance freshness gate ─────────────────────────────────────────────
+// `conformance/` is generated from `packages/store/scripts/scenarios/`, and a
+// hand edit there would make every runner replay a laundered expectation. The
+// gate regenerates into a temporary tree and diffs, so a stale or edited corpus
+// fails the receipt rather than riding along inside it. Run once per invocation
+// and shared by every package: corpus freshness is a property of the tree the
+// receipt attests to, not of one package.
+let conformanceOnce;
+
+async function conformanceEvidence() {
+  conformanceOnce ??= (async () => {
+    const result = await execFileAsync("pnpm", ["run", "conformance:current"], {
+      cwd: root,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    return parseConformanceCounts(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+  })();
+  return conformanceOnce;
+}
+
+/** Read `graph: 29 scenarios` / `total: 160 scenarios` out of the gate's output. */
+function parseConformanceCounts(output) {
+  const plain = output.replace(/\u001B?\[[0-9;]*m/g, "");
+  const byDirectory = {};
+  let total;
+  for (const [, name, count] of plain.matchAll(
+    /^\s*([a-z][a-z0-9-]*):\s+(\d+)\s+scenarios\s*$/gm
+  )) {
+    byDirectory[name] = Number(count);
+  }
+  const totalMatch = plain.match(/^\s*total:\s+(\d+)\s+scenarios\b/m);
+  if (totalMatch) total = Number(totalMatch[1]);
+  if (total === undefined || Object.keys(byDirectory).length === 0) {
+    throw new Error(
+      "conformance:current produced no scenario counts; cannot record corpus evidence"
+    );
+  }
+  return { total, byDirectory };
 }
 
 function passed(name, detail) {

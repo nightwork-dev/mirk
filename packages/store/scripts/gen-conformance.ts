@@ -44,7 +44,7 @@ import {
   type Scenario,
   type Step,
 } from "../src/conformance/format.js";
-import { openTarget } from "../src/conformance/backends.js";
+import { openTarget, unsupportedCapabilities } from "../src/conformance/backends.js";
 import { executeStep, type StepOutcome } from "../src/conformance/runner.js";
 import { stripIgnored } from "../src/conformance/compare.js";
 
@@ -165,6 +165,17 @@ function deriveExpect(
 }
 
 async function buildScenario(authored: AuthoredScenario): Promise<Scenario> {
+  // Capability gating is a HARD FAILURE, never a skip: generation cannot certify
+  // a scenario against a backend that lacks the capability the scenario claims
+  // to exercise.
+  for (const backend of ["memory", "sqlite"] as const) {
+    const missing = unsupportedCapabilities(backend, authored.capabilities);
+    if (missing.length > 0) {
+      throw new Error(
+        `${authored.id}: ${backend} lacks capability(ies) ${missing.join(", ")}`,
+      );
+    }
+  }
   const memory = openTarget("memory", authored);
   const sqlite = openTarget("sqlite", authored);
   try {

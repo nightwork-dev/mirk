@@ -11,7 +11,10 @@ message).
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from .runner import StepOutcome
 
 __all__ = ["compare_expect", "deep_equal"]
 
@@ -114,42 +117,54 @@ def _compare_approx(
             if diff is not None:
                 return diff
             continue
-        row_obj = _as_object(row)
-        want_obj = _as_object(want)
-        for field in approx_fields:
+        dropped = set(ignore_fields)
+        row_obj = {k: v for k, v in _as_object(row).items() if k not in dropped}
+        want_obj = {k: v for k, v in _as_object(want).items() if k not in dropped}
+        # Key sets are compared in both directions, so an approx field present in
+        # the actual row but absent from the expected row is a failure, not a
+        # field to drop.
+        for field in sorted(set(row_obj) | set(want_obj)):
             if field not in want_obj:
-                continue
+                return f"{row_path}.{field}: unexpected {row_obj[field]!r}"
             if field not in row_obj:
-                return f"{row_path}.{field}: missing"
-            got: Any = row_obj[field]
-            target: Any = want_obj[field]
-            if not _is_number(got):
-                return f"{row_path}.{field}: expected a number, got {got!r}"
-            if abs(float(got) - float(target)) > tol:
-                return f"{row_path}.{field}: {got!r} is not within {tol} of {target!r}"
-        dropped = set(approx_fields) | set(ignore_fields)
-        stripped_row = {k: v for k, v in row_obj.items() if k not in dropped}
-        stripped_want = {k: v for k, v in want_obj.items() if k not in dropped}
-        diff = deep_equal(stripped_row, stripped_want, row_path)
-        if diff is not None:
-            return diff
+                return f"{row_path}.{field}: missing, expected {want_obj[field]!r}"
+            if field in approx_fields:
+                got: Any = row_obj[field]
+                target: Any = want_obj[field]
+                if not _is_number(got) or not _is_number(target):
+                    return f"{row_path}.{field}: expected a number, got {got!r}"
+                if abs(float(got) - float(target)) > tol:
+                    return f"{row_path}.{field}: {got!r} is not within {tol} of {target!r}"
+                continue
+            diff = deep_equal(row_obj[field], want_obj[field], f"{row_path}.{field}")
+            if diff is not None:
+                return diff
     return None
 
 
-def compare_expect(actual: Any, expect: dict[str, Any]) -> str | None:
-    """Check one step result against its ``expect`` clause."""
-    threw = isinstance(actual, dict) and _as_object(actual).get("ok") is False
+def compare_expect(outcome: StepOutcome, expect: dict[str, Any]) -> str | None:
+    """Check one step outcome against its ``expect`` clause.
+
+    Only a :class:`~mirk.store.conformance.runner.StepOutcome` is accepted: the
+    raise/return distinction is carried by the outcome, never guessed from the
+    shape of a returned value.
+    """
+    from .runner import StepOutcome as _StepOutcome  # local: runner imports this module
+
+    if not isinstance(outcome, _StepOutcome):  # pyright: ignore[reportUnnecessaryIsInstance]
+        raise TypeError(f"compare_expect needs a StepOutcome, got {type(outcome).__name__}")
 
     if "throws" in expect:
-        if not threw:
-            return f"expected a raise with {expect['throws']!r}, got {actual!r}"
-        message: Any = _as_object(actual).get("message")
-        if message != expect["throws"]:
-            return f"$.message: expected {expect['throws']!r}, got {message!r}"
+        if outcome.ok:
+            return f"expected a raise with {expect['throws']!r}, got {outcome.value!r}"
+        if outcome.message != expect["throws"]:
+            return f"$.message: expected {expect['throws']!r}, got {outcome.message!r}"
         return None
 
-    if threw:
-        return f"unexpected raise: {_as_object(actual).get('message')!r}"
+    if not outcome.ok:
+        return f"unexpected raise: {outcome.message!r}"
+
+    actual: Any = outcome.value
 
     if "value" in expect:
         return deep_equal(actual, expect["value"])

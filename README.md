@@ -69,6 +69,17 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/surreal`          | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection                           | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
 | `@mirk/migrate`          | backend-neutral checkpointed migration across Mirk ports and caller manifests                                                                                     | none                                                                              |
 
+## The same ports in Python
+
+`python/store` (`mirk-store`) is a second implementation of the KV, collection, vector, search and
+graph ports, over stdlib `sqlite3` with zero runtime dependencies. It opens SQLite files
+TypeScript wrote and writes files TypeScript reads. Neither language is the other's reference:
+both replay one generated corpus at [`conformance/`](conformance/README.md), the generator refuses
+to emit a scenario the in-memory reference and the SQLite adapter disagree on, and each runner
+executes every scenario on both of its backends with no skips permitted. `pnpm conformance:current`
+regenerates into a temporary tree and diffs, so a hand-edited or stale corpus fails a release
+receipt rather than riding along inside one.
+
 ## Sync by design
 
 Embedded backends are **synchronous** — `better-sqlite3` is, and an async-everywhere interface

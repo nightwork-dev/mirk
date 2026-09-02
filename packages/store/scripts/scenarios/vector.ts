@@ -318,6 +318,39 @@ export const scenarios = [
   }),
 
   defineScenario({
+    id: "vector/tie-break-at-topk-boundary",
+    title: "ties at the topK boundary resolve by id, whatever order the rows went in",
+    ports: ["vector"],
+    steps: [
+      // More tied rows than topK. A backend that asks its index for exactly
+      // topK nearest is handed an ARBITRARY topK of the tied set and can only
+      // sort what it was given, so which ids come back depends on insertion
+      // order. Both collections hold the same three tied vectors and must
+      // answer identically; only the insertion order differs.
+      { op: "upsert", args: ["asc", { id: "a", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["asc", { id: "b", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["asc", { id: "c", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["desc", { id: "c", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["desc", { id: "b", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["desc", { id: "a", vector: [1, 0, 0] }] },
+      { op: "search", args: ["asc", [1, 0, 0], { topK: 2 }], expect: { ids: true } },
+      { op: "search", args: ["desc", [1, 0, 0], { topK: 2 }], expect: { ids: true } },
+      { op: "search", args: ["asc", [1, 0, 0], { topK: 1 }], expect: { ids: true } },
+      { op: "search", args: ["desc", [1, 0, 0], { topK: 1 }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["asc", [1, 0, 0], { topK: 2, minScore: 0.5 }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["desc", [1, 0, 0], { topK: 2, minScore: 0.5 }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+
+  defineScenario({
     id: "vector/tie-break-astral-id",
     title: "id tie-breaks compare Unicode code points, so an astral id sorts last",
     ports: ["vector"],

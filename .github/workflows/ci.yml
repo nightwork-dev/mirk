@@ -52,6 +52,39 @@ jobs:
       - name: Test
         run: pnpm -r test --reporter=verbose
 
+      # The corpus is generated. This regenerates into a temporary tree and
+      # diffs, so a hand-edited or stale scenario fails here rather than being
+      # replayed as contract by both languages.
+      - name: Conformance corpus is current
+        run: pnpm conformance:current
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # Explicit, so the run fails on a broken lock rather than in the middle of
+      # a test step. The Python compat tests shell out to node against the built
+      # `@mirk/store` dist, which the install and build steps above already
+      # produced in this job.
+      - name: Install Python dev dependencies
+        working-directory: python/store
+        run: uv sync --group dev
+
+      # The Python port replays the same corpus. Running only the TypeScript
+      # suite would let the two implementations drift apart between commits,
+      # which is the one thing the corpus exists to prevent.
+      - name: Python tests
+        working-directory: python/store
+        run: uv run pytest -q
+
+      - name: Python typecheck
+        working-directory: python/store
+        run: uv run pyright
+
+      - name: Python lint
+        working-directory: python/store
+        run: uv run ruff check .
+
       - name: Verify packed package releases
         run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --receipt-dir .mirk-release
 

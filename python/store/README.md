@@ -38,6 +38,23 @@ store.close()
 Method names keep the TypeScript camelCase spelling (`getById`, `listWhereIn`)
 so a corpus `op` string dispatches identically in both languages.
 
+## Threads and transactions
+
+One connection per thread; sync by design. `SqliteStore` is thread-affine, the
+way `sqlite3` opens a connection by default and the way the TypeScript adapter's
+single-threaded model works. A store used from a second thread raises
+`sqlite3.ProgrammingError`. Build a second store for a second thread.
+
+The store owns transaction semantics on whatever connection it is given. Every
+write runs inside an explicit `BEGIN IMMEDIATE`, so a connection you supply is
+switched to `isolation_level = None` (SQLite autocommit). That commits any
+transaction you left pending on it.
+
+```python
+connection = sqlite3.connect("data.db")
+store = SqliteStore("data.db", connection=connection)  # takes over autocommit
+```
+
 ## The contract
 
 The corpus at `conformance/` in the repository root is the contract. Both the

@@ -337,10 +337,13 @@ class SqliteVectorFacet:
         table = self._ensure_vec_table(collection)
         minimum = min_score_of(opts)
         top_k = top_k_of(opts)
-        # vec0 needs a k. When minScore can reject a near neighbour, k must cover
-        # the collection or the floor would be applied to an already-cut list and
-        # return fewer rows than the exact path.
-        k = top_k if (minimum is None and top_k > 0) else max(1, self.count(collection))
+        # ``top_k`` is the whole bound. ``minScore`` deliberately does not widen
+        # it: the floor is monotone in distance (score = 1 - distance), so the k
+        # nearest are exactly the k highest scores and the floor removes the same
+        # rows before or after the slice. Nor can a row be dropped for any other
+        # reason and let a lower-ranked one take its place -- ``_sync_vec`` keeps
+        # directionless vectors out of vec0, so no NULL-distance row takes a slot.
+        k = top_k
         rows = self._db.execute(
             f"SELECT v.id, v.metadata, vv.distance FROM {table} vv"
             " JOIN vectors v ON v.rowid = vv.rowid"

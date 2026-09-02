@@ -45,6 +45,9 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | deferred; evidence surfaces implemented     |
 | MR-18 | Bitemporal statements persistence                         | `@mirk/statements`            | near    | implemented; receipt-green; Verdaccio-published |
 | MR-19 | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`      | near    | implemented; receipt-green; Verdaccio-published |
+| MR-20 | Python port of `@mirk/store` (phase 1)                    | `python/store` (mirk-store)   | near    | implemented; receipt-green                  |
+| MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | proposed; layout migration                  |
+| MR-22 | Decide the vec0 acceleration path                         | `@mirk/store/sqlite`          | near    | decision needed; branch is dead             |
 
 ## Current closure
 
@@ -194,6 +197,55 @@ receipts, and typed conflict, backend, and indeterminate outcomes. It does not w
 ports with arbitrary transaction callbacks or pretend a sequence of independent writes is atomic.
 In-memory and SQLite contract tests cover the capability; publication and consumer/runtime adoption
 remain separate evidence.
+
+### MR-20 · Python port of `@mirk/store` (phase 1)
+
+The KV, collection, vector, search and graph ports run in Python over the same
+memory and SQLite backends, including SQLite files written by TypeScript. Neither
+language is the other's reference: both replay one generated corpus at
+[`conformance/`](../conformance/README.md), and the generator refuses to write a
+scenario the in-memory reference and the SQLite adapter disagree on. Both runners
+execute every scenario on both backends with no skips allowed, and their per-port
+counts match. Ranking and set membership are contract; bm25 scores are not.
+
+Read the contract in [`python-port-spec.md`](python-port-spec.md), the wave plan in
+[`python-port/plan-phase1.md`](python-port/plan-phase1.md), and the green run with its
+falsification in
+[`evidence/python-port/2026-09-02-phase1-green.md`](evidence/python-port/2026-09-02-phase1-green.md).
+Two probes back the parts of the contract that could not be settled by reading:
+[`2026-09-01-fts5-bm25-probe.md`](evidence/python-port/2026-09-01-fts5-bm25-probe.md)
+pins FTS5 tokenizer and bm25 semantics against the real extension, promoted to
+`python/store/tests/test_fts5_semantics.py`; and
+[`2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md)
+records that the vec0 acceleration branch never executes in either language, so no
+SQLite vector result in the corpus came from it. Publication is separate evidence:
+there is no Python registry alongside Verdaccio yet, so the package is unpublished
+by decision rather than by omission.
+
+### MR-21 · Collision-safe physical table naming
+
+Physical table names are `<prefix>_<sanitized>_<fnv32 base36>`. The code review
+of the phase 1 diff showed two collection names that sanitize identically and
+collide on the 32-bit hash alias one table (`"%$;**@"` and `"~,~$(*"` both hash
+to `jqoxun`). Both languages must share the layout for file compatibility, so
+the fix is a layout migration with a schema-version marker (`_mirk_meta`), not a
+patch. See `python-port/reviews/2026-09-01-code-review-luna.md`, finding P1-3.
+
+### MR-22 · Decide the vec0 acceleration path
+
+The sqlite-vec branch of the SQLite vector facet has never executed in either
+language: the KNN bound is expressed as `LIMIT`, SQLite does not push it through
+the join into the virtual table, vec0 throws, a bare `catch` swallows it, and the
+exact-cosine path answers while `meta.accelerated` reports `true`. Reviving it
+(`k = ?`) surfaces two contract conflicts: vec0 returns an arbitrary member of a
+tie at the topK boundary, and it computes in float32 where the contract is
+float64. Three exits are laid out in
+[`evidence/python-port/2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md):
+delete the path and the peer dependency; keep vec0 for candidate retrieval and
+rescore in float64; or loosen the cross-backend contract. Recommendation on
+record: delete. Until ruled, shipped code is unchanged and results are correct;
+what is wrong is the `accelerated` flag and three unit tests that certify a branch
+that does not run.
 
 ## Medium term
 

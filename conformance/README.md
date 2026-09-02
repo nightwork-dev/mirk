@@ -112,15 +112,51 @@ Rules:
   Tolerance is `1e-6` and applies to vector scores only.
 - Tie-break order everywhere (collection sort, vector results, search results,
   graph nodes and edges) is Unicode code point order of the id.
-- `ports` names the ports a scenario touches; a runner skips a scenario whose
-  ports it does not implement and reports the skip. `capabilities` gates on
-  optional capabilities (`listWhereIn`, `vec0`) the same way.
+- `ports` names the ports a scenario touches. `capabilities` names the optional
+  capabilities it needs. Both are HARD gates in both languages, never skips —
+  see "Ports and capabilities are hard gates" below.
+- **A scenario asserts something.** At least one step carries an `expect`. A file
+  made only of setup steps replays green forever while checking nothing, so both
+  the generator and every runner refuse it by id: `scenario <id> asserts
+  nothing`.
 - Records are JSON. `null` is a value. There is no `undefined`; a TypeScript
   runner strips `undefined` before comparison. Numbers compare as IEEE doubles;
   integers and floats with the same value are equal.
 - Strings sort by Unicode code point.
 - Backends are not selectable per scenario. A behavior that differs between
   memory and SQLite is a bug in one of them, not a corpus option.
+
+## Ports and capabilities are hard gates
+
+A runner that cannot satisfy a scenario's `ports` or `capabilities` **fails that
+scenario and names what is missing**. It never skips and never silently passes.
+A skip lets a typo in `ports`, or a capability that quietly stopped loading,
+retire a scenario from every backend at once — which is the exact failure the
+corpus exists to prevent.
+
+- `ports` are the five port names (`kv`, `collection`, `vector`, `search`,
+  `graph`). Every backend in both languages implements all five, so an
+  unsatisfiable port is a corpus error.
+- `capabilities` are the optional ones. The only known name today is
+  `listWhereIn`; anything else is a typo and fails the same way. Each runner
+  declares, per backend, which capabilities that backend has **right now**,
+  detected for real rather than assumed:
+  - `listWhereIn` — the method both store backends implement, in both languages.
+  - `vec0` is not a capability yet. The adapter's `accelerated` flag reports true
+    while the vec0 branch never executes, so there is no honest detector; see
+    roadmap MR-22 and `docs/evidence/python-port/2026-09-02-vec0-branch-dead.md`.
+- A scenario declaring a capability a backend lacks is a failure naming the
+  backend and the capability: `<id>: <backend> lacks capability(ies) <names>`.
+  The one exception is the empty case: if no scenario in the corpus declares a
+  capability at all, there is nothing to gate. A `vec0` scenario replayed on a
+  backend without vec0 would prove the fallback path, not the capability, which
+  is worse than no scenario.
+- Generation applies the same rule, so a scenario that no backend can honestly
+  run never reaches the corpus.
+
+Each runner reports the capability set it found per backend, so a silently
+degraded environment (sqlite-vec missing from CI, say) is visible in the log
+rather than inferred from a suspiciously fast green.
 
 ## Governance
 

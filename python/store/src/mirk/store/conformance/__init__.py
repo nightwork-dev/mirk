@@ -4,6 +4,7 @@ from .compare import compare_expect, deep_equal
 from .loader import (
     CORPUS_DIRNAME,
     Scenario,
+    assertion_free_scenarios,
     corpus_dir,
     load_scenarios,
     repo_root,
@@ -12,6 +13,7 @@ from .loader import (
 from .runner import (
     STORE_PORTS,
     StepFailure,
+    StepOutcome,
     TargetUnavailableError,
     normalize,
     resolve_target,
@@ -25,7 +27,9 @@ __all__ = [
     "STORE_PORTS",
     "Scenario",
     "StepFailure",
+    "StepOutcome",
     "TargetUnavailableError",
+    "assertion_free_scenarios",
     "compare_expect",
     "corpus_dir",
     "deep_equal",

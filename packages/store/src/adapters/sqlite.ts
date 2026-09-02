@@ -114,19 +114,13 @@ function assertPositiveDimensions(dimensions: number): void {
   }
 }
 
-function sqlParam(value: unknown): SqlParam {
-  if (value === null) return null;
-  if (typeof value === "boolean") return value ? 1 : 0;
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "bigint"
-  ) {
-    return value;
-  }
-  throw new Error("Store IN queries only support JSON scalar values.");
-}
+const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
 
+/** One OR-ed, json_type-guarded term per value — never a bare `IN (...)` list.
+ *  json_extract collapses a JSON boolean to SQL 1/0, so an unguarded IN makes
+ *  `listWhereIn(f, [true])` match a stored 1 and `[1]` match a stored true. The
+ *  guards mirror `buildWhereClause` in ../sql.ts exactly, which is what keeps the
+ *  in-memory reference (`Set.has`, where true !== 1) and SQLite in step. */
 function buildJsonInWhere(
   field: string,
   values: readonly unknown[],
@@ -134,19 +128,26 @@ function buildJsonInWhere(
 ): { clause: string; params: SqlParam[] } {
   const path = jsonPath(field);
   const params: SqlParam[] = [];
-  const nonNull = values.filter((value) => value !== null).map(sqlParam);
-  const hasNull = values.some((value) => value === null);
   const parts: string[] = [];
 
-  if (nonNull.length > 0) {
-    parts.push(
-      `json_extract(data, ?) IN (${nonNull.map(() => "?").join(", ")})`
-    );
-    params.push(path, ...nonNull);
-  }
-  if (hasNull) {
-    parts.push(`json_type(data, ?) = 'null'`);
-    params.push(path);
+  for (const value of values) {
+    if (value === null) {
+      parts.push(`json_type(data, ?) = 'null'`);
+      params.push(path);
+    } else if (typeof value === "boolean") {
+      parts.push(`json_type(data, ?) = '${value ? "true" : "false"}'`);
+      params.push(path);
+    } else if (typeof value === "string") {
+      parts.push(`(json_type(data, ?) = 'text' AND json_extract(data, ?) = ?)`);
+      params.push(path, path, value);
+    } else if (typeof value === "number" || typeof value === "bigint") {
+      parts.push(
+        `(json_type(data, ?) IN ('integer', 'real') AND json_extract(data, ?) = ?)`
+      );
+      params.push(path, path, value);
+    } else {
+      throw new Error(NON_SCALAR_IN_MESSAGE);
+    }
   }
 
   return {
@@ -1179,19 +1180,19 @@ class SqliteVectorFacet implements VectorStore {
     minScore: number | undefined
   ): VectorSearchResult<M>[] {
     const table = this.ensureVecTable(collection);
-    // `minScore` is a filter, and every filter runs BEFORE topK on every path
-    // (the JS path filters then slices). Pushing `LIMIT topK` into the KNN query
-    // would slice first and return fewer rows than the JS path whenever one of
-    // the topK nearest falls below the floor. vec0 requires a LIMIT on a KNN
-    // query, so widen it to the whole collection and slice after filtering.
-    const sqlLimit = minScore === undefined ? topK : this.count(collection);
+    // `topK` is the whole bound. `minScore` deliberately does not widen it: the
+    // floor is monotone in distance (score = 1 - distance), so the k nearest are
+    // exactly the k highest scores and the floor removes the same rows before or
+    // after the slice. Nor can a row be dropped for any other reason and let a
+    // lower-ranked one take its place — `syncVec` keeps directionless vectors
+    // out of vec0 entirely, so no NULL-distance row ever consumes a slot.
     const rows = this.db
       .prepare(
         `SELECT v.id AS id, v.metadata AS metadata, vv.distance AS distance
          FROM ${table} vv JOIN vectors v ON v.rowid = vv.rowid
          WHERE vv.embedding MATCH ? ORDER BY vv.distance LIMIT ?`
       )
-      .all(vectorToBuffer(query), sqlLimit) as Array<{
+      .all(vectorToBuffer(query), topK) as Array<{
       id: string;
       metadata: string | null;
       distance: number;

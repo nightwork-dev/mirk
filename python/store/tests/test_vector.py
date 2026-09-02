@@ -39,6 +39,11 @@ from mirk.store.vector import (
     vector_to_bytes,
 )
 
+# sqlite-vec is a dev dependency, so a load failure in the suite is a failure,
+# not an environment the tests get to skip. The library's runtime fallback to
+# exact cosine is a separate, deliberately exercised path.
+VEC0_REQUIRED = "sqlite-vec did not load; it is a dev dependency, so this is a failure"
+
 RAW = [0.1, 0.2, 0.3]
 ROUNDED = list(struct.unpack("<3f", struct.pack("<3f", *RAW)))
 
@@ -214,9 +219,7 @@ def test_vec0_and_exact_paths_agree_on_random_data(tmp_path: Path) -> None:
     docs = _random_corpus(seed=7, dimensions=8, size=60)
 
     accelerated, accelerated_connection = open_facet(db, dimensions=8)
-    if not accelerated.meta["accelerated"]:
-        accelerated_connection.close()
-        pytest.skip("sqlite-vec is not loadable in this interpreter")
+    assert accelerated.meta["accelerated"], VEC0_REQUIRED
     exact, exact_connection = open_facet(db, force_js_cosine=True)
     try:
         accelerated.upsertMany("c", docs)
@@ -265,8 +268,7 @@ def test_a_fallback_written_file_is_backfilled_into_vec0(tmp_path: Path) -> None
 
     reopened, read_connection = open_facet(db)
     try:
-        if not reopened.meta["accelerated"]:
-            pytest.skip("sqlite-vec is not loadable in this interpreter")
+        assert reopened.meta["accelerated"], VEC0_REQUIRED
         assert ids_of(reopened.search("c", [1.0, 0.0, 0.0], {"minScore": -1})) == ["a"]
     finally:
         read_connection.close()

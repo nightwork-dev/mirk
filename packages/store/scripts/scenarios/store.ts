@@ -734,6 +734,24 @@ export const scenarios = [
   }),
 
   defineScenario({
+    id: "store/list-where-in-bool-vs-number",
+    title: "a boolean value never matches the number it collapses to, and back",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "t", f: true }] },
+      { op: "put", args: ["items", { id: "one", f: 1 }] },
+      { op: "put", args: ["items", { id: "fa", f: false }] },
+      { op: "put", args: ["items", { id: "zero", f: 0 }] },
+      { op: "listWhereIn", args: ["items", "f", [true]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [1]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [false]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [0]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [true, 0]], expect: { ids: true } },
+    ],
+  }),
+
+  defineScenario({
     id: "store/list-where-in-duplicate-values",
     title: "a repeated value does not duplicate the row it matches",
     ports: ["collection"],

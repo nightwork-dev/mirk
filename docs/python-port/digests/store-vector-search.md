@@ -2,7 +2,7 @@
 
 Scope: observable behavior of the `/vector` and `/search` ports, precise enough to
 reimplement in Python and to write a language-neutral JSON conformance corpus.
-All paths relative to `/Users/dr/Dev/platform/mirk`.
+All paths relative to the repository root.
 
 Backends covered:
 
@@ -207,11 +207,17 @@ that are then filtered.
 - **Path routing** (sqlite.ts:1149-1163): the accelerated path runs only when
   `accelerated && isUsableVector(query) && !(where || whereNot)`. Any exception from the
   vec0 query falls through to the JS path silently.
-- **Known parity divergence, untested**: `searchVec` pushes `LIMIT topK` into SQL
-  *before* applying `minScore` (sqlite.ts:1183-1200), while the JS path filters then
-  slices. When more than `topK` candidates exist and some of the top `topK` fall below
-  `minScore`, the accelerated path returns fewer rows than the JS path. Corpus authors
-  should either avoid that combination or record it as a documented divergence.
+- ~~**Known parity divergence, untested**: `searchVec` pushes `LIMIT topK` into SQL
+  before applying `minScore`, so it returns fewer rows than the JS path when some of
+  the top `topK` fall below `minScore`.~~ **This claim was wrong** (I1, 2026-09-02).
+  `score = 1 - distance`, so the floor is monotone in the ordering key: the `topK`
+  nearest are exactly the `topK` highest scores, and the floor removes the same rows
+  whether it runs before or after the slice. Nothing else can drop a row out of the
+  window either — `syncVec` keeps directionless vectors out of the vec0 table, so no
+  NULL-distance row consumes a slot. A widening added against this claim was reverted
+  in both languages. Note that `conformance/vector/search-min-score-before-topk.json`
+  pins the `minScore`-before-`topK` **property**; it was never a defense against this
+  divergence, and it passes with or without the widening.
 - `upsertMany` (sqlite.ts:1062-1081): validates every vector first, initializes lazy
   dimensions only after validation passes, then writes inside one transaction. A
   mid-array mismatch therefore persists nothing — including the inferred dimensions.

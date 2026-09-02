@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -104,3 +105,65 @@ def test_close_releases_the_connection() -> None:
     store.close()
     with pytest.raises(sqlite3.ProgrammingError):
         store.get("k")
+
+
+# ── Regressions from the 2026-09-01 review ───────────────────────────────────
+
+
+def test_a_supplied_default_connection_can_write() -> None:
+    """P1-1: the store takes over transaction semantics on a caller's connection.
+
+    A stdlib connection opened with the default ``isolation_level`` starts an
+    implicit transaction on the bootstrap DML, and the first ``BEGIN IMMEDIATE``
+    then raised ``cannot start a transaction within a transaction``.
+    """
+    connection = sqlite3.connect(":memory:")
+    try:
+        store = SqliteStore(":memory:", connection=connection)
+        store.set("k", 1)
+        store.put("c", {"id": "a", "v": 2})
+        assert store.get("k") == 1
+        assert store.getById("c", "a") == {"id": "a", "v": 2}
+        assert connection.isolation_level is None
+        assert connection.in_transaction is False
+    finally:
+        connection.close()
+
+
+def test_a_supplied_connection_keeps_the_callers_pending_work() -> None:
+    """P1-1: taking over autocommit commits what the caller had open."""
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute("CREATE TABLE caller (a)")
+        connection.execute("INSERT INTO caller VALUES (1)")
+        assert connection.in_transaction is True
+        SqliteStore(":memory:", connection=connection)
+        assert connection.execute("SELECT COUNT(*) FROM caller").fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
+def test_the_store_is_thread_affine() -> None:
+    """P1-2: one connection per thread; a second thread is refused loudly.
+
+    The adapter used to pass ``check_same_thread=False`` with no mutex, so a
+    concurrent writer interleaved with an open ``BEGIN IMMEDIATE`` and lost rows
+    instead of raising.
+    """
+    store = SqliteStore(":memory:")
+    failures: list[BaseException] = []
+
+    def write() -> None:
+        try:
+            store.put("c", {"id": "other-thread"})
+        except BaseException as exc:
+            failures.append(exc)
+
+    thread = threading.Thread(target=write)
+    thread.start()
+    thread.join()
+    store.close()
+
+    assert len(failures) == 1
+    assert isinstance(failures[0], sqlite3.ProgrammingError)
+    assert "same thread" in str(failures[0])

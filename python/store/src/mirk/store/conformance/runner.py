@@ -36,6 +36,7 @@ from .loader import Scenario
 __all__ = [
     "STORE_PORTS",
     "StepFailure",
+    "StepOutcome",
     "TargetUnavailableError",
     "normalize",
     "resolve_target",
@@ -49,6 +50,28 @@ STORE_PORTS = frozenset({"store", "kv", "collection"})
 
 class TargetUnavailableError(Exception):
     """No target could be built for a scenario's port on this backend."""
+
+
+@dataclass(frozen=True, slots=True)
+class StepOutcome:
+    """What one step did: a returned value, or a raise.
+
+    The distinction is carried in ``ok``, never inferred from the shape of the
+    value. A stored record that happens to contain ``{"ok": false, "message":
+    ...}`` is a value like any other.
+    """
+
+    ok: bool
+    value: Any = None
+    message: str | None = None
+
+    @staticmethod
+    def returned(value: Any) -> StepOutcome:
+        return StepOutcome(ok=True, value=value)
+
+    @staticmethod
+    def raised(message: str) -> StepOutcome:
+        return StepOutcome(ok=False, message=message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,15 +136,15 @@ def _fallback(value: Any) -> Any:
     return str(value)
 
 
-def run_step(target: object, op: str, args: list[Any]) -> Any:
-    """Dispatch one step. A raise becomes ``{"ok": False, "message": ...}``."""
+def run_step(target: object, op: str, args: list[Any]) -> StepOutcome:
+    """Dispatch one step, reporting a returned value and a raise distinctly."""
     method = getattr(target, op, None)
     if not callable(method):
-        return {"ok": False, "message": f"unsupported op: {op}"}
+        return StepOutcome.raised(f"unsupported op: {op}")
     try:
-        return normalize(method(*args))
+        return StepOutcome.returned(normalize(method(*args)))
     except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+        return StepOutcome.raised(str(exc))
 
 
 def run_scenario(target: object, scenario: Scenario) -> list[StepFailure]:
@@ -134,9 +157,8 @@ def run_scenario(target: object, scenario: Scenario) -> list[StepFailure]:
         result = run_step(target, op, args)
         expect: Any = step.get("expect")
         if not isinstance(expect, dict):
-            if isinstance(result, dict) and cast(dict[str, Any], result).get("ok") is False:
-                message = cast(dict[str, Any], result).get("message")
-                failures.append(StepFailure(index, op, f"setup raised: {message!r}"))
+            if not result.ok:
+                failures.append(StepFailure(index, op, f"setup raised: {result.message!r}"))
             continue
         detail = compare_expect(result, cast(dict[str, Any], expect))
         if detail is not None:

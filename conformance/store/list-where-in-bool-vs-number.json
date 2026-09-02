@@ -1,0 +1,129 @@
+{
+  "id": "store/list-where-in-bool-vs-number",
+  "title": "a boolean value never matches the number it collapses to, and back",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "t",
+          "f": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "one",
+          "f": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "fa",
+          "f": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "zero",
+          "f": 0
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          true
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "t"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          1
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "one"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          false
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "fa"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          0
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "zero"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          true,
+          0
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "t",
+          "zero"
+        ]
+      }
+    }
+  ]
+}

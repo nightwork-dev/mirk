@@ -4,6 +4,12 @@
 // import from the root package and browser-facing ports.
 
 import type { AsyncStore, SyncStore } from "./types.js";
+// `order.ts` is itself import-free, so this keeps the module dependency-free.
+import { compareCodePoints } from "./order.js";
+
+/** @deprecated Spelled `compareCodePoints` in `./order.js`; kept for the
+ *  published `@mirk/store/atomic` surface. */
+export { compareCodePoints as compareCodePoint } from "./order.js";
 
 export type JsonValue =
   | null
@@ -163,26 +169,14 @@ export const MAX_ATOMIC_OUTCOME_BYTES = 64 * 1024;
 const REQUEST_SCHEMA = "mirk-atomic-request/v1";
 const encoder = new TextEncoder();
 
-/** Compare strings by Unicode code point rather than UTF-16 code unit. */
-export function compareCodePoint(a: string, b: string): number {
-  if (a === b) return 0;
-  const aa = Array.from(a, (char) => char.codePointAt(0)!);
-  const bb = Array.from(b, (char) => char.codePointAt(0)!);
-  const length = Math.min(aa.length, bb.length);
-  for (let i = 0; i < length; i += 1) {
-    if (aa[i]! !== bb[i]!) return aa[i]! < bb[i]! ? -1 : 1;
-  }
-  return aa.length < bb.length ? -1 : 1;
-}
-
 export function compareTargets(a: StoreTarget, b: StoreTarget): number {
   if (a.kind !== b.kind) return a.kind === "key" ? -1 : 1;
   if (a.kind === "key" && b.kind === "key")
-    return compareCodePoint(a.key, b.key);
+    return compareCodePoints(a.key, b.key);
   if (a.kind === "record" && b.kind === "record") {
     return (
-      compareCodePoint(a.collection, b.collection) ||
-      compareCodePoint(a.id, b.id)
+      compareCodePoints(a.collection, b.collection) ||
+      compareCodePoints(a.id, b.id)
     );
   }
   return 0;
@@ -245,7 +239,7 @@ function canonicalValue(value: unknown, stack: Set<object>): string {
     }
     if (!isPlainObject(value))
       throw new TypeError("only plain objects are JSON-safe");
-    const keys = Object.keys(value).sort(compareCodePoint);
+    const keys = Object.keys(value).sort(compareCodePoints);
     return `{${keys
       .map(
         (key) => `${JSON.stringify(key)}:${canonicalValue(value[key], stack)}`

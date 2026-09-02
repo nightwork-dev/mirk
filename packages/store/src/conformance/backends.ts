@@ -70,6 +70,38 @@ function graphApi(store: Parameters<typeof toAsync>[0]): Record<string, unknown>
   };
 }
 
+/** The optional capability names a scenario may declare. Anything else in a
+ *  scenario's `capabilities` is a corpus typo, and every runner must fail on it
+ *  rather than pass a scenario whose gate nobody understands.
+ *
+ *  `vec0` is deliberately absent: the adapter's `accelerated` flag reports true
+ *  while the vec0 branch never executes (docs/evidence/python-port/
+ *  2026-09-02-vec0-branch-dead.md), so no honest detector exists until roadmap
+ *  MR-22 is ruled. */
+export const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
+
+/** Optional capabilities a backend has right now. `listWhereIn` is a method both
+ *  stores implement. */
+export function backendCapabilities(_backend: BackendName): string[] {
+  return ["listWhereIn"];
+}
+
+/** The capabilities a scenario declares that this backend cannot supply, plus
+ *  any name that is not a known capability at all. Empty is the only acceptable
+ *  answer: a runner FAILS on a non-empty result and names the capability. There
+ *  is no skip, for the same reason `ports` has none — a skip lets a gate quietly
+ *  retire a scenario instead of proving the behavior. */
+export function unsupportedCapabilities(
+  backend: BackendName,
+  capabilities: readonly string[],
+): string[] {
+  const have = backendCapabilities(backend);
+  const known: readonly string[] = KNOWN_CAPABILITIES;
+  return capabilities.filter(
+    (capability) => !known.includes(capability) || !have.includes(capability),
+  );
+}
+
 export function openTarget(backend: BackendName, scenario: TargetRequest): OpenTarget {
   const kind = targetKindFor(scenario.ports);
 

@@ -14,7 +14,11 @@ import { fileURLToPath } from "node:url";
 
 import { compareExpect } from "./conformance/compare.js";
 import type { Expect, Scenario, Step } from "./conformance/format.js";
-import { openTarget } from "./conformance/backends.js";
+import {
+  backendCapabilities,
+  openTarget,
+  unsupportedCapabilities,
+} from "./conformance/backends.js";
 import { executeStep, unsupportedPorts, type BackendName } from "./conformance/runner.js";
 
 const CORPUS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "conformance");
@@ -64,6 +68,16 @@ function structuralProblem(value: unknown): string | null {
   const steps = record.steps;
   if (!Array.isArray(steps) || steps.length === 0) {
     return '"steps" must be a non-empty array';
+  }
+  // The load-side half of the generator's refusal: a corpus file made only of
+  // setup steps replays green while checking nothing.
+  if (
+    !steps.some(
+      (raw) => raw !== null && typeof raw === "object" && !Array.isArray(raw) &&
+        (raw as Record<string, unknown>).expect !== undefined,
+    )
+  ) {
+    return `scenario ${String(record.id)} asserts nothing: at least one step needs an "expect"`;
   }
   for (const [index, raw] of steps.entries()) {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
@@ -149,6 +163,20 @@ describe("conformance corpus", () => {
     }
   });
 
+  it("reports the capabilities each backend has", () => {
+    const declared = new Set(scenarios.flatMap(({ scenario }) => scenario.capabilities ?? []));
+    for (const backend of BACKENDS) {
+      const have = backendCapabilities(backend);
+      console.log(`conformance capabilities: ${backend} -> ${have.join(", ") || "(none)"}`);
+      expect(have.length, `${backend} reports no capabilities`).toBeGreaterThan(0);
+    }
+    // The gate is only meaningful if something in the corpus goes through it.
+    expect(
+      [...declared].length,
+      "no corpus scenario declares a capability, so the capability gate is untested",
+    ).toBeGreaterThan(0);
+  });
+
   it("carries the store scenarios", () => {
     const storeScenarios = scenarios.filter(({ scenario }) => scenario.id.startsWith("store/"));
     expect(storeScenarios.length).toBeGreaterThan(0);
@@ -168,6 +196,15 @@ for (const backend of BACKENDS) {
         expect(
           unknown,
           `${scenario.id}: ${backend} cannot bind port(s) ${unknown.join(", ")}`,
+        ).toEqual([]);
+
+        // Same rule for optional capabilities, and for the same reason: a
+        // scenario that declares `vec0` and then runs on a backend without it
+        // proves the fallback path, not the capability. Hard failure, no skip.
+        const missing = unsupportedCapabilities(backend, scenario.capabilities ?? []);
+        expect(
+          missing,
+          `${scenario.id}: ${backend} lacks capability(ies) ${missing.join(", ")}`,
         ).toEqual([]);
 
         const dir = relativePath.slice(0, relativePath.indexOf("/"));

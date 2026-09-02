@@ -98,6 +98,14 @@ export function defineScenario(input: ScenarioInput): AuthoredScenario {
   if (input.steps.length === 0) {
     throw new Error(`scenario ${input.id}: at least one step is required.`);
   }
+  // A scenario made only of setup steps replays green forever without checking
+  // a single result, so it is evidence of nothing. Setup steps still have to
+  // complete, but at least one step must carry an `expect` marker.
+  if (!input.steps.some((step) => step.expect !== undefined)) {
+    throw new Error(
+      `scenario ${input.id} asserts nothing: at least one step needs an \`expect\` marker.`,
+    );
+  }
   return {
     id: input.id,
     title: input.title,

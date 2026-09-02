@@ -148,8 +148,8 @@ the spec's rulings section, plus an astral-plane id tie-break scenario.
 **Acceptance:** `pnpm conformance:gen` succeeds (memory and sqlite agree on
 every new scenario); full `pnpm test` and `pnpm -r typecheck` green.
 
-- [ ] fixes landed with the scenarios that pin them
-- [ ] libsql adapter suite still green
+- [x] fixes landed with the scenarios that pin them (52d2d2c)
+- [x] libsql adapter suite still green
 
 ### T2 · Vector and search parity fixes and scenarios (TypeScript)
 
@@ -183,8 +183,8 @@ the `ids` form, meta-filter results with `values` plus `ignoreFields:
 **Acceptance:** generator agrees across backends on all of them; full test
 suite and typecheck green.
 
-- [ ] fixes and scenarios landed
-- [ ] every search scenario uses `ids` or exact non-score fields, never scores
+- [x] fixes and scenarios landed (52d2d2c)
+- [x] every search scenario uses `ids` or exact non-score fields, never scores
 
 ### T3 · Graph scenarios (TypeScript)
 
@@ -209,7 +209,7 @@ test assertion becomes a scenario.
 **Acceptance:** generator agrees across backends; graph directory guard in
 the replay test now fires.
 
-- [ ] scenarios landed and replayed
+- [x] scenarios landed and replayed (52d2d2c)
 
 ### P1 · Python vector port
 
@@ -232,7 +232,7 @@ vector, Python asserts the `vectors.vec` blob bytes equal
 `struct.pack("<3f", ...)` of the float32-rounded values and that `get`
 returns them; Python writes one, TypeScript searches and finds it.
 
-- [ ] memory and sqlite facets, corpus replay of `vector/*` on both
+- [x] memory and sqlite facets, corpus replay of `vector/*` on both (52d2d2c)
 
 ### P2 · Python search port
 
@@ -250,7 +250,7 @@ cross-backend contract is ranking and set, so search scenarios use `ids` or
 `values` with `ignoreFields: ["score"]`. Expose `conformance_target` in
 `search.py`; do not edit the runner.
 
-- [ ] memory and sqlite facets, corpus replay of `search/*` on both
+- [x] memory and sqlite facets, corpus replay of `search/*` on both (52d2d2c)
 
 ### P3 · Python graph module
 
@@ -262,7 +262,7 @@ corpus graph ops are the same names. Expose `conformance_target` in
 `graph.py` returning a facade with `neighbors`, `traverse`,
 `traverseFrontierBatched` bound to the backend store; do not edit the runner.
 
-- [ ] module and corpus replay of `graph/*` on both backends
+- [x] module and corpus replay of `graph/*` on both backends (52d2d2c)
 
 ---
 
@@ -270,13 +270,13 @@ corpus graph ops are the same names. Expose `conformance_target` in
 
 ### I1 · Integration, hardening, receipts
 
-- [ ] `pnpm conformance:gen && pnpm test && pnpm -r typecheck` green at root.
-- [ ] `cd python/store && uv run pytest -q && uv run pyright && uv run ruff check .` green; `ALLOWED_SKIPPED_PORTS` emptied so any skip fails; per-port executed counts all > 0.
-- [ ] Executed scenario counts match between the two runners per port; record both in `docs/evidence/python-port/<date>-phase1-green.md` with the commands and output.
-- [ ] Falsification: break the Python memory sort tie-break, run the corpus, record the failing scenario name in the evidence file, revert.
-- [ ] `pnpm conformance:current` wired into `release:receipt` so a stale corpus fails a receipt; receipt records the scenario count.
-- [ ] Root `README.md` and `docs/roadmap.md` gain one row/paragraph: MR-20 Python port phase 1, status per the roadmap vocabulary. `CLAUDE.md` build section gains the Python commands.
-- [ ] Cross-lineage review of the whole diff (codex lane via pi dispatch) with the explicit question "are these the right criteria, and is any of this unnecessary?"; findings folded back before merge.
+- [x] `pnpm conformance:gen && pnpm test && pnpm -r typecheck` green at root.
+- [x] `cd python/store && uv run pytest -q && uv run pyright && uv run ruff check .` green; `ALLOWED_SKIPPED_PORTS` emptied so any skip fails; per-port executed counts all > 0.
+- [x] Executed scenario counts match between the two runners per port; record both in `docs/evidence/python-port/<date>-phase1-green.md` with the commands and output.
+- [x] Falsification: break the Python memory sort tie-break, run the corpus, record the failing scenario name in the evidence file, revert.
+- [x] `pnpm conformance:current` wired into `release:receipt` so a stale corpus fails a receipt; receipt records the scenario count.
+- [x] Root `README.md` and `docs/roadmap.md` gain one row/paragraph: MR-20 Python port phase 1, status per the roadmap vocabulary. `CLAUDE.md` build section gains the Python commands.
+- [x] Cross-lineage review of the whole diff (codex lane via pi dispatch) with the explicit question "are these the right criteria, and is any of this unnecessary?"; findings folded back before merge.
 
 ## Out of scope, named
 

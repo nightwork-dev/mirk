@@ -149,8 +149,50 @@ def _build_in_clause(
     return (f"{keyword} ({' OR '.join(parts)})", params)
 
 
+_BOOTSTRAP_DDL = (
+    """CREATE TABLE IF NOT EXISTS _kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )""",
+    """CREATE TABLE IF NOT EXISTS _mirk_atomic_versions (
+      kind TEXT NOT NULL,
+      collection TEXT NOT NULL,
+      target_key TEXT NOT NULL,
+      version TEXT NOT NULL,
+      PRIMARY KEY (kind, collection, target_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS _mirk_atomic_sequence (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      value INTEGER NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS _mirk_atomic_receipts (
+      idempotency_key TEXT PRIMARY KEY,
+      request_digest TEXT NOT NULL,
+      result_json TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS _mirk_atomic_identity (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      value TEXT NOT NULL
+    )""",
+)
+
+
 class SqliteStore:
-    """KV plus collection store on one SQLite connection."""
+    """KV plus collection store on one SQLite connection.
+
+    Threading: one connection per thread. The connection is thread-affine, the
+    way ``sqlite3`` opens it by default and the way the TypeScript adapter's
+    single-threaded model works. Using a store from a second thread raises
+    ``sqlite3.ProgrammingError`` rather than corrupting an interleaved
+    transaction. Build a second store for a second thread.
+
+    Transactions: the store owns transaction semantics on whatever connection it
+    is given. A supplied connection is switched to ``isolation_level = None``
+    (SQLite autocommit, with explicit ``BEGIN IMMEDIATE`` around every write),
+    which commits any transaction the caller left pending.
+    """
 
     def __init__(
         self,
@@ -163,49 +205,29 @@ class SqliteStore:
             raise ValueError(f"busy_timeout_ms must be non-negative; got {busy_timeout_ms}.")
         self._meta = StoreMeta(backend="sqlite")
         self._owns_connection = connection is None
-        self._db = connection or sqlite3.connect(
-            path, isolation_level=None, check_same_thread=False
-        )
+        self._db = connection or sqlite3.connect(path, isolation_level=None)
+        # The store owns transaction semantics: explicit BEGIN IMMEDIATE around
+        # every write, so the connection must be in SQLite autocommit mode. On a
+        # supplied connection this commits whatever the caller left pending.
+        self._db.isolation_level = None
         self._tables: set[str] = set()
+        # Pragmas run outside any transaction; journal_mode is a no-op inside one.
         self._db.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
         self._db.execute("PRAGMA journal_mode = WAL")
         self._db.execute("PRAGMA foreign_keys = ON")
-        self._db.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS _kv (
-              key TEXT PRIMARY KEY,
-              value TEXT NOT NULL,
-              created_at TEXT DEFAULT (datetime('now')),
-              updated_at TEXT DEFAULT (datetime('now'))
-            );
-            CREATE TABLE IF NOT EXISTS _mirk_atomic_versions (
-              kind TEXT NOT NULL,
-              collection TEXT NOT NULL,
-              target_key TEXT NOT NULL,
-              version TEXT NOT NULL,
-              PRIMARY KEY (kind, collection, target_key)
-            );
-            CREATE TABLE IF NOT EXISTS _mirk_atomic_sequence (
-              id INTEGER PRIMARY KEY CHECK (id = 1),
-              value INTEGER NOT NULL
-            );
-            INSERT OR IGNORE INTO _mirk_atomic_sequence (id, value) VALUES (1, 0);
-            CREATE TABLE IF NOT EXISTS _mirk_atomic_receipts (
-              idempotency_key TEXT PRIMARY KEY,
-              request_digest TEXT NOT NULL,
-              result_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS _mirk_atomic_identity (
-              id INTEGER PRIMARY KEY CHECK (id = 1),
-              value TEXT NOT NULL
-            );
-            """
-        )
-        self._db.execute(
-            "INSERT OR IGNORE INTO _mirk_atomic_identity (id, value) VALUES (1, ?)",
-            (str(uuid.uuid4()),),
-        )
-        row = self._db.execute("SELECT value FROM _mirk_atomic_identity WHERE id = 1").fetchone()
+        with self._write():
+            for statement in _BOOTSTRAP_DDL:
+                self._db.execute(statement)
+            self._db.execute(
+                "INSERT OR IGNORE INTO _mirk_atomic_sequence (id, value) VALUES (1, 0)"
+            )
+            self._db.execute(
+                "INSERT OR IGNORE INTO _mirk_atomic_identity (id, value) VALUES (1, ?)",
+                (str(uuid.uuid4()),),
+            )
+            row = self._db.execute(
+                "SELECT value FROM _mirk_atomic_identity WHERE id = 1"
+            ).fetchone()
         self._version_prefix: str = row[0]
 
     @property

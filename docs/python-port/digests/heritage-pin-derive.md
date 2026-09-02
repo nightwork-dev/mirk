@@ -1,12 +1,12 @@
 # Heritage digest — pin-derive cross-language conformance corpus
 
-Repo: `/Users/dr/Dev/tools/pin-derive` (version 0.10.0). Four runtimes held in
+Repo: `<pin-derive>` (version 0.10.0). Four runtimes held in
 conformance: TypeScript reference (`src/`), native Rust core (`rust/core`),
 JS-via-wasm (`rust/js`), Python-via-wasm (`rust/python`). 151 fixture files in
-`/Users/dr/Dev/tools/pin-derive/fixtures/`.
+`<pin-derive>/fixtures/`.
 
 **The single most important structural fact: the corpus is GENERATED, not
-authored.** `/Users/dr/Dev/tools/pin-derive/scripts/gen-fixtures.ts` (2088 lines)
+authored.** `<pin-derive>/scripts/gen-fixtures.ts` (2088 lines)
 is the only writer of `fixtures/*.json`. Every fixture's `expected` is whatever
 the TypeScript reference engine produces right now. Nobody hand-writes an
 expected value.
@@ -20,7 +20,7 @@ Written as `JSON.stringify(body, null, 2) + "\n"` (2-space indent, trailing
 newline) — see `scripts/gen-fixtures.ts:1762` and the sibling write sites.
 
 The full interface is declared once, in the TS runner
-(`/Users/dr/Dev/tools/pin-derive/src/fixtures.test.ts:51-97`):
+(`<pin-derive>/src/fixtures.test.ts:51-97`):
 
 ```ts
 interface Fixture {
@@ -84,7 +84,7 @@ Key design rules readable off that shape:
 
 ### One complete fixture, verbatim
 
-`/Users/dr/Dev/tools/pin-derive/fixtures/within-containment.json`:
+`<pin-derive>/fixtures/within-containment.json`:
 
 ```json
 {
@@ -138,7 +138,7 @@ locks not just the answer but the path to it.
 
 ## 2. How the TypeScript suite replays fixtures
 
-`/Users/dr/Dev/tools/pin-derive/src/fixtures.test.ts` (1168 lines), a vitest
+`<pin-derive>/src/fixtures.test.ts` (1168 lines), a vitest
 file.
 
 - **Discovery** (`:38-39`): `readdirSync(join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures"))` filtered to `.json`. Plain directory read, no manifest.
@@ -191,7 +191,7 @@ certifying itself.
 
 ## 3. How the Python package replays the same fixtures
 
-`/Users/dr/Dev/tools/pin-derive/rust/python/tests/test_conformance.py` (928 lines), pytest.
+`<pin-derive>/rust/python/tests/test_conformance.py` (928 lines), pytest.
 
 - **Discovery** (`:151`): `FIXTURE_ROOT = Path(__file__).resolve().parents[3] / "fixtures"`.
   From `rust/python/tests/` that is three parents up to the repo root, then
@@ -256,7 +256,7 @@ depend on.
 
 Governance is entirely mechanical, via the build graph.
 
-**The freshness gate** — `/Users/dr/Dev/tools/pin-derive/moon.yml:41-48`, task
+**The freshness gate** — `<pin-derive>/moon.yml:41-48`, task
 `pin-derive:fixtures-current`:
 
 ```yaml
@@ -395,7 +395,7 @@ rather than tolerant.
 
 ## 6. Recorded lessons about keeping implementations in conformance
 
-`/Users/dr/Dev/tools/pin-derive/docs/reviews/2026-08-19-repository-quality-assessment.md`
+`<pin-derive>/docs/reviews/2026-08-19-repository-quality-assessment.md`
 is the one review that grades the system. It calls the reference-and-replay model
 "the highest-quality part of the repository" and "one of the repository's
 greatest strengths." It also names the failures:

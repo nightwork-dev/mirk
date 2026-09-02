@@ -16,12 +16,15 @@ import pytest
 from mirk.store import InMemoryStore, SqliteStore
 from mirk.store.conformance import (
     Scenario,
+    StepOutcome,
     TargetUnavailableError,
+    assertion_free_scenarios,
     compare_expect,
     corpus_dir,
     load_scenarios,
     resolve_target,
     run_scenario,
+    run_step,
     scenario_port,
     validate_scenarios,
 )
@@ -155,8 +158,9 @@ def test_scenario_port_rejects_two_non_store_ports() -> None:
 def test_ignore_fields_drops_named_fields_from_both_sides() -> None:
     actual = [{"id": "a", "score": 0.5}, {"id": "b", "score": 0.25}]
     expected = [{"id": "a", "score": 99.0}, {"id": "b", "score": -1.0}]
-    assert compare_expect(actual, {"values": expected, "ignoreFields": ["score"]}) is None
-    assert compare_expect(actual, {"values": expected}) is not None
+    outcome = StepOutcome.returned(actual)
+    assert compare_expect(outcome, {"values": expected, "ignoreFields": ["score"]}) is None
+    assert compare_expect(outcome, {"values": expected}) is not None
 
 
 def test_ignore_fields_combines_with_approx_fields() -> None:
@@ -168,7 +172,7 @@ def test_ignore_fields_combines_with_approx_fields() -> None:
         "tol": 1e-6,
         "ignoreFields": ["note"],
     }
-    assert compare_expect(actual, expect) is None
+    assert compare_expect(StepOutcome.returned(actual), expect) is None
 
 
 def _scenario_naming(*ports: str) -> Scenario:
@@ -176,3 +180,80 @@ def _scenario_naming(*ports: str) -> Scenario:
 
     data: dict[str, Any] = {"id": "synthetic", "ports": list(ports), "steps": []}
     return Scenario(id="synthetic", path=Path("synthetic.json"), data=data)
+
+
+# ── Regressions from the 2026-09-01 review ───────────────────────────────────
+
+
+def test_a_stored_record_shaped_like_a_raise_is_still_a_value() -> None:
+    """P1-6: the raise/return distinction comes from the outcome, not the shape.
+
+    Without the ``StepOutcome`` split this record fails its value expectation
+    and passes a ``throws`` expectation instead.
+    """
+    record = {"id": "x", "ok": False, "message": "oops"}
+    store = InMemoryStore()
+    store.put("c", record)
+    outcome = run_step(store, "getById", ["c", "x"])
+
+    assert outcome.ok is True
+    assert outcome.value == record
+    assert compare_expect(outcome, {"value": record}) is None
+    assert compare_expect(outcome, {"throws": "oops"}) is not None
+
+
+def test_a_raising_step_reports_a_raise() -> None:
+    """The other half of P1-6: a real raise still satisfies ``throws``."""
+    outcome = run_step(InMemoryStore(), "put", ["c", {"no": "id"}])
+    assert outcome.ok is False
+    assert compare_expect(outcome, {"throws": outcome.message}) is None
+    assert compare_expect(outcome, {"value": None}) is not None
+
+
+def test_compare_expect_refuses_a_raw_dict() -> None:
+    """P1-6: a bare mapping can never be mistaken for an outcome again."""
+    with pytest.raises(TypeError) as info:
+        compare_expect({"ok": False, "message": "oops"}, {"throws": "oops"})  # type: ignore[arg-type]
+    assert "StepOutcome" in str(info.value)
+
+
+def test_an_unexpected_approx_field_fails() -> None:
+    """P2-2: an approx field absent from the expected row is a failure."""
+    outcome = StepOutcome.returned([{"id": "a", "score": 1}])
+    detail = compare_expect(outcome, {"values": [{"id": "a"}], "approxFields": ["score"]})
+    assert detail is not None
+    assert "unexpected" in detail
+
+
+def test_a_missing_approx_field_fails() -> None:
+    """The mirror of P2-2: expected-only approx field is still a failure."""
+    outcome = StepOutcome.returned([{"id": "a"}])
+    detail = compare_expect(
+        outcome, {"values": [{"id": "a", "score": 1}], "approxFields": ["score"]}
+    )
+    assert detail is not None
+    assert "missing" in detail
+
+
+def test_the_assertion_free_detector_names_the_scenario() -> None:
+    """P1-7: a scenario whose steps are all setup is reported by id."""
+    setup_only = _scenario_with_steps("setup-only", [{"op": "set", "args": ["k", 1]}])
+    checked = _scenario_with_steps(
+        "checked",
+        [{"op": "set", "args": ["k", 1]}, {"op": "get", "args": ["k"], "expect": {"value": 1}}],
+    )
+    assert assertion_free_scenarios([setup_only, checked]) == ["setup-only"]
+
+
+@pytest.mark.skipif(CORPUS_ERROR is not None, reason="corpus missing")
+def test_every_corpus_scenario_asserts_something() -> None:
+    """P1-7: no corpus scenario replays green without checking a result."""
+    barren = assertion_free_scenarios(SCENARIOS)
+    assert not barren, f"scenarios with no expect clause: {barren}"
+
+
+def _scenario_with_steps(identifier: str, steps: list[dict[str, Any]]) -> Scenario:
+    from pathlib import Path
+
+    data: dict[str, Any] = {"id": identifier, "ports": ["store"], "steps": steps}
+    return Scenario(id=identifier, path=Path(f"{identifier}.json"), data=data)

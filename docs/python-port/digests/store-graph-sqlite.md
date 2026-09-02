@@ -1,6 +1,6 @@
 # Digest: graph primitive + SQLite physical layout (@mirk/store)
 
-Repo: /Users/dr/Dev/platform/mirk. All line cites are `packages/store/src/...`.
+Repo: this one. All line cites are `packages/store/src/...`.
 Everything below was read from source and, for part B, verified by writing a real
 `.sqlite` file with the built adapter and dumping `sqlite_master` plus row contents.
 
