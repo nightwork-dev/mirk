@@ -1,6 +1,6 @@
 {
   "name": "@mirk/store",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "Code-split key-value, collection, vector, full-text search, graph, and SQL storage ports with in-memory references and a shared-connection SQLite adapter.",
   "license": "Apache-2.0",
