@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/escapes",
+  "title": "quote, backslash, newline and tab take their short escape forms",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        "a\"b\\c\nd\te"
+      ],
+      "expect": {
+        "value": "\"a\\\"b\\\\c\\nd\\te\""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        "a\"b\\c\nd\te"
+      ],
+      "expect": {
+        "value": "e0127043d1716c8ca6a938b7e89d96244bbca272dba3306802222a2daf1fecb7"
+      }
+    }
+  ]
+}

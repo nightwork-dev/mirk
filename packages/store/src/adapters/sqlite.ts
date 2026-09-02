@@ -254,6 +254,11 @@ export interface SqliteAdapterOptions {
    *  batch is one local `BEGIN IMMEDIATE`, so these are sizing choices rather
    *  than a wire contract. The idempotency outcome cap is fixed regardless. */
   atomicLimits?: Partial<AtomicMutationLimits>;
+  /** The prefix version tokens carry when this file is initialized. It is
+   *  written once, into `_mirk_atomic_identity`; a file that already carries an
+   *  identity keeps it, so reopening with a different value changes nothing.
+   *  Defaults to a fresh UUID. */
+  versionIdentity?: string;
 }
 
 export type SqliteTransactionMode = "deferred" | "immediate" | "exclusive";
@@ -327,7 +332,8 @@ export class SqliteAdapter {
         ensureMirkRegistry(this.db);
         kv = new SqliteKvFacet(
           this.db,
-          resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS)
+          resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS),
+          opts.versionIdentity
         );
         vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
         search = new SqliteSearchFacet(this.db);
@@ -475,7 +481,8 @@ class SqliteKvFacet
 
   constructor(
     private readonly db: Database.Database,
-    readonly atomicLimits: AtomicMutationLimits = IN_PROCESS_ATOMIC_LIMITS
+    readonly atomicLimits: AtomicMutationLimits = IN_PROCESS_ATOMIC_LIMITS,
+    versionIdentity?: string
   ) {
     this.db.pragma("foreign_keys = ON");
     this.db.exec(`
@@ -513,7 +520,7 @@ class SqliteKvFacet
       .prepare(
         "INSERT OR IGNORE INTO _mirk_atomic_identity (id, value) VALUES (1, ?)"
       )
-      .run(randomUUID());
+      .run(versionIdentity ?? randomUUID());
     this.versionPrefix = (
       this.db
         .prepare("SELECT value FROM _mirk_atomic_identity WHERE id = 1")

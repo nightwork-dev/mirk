@@ -8,7 +8,7 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "test": "pnpm -r --workspace-concurrency=1 test",
     "typecheck": "pnpm -r typecheck",
     "docs:check": "node scripts/check-public-docs.mjs",
     "release:verify": "node scripts/verify-package-release.mjs",

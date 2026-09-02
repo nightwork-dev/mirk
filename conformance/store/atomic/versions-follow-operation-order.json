@@ -1,0 +1,94 @@
+{
+  "id": "store/atomic/versions-follow-operation-order",
+  "title": "the applied versions follow operation order, and delete and remove report null",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "z",
+              "value": 1
+            },
+            {
+              "op": "put",
+              "collection": "c",
+              "item": {
+                "id": "b",
+                "n": 2
+              }
+            },
+            {
+              "op": "delete",
+              "key": "a"
+            },
+            {
+              "op": "remove",
+              "collection": "c",
+              "id": "zz"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "3f4be7fd054864077dbe2db4be6e5b8e6bfc16e6cf7e04aa2ebbb8f210771fae",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "z"
+              },
+              "version": "conformance-v1"
+            },
+            {
+              "target": {
+                "kind": "record",
+                "collection": "c",
+                "id": "b"
+              },
+              "version": "conformance-v2"
+            },
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": null
+            },
+            {
+              "target": {
+                "kind": "record",
+                "collection": "c",
+                "id": "zz"
+              },
+              "version": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "z"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 1,
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

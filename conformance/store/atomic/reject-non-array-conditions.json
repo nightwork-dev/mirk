@@ -1,0 +1,34 @@
+{
+  "id": "store/atomic/reject-non-array-conditions",
+  "title": "conditions that are not an array are refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": {
+            "target": {
+              "kind": "key",
+              "key": "a"
+            },
+            "expected": "missing"
+          },
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "conditions must be an array"
+      }
+    }
+  ]
+}

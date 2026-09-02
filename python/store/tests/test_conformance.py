@@ -35,9 +35,11 @@ ALLOWED_SKIPPED_PORTS: set[str] = set()
 
 IMPLEMENTED_CAPABILITIES = {"listWhereIn"}
 
+# Version tokens are compared by exact value, so both backends are built with
+# the identity the corpus was generated under: a token is `conformance-v<n>`.
 BACKENDS: dict[str, Callable[[], Any]] = {
-    "memory": InMemoryStore,
-    "sqlite": lambda: SqliteStore(":memory:"),
+    "memory": lambda: InMemoryStore(version_identity="conformance"),
+    "sqlite": lambda: SqliteStore(":memory:", version_identity="conformance"),
 }
 
 EXECUTED: list[tuple[str, str, str]] = []
@@ -134,7 +136,7 @@ def test_every_corpus_port_either_ran_or_was_skipped() -> None:
 
 def test_store_ports_resolve_to_the_backend_itself() -> None:
     store = InMemoryStore()
-    for port in ("store", "kv", "collection"):
+    for port in ("store", "kv", "collection", "atomic"):
         assert resolve_target(scenario_port(_scenario_naming(port)), "memory", store) is store
 
 
@@ -153,6 +155,22 @@ def test_a_module_without_the_factory_is_a_target_failure() -> None:
 def test_scenario_port_rejects_two_non_store_ports() -> None:
     with pytest.raises(TargetUnavailableError):
         scenario_port(_scenario_naming("vector", "graph"))
+
+
+def test_hash_port_resolves_via_mirk_store_hash() -> None:
+    """S0: `hash` is a zero-native target, resolved without a store connection."""
+    target = resolve_target("hash", "memory", InMemoryStore())
+    from mirk.store.canonical import canonical_json
+
+    assert target.canonicalJson({"b": 1, "a": 2}) == canonical_json({"b": 1, "a": 2})  # type: ignore[attr-defined]
+
+
+def test_a_missing_port_falls_back_from_mirk_store_to_mirk() -> None:
+    """S0 ruling 8: resolution tries `mirk.store.<p>` then `mirk.<p>` before failing."""
+    with pytest.raises(TargetUnavailableError) as info:
+        resolve_target("definitely_not_a_port", "memory", InMemoryStore())
+    assert "mirk.store.definitely_not_a_port" in str(info.value)
+    assert "mirk.definitely_not_a_port" in str(info.value)
 
 
 def test_ignore_fields_drops_named_fields_from_both_sides() -> None:

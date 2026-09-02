@@ -14,9 +14,10 @@ import type { Scenario } from "./format.js";
 
 export type BackendName = "memory" | "sqlite";
 
-/** Which target a scenario's `ports` select. `kv` and `collection` are one
- *  object (SyncStore), so they share the "store" target. */
-export type TargetKind = "store" | "vector" | "search" | "graph";
+/** Which target a scenario's `ports` select. `kv`, `collection` and `atomic`
+ *  are one object (SyncStore), so they share the "store" target. `hash` binds a
+ *  pure, backend-independent target: canonical JSON and SHA-256. */
+export type TargetKind = "store" | "vector" | "search" | "graph" | "hash";
 
 export interface Target {
   kind: TargetKind;
@@ -32,8 +33,8 @@ export type StepOutcome =
  *  runners FAIL on it and name the port. Skipping would let a typo in `ports`
  *  silently retire a scenario from every backend at once. */
 export const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
-  memory: ["kv", "collection", "vector", "search", "graph"],
-  sqlite: ["kv", "collection", "vector", "search", "graph"],
+  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "graph"],
+  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "graph"],
 };
 
 /** The ports a scenario names that this backend cannot bind. Empty is the only
@@ -44,10 +45,12 @@ export function unsupportedPorts(backend: BackendName, ports: readonly string[])
 }
 
 export function targetKindFor(ports: readonly string[]): TargetKind {
+  if (ports.includes("hash")) return "hash";
   if (ports.includes("vector")) return "vector";
   if (ports.includes("search")) return "search";
   if (ports.includes("graph")) return "graph";
-  if (ports.includes("kv") || ports.includes("collection")) return "store";
+  if (ports.includes("kv") || ports.includes("collection") || ports.includes("atomic"))
+    return "store";
   throw new Error(`no target for ports ${JSON.stringify(ports)}.`);
 }
 
@@ -84,7 +87,62 @@ function withVectorField(value: unknown): unknown {
  *  the vector port takes one: a bare query vector argument, and the `vector`
  *  field of a document (or of each document in a batch). Nothing else is
  *  touched, so a numeric metadata array stays an array. */
+/** The four wrapper keys the `hash` target understands. JSON cannot express
+ *  `-0`, a non-finite number, an integer above 2^53, a lone surrogate, or raw
+ *  bytes, and every one of those is a case the hashing contract turns on. */
+const HASH_WRAPPER_KEYS = ["$num", "$codepoints", "$b64", "$utf8"] as const;
+
+const hashEncoder = new TextEncoder();
+
+function hashWrapperKey(value: object): (typeof HASH_WRAPPER_KEYS)[number] | null {
+  const keys = Object.keys(value);
+  if (keys.length !== 1) return null;
+  const key = keys[0] as (typeof HASH_WRAPPER_KEYS)[number];
+  return HASH_WRAPPER_KEYS.includes(key) ? key : null;
+}
+
+/** Expand hash wrappers recursively. An object with exactly one key from the
+ *  wrapper set IS a wrapper; anything else is ordinary data and means itself. */
+export function expandHashArg(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(expandHashArg);
+  if (value === null || typeof value !== "object") return value;
+  const wrapper = hashWrapperKey(value);
+  const record = value as Record<string, unknown>;
+  if (wrapper === "$num") return Number(record.$num as string);
+  if (wrapper === "$codepoints")
+    return String.fromCodePoint(...(record.$codepoints as number[]));
+  if (wrapper === "$b64") return base64ToBytes(record.$b64 as string);
+  if (wrapper === "$utf8") return hashEncoder.encode(record.$utf8 as string);
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(record)) out[key] = expandHashArg(entry);
+  return out;
+}
+
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/** Decoded by hand so this module keeps its zero-dependency promise: no Buffer,
+ *  no atob, nothing that differs between Node and a browser. */
+function base64ToBytes(text: string): Uint8Array {
+  const body = text.replace(/=+$/, "");
+  const bytes = new Uint8Array((body.length * 3) >> 2);
+  let accumulator = 0;
+  let bits = 0;
+  let out = 0;
+  for (const character of body) {
+    const digit = BASE64_ALPHABET.indexOf(character);
+    if (digit < 0) throw new Error(`invalid base64 character ${JSON.stringify(character)}.`);
+    accumulator = (accumulator << 6) | digit;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[out++] = (accumulator >> bits) & 0xff;
+    }
+  }
+  return bytes;
+}
+
 function prepareArgs(kind: TargetKind, args: readonly unknown[]): unknown[] {
+  if (kind === "hash") return args.map(expandHashArg);
   if (kind !== "vector") return [...args];
   return args.map((arg) => {
     if (isNumberArray(arg)) return Float32Array.from(arg);

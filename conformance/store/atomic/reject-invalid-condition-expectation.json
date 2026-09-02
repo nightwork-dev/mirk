@@ -1,0 +1,36 @@
+{
+  "id": "store/atomic/reject-invalid-condition-expectation",
+  "title": "a condition expectation outside missing, present and version is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "absent"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "invalid atomic condition expectation"
+      }
+    }
+  ]
+}

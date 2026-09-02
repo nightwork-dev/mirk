@@ -62,3 +62,29 @@ def test_invalid_namespace_raises(namespace: str) -> None:
     assert str(info.value) == (
         "namespace must be non-empty and must not contain the unit separator"
     )
+
+
+def test_default_version_identity_is_a_per_process_serial() -> None:
+    """Two default stores mint distinguishable tokens; an injected identity wins."""
+    first = InMemoryStore()
+    second = InMemoryStore()
+    first.set("k", 1)
+    second.set("k", 1)
+    first_version = first.getVersioned({"kind": "key", "key": "k"})
+    second_version = second.getVersioned({"kind": "key", "key": "k"})
+    assert first_version is not None and second_version is not None
+    assert first_version["version"] != second_version["version"]
+    assert first_version["version"].endswith("-v1")
+    assert first_version["version"].startswith("m")
+
+    pinned = InMemoryStore(version_identity="conformance")
+    pinned.set("k", 1)
+    pinned.put("c", {"id": "a"})
+    assert pinned.getVersioned({"kind": "key", "key": "k"}) == {
+        "value": 1,
+        "version": "conformance-v1",
+    }
+    assert pinned.getVersioned({"kind": "record", "collection": "c", "id": "a"}) == {
+        "value": {"id": "a"},
+        "version": "conformance-v2",
+    }

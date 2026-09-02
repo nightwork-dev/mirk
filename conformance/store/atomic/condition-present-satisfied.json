@@ -1,0 +1,71 @@
+{
+  "id": "store/atomic/condition-present-satisfied",
+  "title": "a present condition on a written target lets the batch apply",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        1
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "present"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "233b9d306eeaf6e2e2f356cc1c4f1e8b5786e1bd4b698201a8d4e4b5bc6fa275",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 2,
+          "version": "conformance-v2"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/max-double",
+  "title": "the largest finite float64 round-trips",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        1.7976931348623157e+308
+      ],
+      "expect": {
+        "value": "1.7976931348623157e+308"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        1.7976931348623157e+308
+      ],
+      "expect": {
+        "value": "c2784e1abd6317452708f3fbf9641c16b959561bc621a1d408c23a20aa2cb585"
+      }
+    }
+  ]
+}

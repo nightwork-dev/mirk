@@ -1,0 +1,43 @@
+{
+  "id": "store/atomic/reject-repeated-condition-target",
+  "title": "two conditions on one target are refused rather than silently combined",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "present"
+            },
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "repeated conditions for one target are not supported"
+      }
+    }
+  ]
+}

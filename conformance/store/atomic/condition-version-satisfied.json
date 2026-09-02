@@ -1,0 +1,72 @@
+{
+  "id": "store/atomic/condition-version-satisfied",
+  "title": "a version condition matching the current token lets the batch apply",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        1
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "version",
+              "version": "conformance-v1"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "9f9d77fef8a076f2962d7f1ea7842d4bf57da5aac5cb9ea8da65b334228dae70",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 2,
+          "version": "conformance-v2"
+        }
+      }
+    }
+  ]
+}

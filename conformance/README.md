@@ -54,13 +54,20 @@ conformance/
   README.md              this file
   scenario.schema.json   JSON Schema (draft 2020-12) for a scenario file
   store/*.json           KV and collection scenarios
+  store/atomic/*.json    versioned reads and atomic mutation scenarios
   vector/*.json          vector scenarios
   search/*.json          full-text search scenarios
   graph/*.json           graph traversal scenarios
+  artifact/hashing/canonical-json/*.json   canonical text and its digest
+  artifact/hashing/bytes/*.json            content digests over raw bytes
 ```
 
 A scenario's `id` is its path under `conformance/` without the `.json`
-extension.
+extension. An id has two or more `/`-separated segments, each kebab-case; the
+FIRST segment is the corpus directory the generator clears and counts, and any
+segment between it and the name is an ordinary nested directory. So
+`artifact/hashing/bytes/utf8-hello` is counted under `artifact`, and dropping
+every `artifact/` scenario from the generator removes the whole tree.
 
 ## Scenario format
 
@@ -123,6 +130,22 @@ Rules:
   runner strips `undefined` before comparison. Numbers compare as IEEE doubles;
   integers and floats with the same value are equal.
 - Strings sort by Unicode code point.
+- **Wrapped scalars for the `hash` port.** JSON cannot express negative zero, a
+  non-finite number, an integer above 2^53, a lone surrogate, or raw bytes, and
+  every one of those is a case the hashing contract turns on. In the args of a
+  `hash` scenario ONLY, an object with exactly one key from `$num`,
+  `$codepoints`, `$b64`, `$utf8` is a wrapper and is replaced before dispatch:
+  `$num` parses its decimal text as a float64 (`"-0"`, `"NaN"`, `"Infinity"`,
+  `"9007199254740993"`), `$codepoints` builds a string from code points with
+  lone surrogates allowed, `$b64` and `$utf8` produce bytes. Expansion recurses
+  through arrays and plain objects. An object with any other shape is ordinary
+  data and means itself. Results are text and hex, so the `expect` side needs no
+  wrapper.
+- Version tokens are compared by exact value. Both conformance stores are built
+  with the version identity `conformance`, so a token reads `conformance-v<n>`
+  and the corpus pins allocation itself: the sequence starts at 1 per store,
+  every `set`/`put` consumes one value, `delete`/`remove` consume none, and a
+  conflict or a rejected request consumes none.
 - Backends are not selectable per scenario. A behavior that differs between
   memory and SQLite is a bug in one of them, not a corpus option.
 
@@ -134,9 +157,14 @@ A skip lets a typo in `ports`, or a capability that quietly stopped loading,
 retire a scenario from every backend at once — which is the exact failure the
 corpus exists to prevent.
 
-- `ports` are the five port names (`kv`, `collection`, `vector`, `search`,
-  `graph`). Every backend in both languages implements all five, so an
-  unsatisfiable port is a corpus error.
+- `ports` are the seven port names. Five bind a backend: `kv`, `collection`,
+  `vector`, `search`, `graph`. `atomic` binds the same object as `kv` and
+  `collection` and adds `getVersioned` and `mutateAtomically` to it. `hash`
+  binds a pure target with no backend behind it — `canonicalJson`,
+  `canonicalDigest`, `sha256Hex(text)` and `sha256Bytes(bytes)` — which is why
+  a `hash` scenario produces the same result under every backend name and is
+  still run under each of them. Every backend in both languages implements all
+  seven, so an unsatisfiable port is a corpus error.
 - `capabilities` are the optional ones. The only known name today is
   `listWhereIn`; anything else is a typo and fails the same way. Each runner
   declares, per backend, which capabilities that backend has **right now**,

@@ -88,7 +88,12 @@ Wave 2  I2 integration, evidence, receipts, roadmap MR-23/MR-24, cross-lineage c
 R0 depends on S0 (atomic interop) and on A1's injectable ids landing first
 in TypeScript; run it as soon as those two exist, before A2.
 
-### S0 · Atomic API and canonical JSON
+### S0 · Atomic API and canonical JSON — DONE 2026-09-02
+
+Landed with the A1 TypeScript prep (injectable ids and clocks, code point sorts,
+`addLineage` order). Evidence:
+`docs/evidence/python-port/2026-09-02-atomic-exchange.md`. Cross-lineage code
+review is the next step before wave 1 starts.
 
 TypeScript: extract `canonicalJson`, `compareCodePoints` use, and SHA-256
 into `packages/store/src/canonical.ts` (re-exported from atomic.ts); scenario
@@ -103,6 +108,52 @@ messages, canonical request digest, receipts, `getVersioned`,
 KV facet already writes). Compat test: TypeScript mutates atomically into a
 file, Python reads versions and replays the idempotent request and gets the
 receipt, and back.
+
+#### S0 rulings (strategist, 2026-09-02)
+
+The plan left four things to "decide in the scenario file header". Decided
+here so the three S0 executors share one source.
+
+- **Version tokens are compared by exact value.** The identity prefix
+  becomes injectable: `InMemoryKv({ versionIdentity })`,
+  `SqliteAdapter({ versionIdentity })` (used only when `_mirk_atomic_identity`
+  is first inserted; a file's persisted identity wins), Python
+  `InMemoryStore(version_identity=...)`, `SqliteStore(path,
+  version_identity=...)`. Defaults unchanged (`m<N>` in memory, a UUID in
+  SQLite). Both conformance runners build stores with identity
+  `"conformance"`, so a token is `conformance-v<n>` and the corpus pins
+  sequence allocation exactly: the sequence starts at 1 per store, every
+  `set`/`put` (plain or atomic) consumes one value, `delete`/`remove` consume
+  none, a conflict or a rejected request consumes none.
+- **Two new port names, `atomic` and `hash`.** `atomic` binds the store
+  target (the runner adds `getVersioned` and `mutateAtomically` to the store
+  method list). `hash` binds a zero-native pure target in both languages with
+  ops `canonicalJson(value) → text`, `sha256Hex(text) → hex over UTF-8`,
+  `sha256Bytes(bytes) → {algorithm, value, sizeBytes}`, and
+  `canonicalDigest(value) → sha256Hex(canonicalJson(value))`. A1 later adds
+  `metadataFingerprint` and `finalizationDigest` to the same target. Python:
+  `mirk.store.hash.conformance_target`. Both `BACKEND_PORTS` lists and the
+  README's port vocabulary grow by these two names.
+- **Wrapper expansion for the `hash` target only**, mirroring how the vector
+  target gets `Float32Array`: in args, an object with exactly one key among
+  `$num` (parse this decimal text as a float64: `-0`, `NaN`, `Infinity`,
+  `9007199254740993`), `$codepoints` (build a string from these code points,
+  lone surrogates allowed), `$b64` (raw bytes), `$utf8` (bytes of this
+  string) is replaced, recursively through arrays and objects, before
+  dispatch. Results are strings and hex, so the expect side needs no
+  wrapper.
+- **Nested corpus directories.** Scenario ids allow two or more segments
+  (`store/atomic/<name>`, `artifact/hashing/canonical-json/<name>`). The
+  first segment is the generator's clear-and-count unit; `artifact` joins the
+  generated directory list in the generator and in both replay suites.
+- **Python result shapes are plain dicts with the TypeScript key spelling**
+  (`status`, `requestDigest`, `versions: [{target, version}]`, `outcome`,
+  `condition`, `observed`, `key`, `expectedRequestDigest`,
+  `receivedRequestDigest`); `getVersioned` returns `{"value", "version"}` or
+  `None`. Rejections raise `AtomicMutationRejectedError(code, message)` whose
+  `str()` is the exact TypeScript message. TypeScript-only rejections
+  (sparse arrays, symbol keys, `undefined`, class instances, cyclic values)
+  live in `packages/store/src/canonical.test.ts`, never in the corpus.
 
 ### R0 · The real transaction
 
@@ -122,9 +173,10 @@ sources, `conformance_target`. Changeset minor for `@mirk/fixtures`.
 
 ### A1 / A2 · artifact
 
-A1: injectable id/audit-id/clock, five `localeCompare` sites, `addLineage`
-validation order identical between repository and coordinator, scenario
-module `scripts/scenarios/artifact.ts` over `InMemoryArtifactRepository` +
+A1 (TypeScript prep DONE 2026-09-02 with S0: `auditIdFactory`,
+`leaseIdFactory` on the store repository, three artifact `localeCompare`
+sites, `addLineage` order; the two fixtures sites belong to F1): remaining is
+the scenario module `scripts/scenarios/artifact.ts` over `InMemoryArtifactRepository` +
 `InMemoryObjectStore` + the memory/sqlite store; bytes as base64. Corpus
 directory `artifact/`. A2: `python/artifact` (`mirk-artifact`, depends on
 `mirk-store`): types, `InMemoryObjectStore`, `FileObjectStore`, repository,

@@ -1,0 +1,21 @@
+{
+  "id": "store/atomic/reject-empty-operations",
+  "title": "a request with no operations is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": []
+        }
+      ],
+      "expect": {
+        "throws": "operations must be a non-empty array"
+      }
+    }
+  ]
+}

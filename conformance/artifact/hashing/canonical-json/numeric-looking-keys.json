@@ -1,0 +1,38 @@
+{
+  "id": "artifact/hashing/canonical-json/numeric-looking-keys",
+  "title": "numeric-looking keys sort as text, so \"10\" precedes \"2\"",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "2": 4,
+          "10": 3,
+          "b": 1,
+          "a": 2
+        }
+      ],
+      "expect": {
+        "value": "{\"10\":3,\"2\":4,\"a\":2,\"b\":1}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "2": 4,
+          "10": 3,
+          "b": 1,
+          "a": 2
+        }
+      ],
+      "expect": {
+        "value": "61148428c19ea27217951d647538266ed8df349d71b8982b3e3e37dfeb0b9643"
+      }
+    }
+  ]
+}

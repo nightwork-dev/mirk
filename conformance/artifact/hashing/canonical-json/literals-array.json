@@ -1,0 +1,36 @@
+{
+  "id": "artifact/hashing/canonical-json/literals-array",
+  "title": "true, false and null keep their JSON spellings",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        [
+          true,
+          false,
+          null
+        ]
+      ],
+      "expect": {
+        "value": "[true,false,null]"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        [
+          true,
+          false,
+          null
+        ]
+      ],
+      "expect": {
+        "value": "4d0f18de2133118249c26acc481838d4f6bb6bc1de882d99abbd19ae9397e8df"
+      }
+    }
+  ]
+}

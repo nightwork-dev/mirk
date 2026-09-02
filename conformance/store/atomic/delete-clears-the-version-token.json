@@ -1,0 +1,83 @@
+{
+  "id": "store/atomic/delete-clears-the-version-token",
+  "title": "delete drops the key's token and consumes no sequence value; rewriting takes the next",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "b",
+        2
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "set",
+      "args": [
+        "a",
+        3
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 3,
+          "version": "conformance-v3"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "b"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 2,
+          "version": "conformance-v2"
+        }
+      }
+    }
+  ]
+}

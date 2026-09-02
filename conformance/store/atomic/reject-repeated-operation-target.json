@@ -1,0 +1,32 @@
+{
+  "id": "store/atomic/reject-repeated-operation-target",
+  "title": "two operations on one target are refused rather than applied in sequence",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            },
+            {
+              "op": "set",
+              "key": "a",
+              "value": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "repeated operation targets are not supported"
+      }
+    }
+  ]
+}

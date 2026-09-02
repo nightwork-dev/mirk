@@ -1,0 +1,27 @@
+{
+  "id": "store/atomic/reject-unsupported-operation-name",
+  "title": "an unknown operation name is refused by name",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "increment",
+              "key": "a",
+              "by": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "unsupported atomic operation: increment"
+      }
+    }
+  ]
+}

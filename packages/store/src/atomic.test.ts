@@ -649,3 +649,66 @@ describe("atomic canonical JSON", () => {
     expect(() => canonicalJson(value)).toThrow(/array properties/);
   });
 });
+
+describe("atomic request digest and version identity", () => {
+  it("computes one request digest for the same operations under different idempotency keys", () => {
+    const store = atomic(new InMemoryKv());
+    const operations = [{ op: "set" as const, key: "a", value: true }];
+    const first = store.mutateAtomically({
+      operations,
+      idempotency: { key: "one" },
+    });
+    const second = store.mutateAtomically({
+      operations,
+      idempotency: { key: "two" },
+    });
+    expect(first.status).toBe("applied");
+    expect(second.status).toBe("applied");
+    const digestOf = (result: typeof first): string => {
+      if (result.status !== "applied") throw new Error(`expected applied, got ${result.status}`);
+      return result.requestDigest;
+    };
+    const bare = store.mutateAtomically({ operations });
+    expect(digestOf(second)).toBe(digestOf(first));
+    // The key is excluded from the digest input entirely, so a request carrying
+    // no key at all has the same identity as the two that did.
+    expect(digestOf(bare)).toBe(digestOf(first));
+  });
+
+  it("mints version tokens under an injected identity in both backends", () => {
+    const memory = atomic(new InMemoryKv({ versionIdentity: "pinned" }));
+    memory.set("a", 1);
+    expect(memory.getVersioned({ kind: "key", key: "a" })?.version).toBe("pinned-v1");
+
+    const adapter = new SqliteAdapter({ path: ":memory:", versionIdentity: "pinned" });
+    try {
+      adapter.kv.set("a", 1);
+      expect(adapter.kv.getVersioned({ kind: "key", key: "a" })?.version).toBe("pinned-v1");
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("keeps the identity a SQLite file was created with when it is reopened with another", () => {
+    const path = join(tmpdir(), `mirk-identity-${process.pid}-${Date.now()}.db`);
+    try {
+      const first = new SqliteAdapter({ path, versionIdentity: "original" });
+      first.kv.set("a", 1);
+      expect(first.kv.getVersioned({ kind: "key", key: "a" })?.version).toBe("original-v1");
+      first.close();
+
+      const second = new SqliteAdapter({ path, versionIdentity: "replacement" });
+      try {
+        expect(second.kv.getVersioned({ kind: "key", key: "a" })?.version).toBe("original-v1");
+        second.kv.set("b", 2);
+        expect(second.kv.getVersioned({ kind: "key", key: "b" })?.version).toBe("original-v2");
+      } finally {
+        second.close();
+      }
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+});

@@ -25,7 +25,7 @@ const CORPUS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", 
 const BACKENDS: BackendName[] = ["memory", "sqlite"];
 /** Directories the generator owns. A directory that exists must carry at least
  *  one scenario AND have at least one of them executed by every backend. */
-const KNOWN_DIRS = ["store", "vector", "search", "graph"] as const;
+const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact"] as const;
 
 function jsonFiles(dir: string): string[] {
   const out: string[] = [];

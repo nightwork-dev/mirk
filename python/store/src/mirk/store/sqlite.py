@@ -17,6 +17,18 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
 
+from .atomic import (
+    IN_PROCESS_ATOMIC_LIMITS,
+    AtomicMutationBackendError,
+    AtomicMutationLimits,
+    ValidatedRequest,
+    clone_condition,
+    clone_json,
+    condition_matches,
+    operation_target,
+    resolve_atomic_limits,
+    validate_atomic_request,
+)
 from .filter import FILTER_SCALAR_MESSAGE, IN_SCALAR_MESSAGE, dumps_json, is_scalar
 from .types import JsonObject, StoreFilter, StoreMeta
 
@@ -425,10 +437,13 @@ class SqliteStore:
         *,
         busy_timeout_ms: int = 30_000,
         connection: sqlite3.Connection | None = None,
+        version_identity: str | None = None,
+        atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
     ) -> None:
         if busy_timeout_ms < 0:
             raise ValueError(f"busy_timeout_ms must be non-negative; got {busy_timeout_ms}.")
         self._meta = StoreMeta(backend="sqlite")
+        self._atomic_limits = resolve_atomic_limits(atomic_limits, IN_PROCESS_ATOMIC_LIMITS)
         self._owns_connection = connection is None
         self._db = connection or sqlite3.connect(path, isolation_level=None)
         # The store owns transaction semantics: explicit BEGIN IMMEDIATE around
@@ -452,9 +467,11 @@ class SqliteStore:
             self._db.execute(
                 "INSERT OR IGNORE INTO _mirk_atomic_sequence (id, value) VALUES (1, 0)"
             )
+            # A file's persisted identity wins: the injected value only names an
+            # identity this process would otherwise have generated.
             self._db.execute(
                 "INSERT OR IGNORE INTO _mirk_atomic_identity (id, value) VALUES (1, ?)",
-                (str(uuid.uuid4()),),
+                (version_identity if version_identity is not None else str(uuid.uuid4()),),
             )
             row = self._db.execute(
                 "SELECT value FROM _mirk_atomic_identity WHERE id = 1"
@@ -464,6 +481,11 @@ class SqliteStore:
     @property
     def meta(self) -> StoreMeta:
         return self._meta
+
+    @property
+    def atomic_limits(self) -> AtomicMutationLimits:
+        """The request bounds this store enforces."""
+        return self._atomic_limits
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -501,6 +523,15 @@ class SqliteStore:
             raise
         else:
             self._db.execute("COMMIT")
+
+    @contextmanager
+    def _write_scope(self) -> Generator[sqlite3.Connection]:
+        """A write transaction, unless this connection is already inside one."""
+        if self._db.in_transaction:
+            yield self._db
+            return
+        with self._write() as connection:
+            yield connection
 
     # ── Table naming ─────────────────────────────────────────────────────
     def _ensure_table(self, collection: str) -> str:
@@ -661,6 +692,162 @@ class SqliteStore:
             f"SELECT COUNT(*) FROM {table}{where_clause}", tuple(where_params)
         ).fetchone()
         return int(row[0])
+
+    # ── Atomic mutation ──────────────────────────────────────────────────
+    def _table_if_exists(self, collection: str) -> str | None:
+        """The collection's physical table, without creating it."""
+        cached = self._tables.get(collection)
+        table = cached or resolve_table(
+            self._db, "collection", collection, legacy_collection_table(collection)
+        )
+        return table if table_exists(self._db, table) else None
+
+    def _version_parts(self, target: dict[str, Any]) -> tuple[str, str, str]:
+        if target["kind"] == "key":
+            return ("key", "", target["key"])
+        return ("record", target["collection"], target["id"])
+
+    def _read_versioned_target(self, target: dict[str, Any]) -> dict[str, Any] | None:
+        """The stored value and its token, minting one for a row that has none."""
+        if target["kind"] == "key":
+            row = self._db.execute(
+                """SELECT k.value, v.version
+                     FROM _kv AS k
+                     LEFT JOIN _mirk_atomic_versions AS v
+                       ON v.kind = 'key' AND v.collection = '' AND v.target_key = k.key
+                    WHERE k.key = ?""",
+                (target["key"],),
+            ).fetchone()
+            if row is None:
+                return None
+            encoded, version = row[0], row[1]
+        else:
+            table = self._table_if_exists(target["collection"])
+            if table is None:
+                return None
+            row = self._db.execute(
+                f"""SELECT c.data, v.version
+                      FROM {table} AS c
+                      LEFT JOIN _mirk_atomic_versions AS v
+                        ON v.kind = 'record' AND v.collection = ? AND v.target_key = c.id
+                     WHERE c.id = ?""",
+                (target["collection"], target["id"]),
+            ).fetchone()
+            if row is None:
+                return None
+            encoded, version = row[0], row[1]
+        if version is None:
+            with self._write_scope():
+                version = self._write_version(*self._version_parts(target))
+        return {"value": json.loads(encoded), "version": str(version)}
+
+    def getVersioned(self, target: dict[str, Any]) -> dict[str, Any] | None:
+        """The value at a target and the token identifying this exact revision."""
+        return self._read_versioned_target(target)
+
+    def mutateAtomically(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Apply conditions and operations inside one BEGIN IMMEDIATE transaction."""
+        validated = validate_atomic_request(request, self._atomic_limits)
+        try:
+            with self._write():
+                return self._decide_atomic(validated)
+        except sqlite3.OperationalError as error:
+            message = str(error).lower()
+            if "locked" in message or "busy" in message:
+                raise AtomicMutationBackendError(
+                    "unavailable", True, "SQLite is busy or locked."
+                ) from error
+            raise
+
+    def _decide_atomic(self, validated: ValidatedRequest) -> dict[str, Any]:
+        key = validated.idempotency_key
+        if key is not None:
+            prior = self._db.execute(
+                "SELECT request_digest, result_json FROM _mirk_atomic_receipts"
+                " WHERE idempotency_key = ?",
+                (key,),
+            ).fetchone()
+            if prior is not None:
+                if str(prior[0]) != validated.request_digest:
+                    return {
+                        "status": "idempotency-conflict",
+                        "key": key,
+                        "expectedRequestDigest": str(prior[0]),
+                        "receivedRequestDigest": validated.request_digest,
+                    }
+                stored: dict[str, Any] = json.loads(prior[1])
+                replayed: dict[str, Any] = {
+                    "status": "replayed",
+                    "requestDigest": stored["requestDigest"],
+                    "versions": stored["versions"],
+                }
+                if "outcome" in stored:
+                    replayed["outcome"] = stored["outcome"]
+                return replayed
+
+        for condition in validated.conditions:
+            observed = self._read_versioned_target(condition["target"])
+            if not condition_matches(condition, observed):
+                return {
+                    "status": "conflict",
+                    "condition": clone_condition(condition),
+                    "observed": (
+                        "missing"
+                        if observed is None
+                        else observed["version"]
+                        if condition["expected"] == "version"
+                        else "present"
+                    ),
+                }
+
+        versions: list[dict[str, Any]] = []
+        for operation in validated.operations:
+            target = operation_target(operation)
+            parts = self._version_parts(target)
+            op = operation["op"]
+            if op == "set":
+                self._db.execute(
+                    """INSERT INTO _kv (key, value, updated_at) VALUES (?, ?, datetime('now'))
+                       ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                                     updated_at = datetime('now')""",
+                    (operation["key"], dumps_json(operation["value"])),
+                )
+                versions.append({"target": target, "version": self._write_version(*parts)})
+            elif op == "delete":
+                self._db.execute("DELETE FROM _kv WHERE key = ?", (operation["key"],))
+                self._clear_version(*parts)
+                versions.append({"target": target, "version": None})
+            elif op == "put":
+                table = self._ensure_table(operation["collection"])
+                self._db.execute(
+                    f"""INSERT INTO {table} (id, data, updated_at)
+                        VALUES (?, ?, datetime('now'))
+                        ON CONFLICT(id) DO UPDATE SET data = excluded.data,
+                                                      updated_at = datetime('now')""",
+                    (operation["item"]["id"], dumps_json(operation["item"])),
+                )
+                versions.append({"target": target, "version": self._write_version(*parts)})
+            else:
+                existing = self._table_if_exists(operation["collection"])
+                if existing is not None:
+                    self._db.execute(f"DELETE FROM {existing} WHERE id = ?", (operation["id"],))
+                self._clear_version(*parts)
+                versions.append({"target": target, "version": None})
+
+        applied: dict[str, Any] = {
+            "status": "applied",
+            "requestDigest": validated.request_digest,
+            "versions": versions,
+        }
+        if validated.has_outcome:
+            applied["outcome"] = clone_json(validated.outcome)
+        if key is not None:
+            self._db.execute(
+                "INSERT INTO _mirk_atomic_receipts"
+                " (idempotency_key, request_digest, result_json) VALUES (?, ?, ?)",
+                (key, validated.request_digest, dumps_json(applied)),
+            )
+        return applied
 
 
 def connection_of(handle: object) -> sqlite3.Connection:

@@ -1,0 +1,29 @@
+{
+  "id": "store/atomic/reject-put-with-an-empty-collection",
+  "title": "put needs a non-empty collection",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "put",
+              "collection": "",
+              "item": {
+                "id": "x"
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "put requires a collection and an item with a string id"
+      }
+    }
+  ]
+}

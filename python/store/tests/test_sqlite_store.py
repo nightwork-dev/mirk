@@ -482,3 +482,29 @@ def test_is_table_registry_conflict_matches_real_constraint_errors(tmp_path: Pat
         holder.execute("ROLLBACK")
         holder.close()
         contender.close()
+
+
+def test_get_versioned_assigns_a_token_to_a_row_written_before_versions_existed(
+    tmp_path: Path,
+) -> None:
+    """A file from before the bookkeeping tables still reads as versioned."""
+    path = str(tmp_path / "legacy-rows.db")
+    store = SqliteStore(path, version_identity="legacy")
+    try:
+        store.set("old", 1)
+        store.put("things", {"id": "t1"})
+        # Drop the tokens, leaving exactly the shape a pre-atomic file has.
+        store.connection.execute("DELETE FROM _mirk_atomic_versions")
+        before = store.connection.execute(
+            "SELECT value FROM _mirk_atomic_sequence WHERE id = 1"
+        ).fetchone()[0]
+
+        assigned = store.getVersioned({"kind": "key", "key": "old"})
+        assert assigned == {"value": 1, "version": f"legacy-v{before + 1}"}
+        record = store.getVersioned({"kind": "record", "collection": "things", "id": "t1"})
+        assert record == {"value": {"id": "t1"}, "version": f"legacy-v{before + 2}"}
+
+        # Assigned once, then stable: a second read does not mint a new token.
+        assert store.getVersioned({"kind": "key", "key": "old"}) == assigned
+    finally:
+        store.close()

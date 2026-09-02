@@ -63,6 +63,10 @@ let nextMemoryStoreId = 1;
 export interface InMemoryStoreOptions {
   /** Override any of the in-process atomic request bounds. */
   atomicLimits?: Partial<AtomicMutationLimits>;
+  /** The prefix every version token this store mints carries. Defaults to a
+   *  per-process serial (`m1`, `m2`, …); pin it when tokens themselves are the
+   *  thing under comparison, as the conformance corpus does. */
+  versionIdentity?: string;
 }
 
 export class InMemoryStore
@@ -80,6 +84,7 @@ export class InMemoryStore
       options.atomicLimits,
       IN_PROCESS_ATOMIC_LIMITS
     );
+    this.versionPrefix = options.versionIdentity ?? `m${nextMemoryStoreId++}`;
   }
 
   /** Key-value storage. */
@@ -91,7 +96,7 @@ export class InMemoryStore
   /** Version metadata is separate from values so deletes never revive tokens. */
   private versions = new Map<string, StoreVersion>();
   private nextVersionNumber = 1;
-  private readonly versionPrefix = `m${nextMemoryStoreId++}`;
+  private readonly versionPrefix: string;
   private receipts = new Map<
     string,
     {

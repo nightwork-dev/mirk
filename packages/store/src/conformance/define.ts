@@ -81,12 +81,15 @@ export function isMarkThrows(marker: StepMarker): marker is MarkThrows {
   return "throws" in marker;
 }
 
-const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Two or more kebab segments. The first is the corpus directory the generator
+ *  clears and counts; anything between it and the name nests
+ *  (`artifact/hashing/canonical-json/<name>`). */
+const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)+$/;
 
 export function defineScenario(input: ScenarioInput): AuthoredScenario {
   if (!ID_PATTERN.test(input.id)) {
     throw new Error(
-      `scenario id must be "<directory>/<kebab-name>"; got ${JSON.stringify(input.id)}.`,
+      `scenario id must be "<directory>/…/<kebab-name>" with kebab segments; got ${JSON.stringify(input.id)}.`,
     );
   }
   if (input.title.trim().length === 0) {

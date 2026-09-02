@@ -3,13 +3,17 @@
 ## Adding a port without editing this file
 
 A scenario names the ports it touches. The runner resolves those names to a
-target object by convention, so the authors of the vector, search and graph
-ports never edit this module:
+target object by convention, so the authors of the vector, search, graph, hash
+and artifact ports never edit this module:
 
-- The names ``store``, ``kv`` and ``collection`` all mean the backend store
-  itself: an `InMemoryStore`, or an open `SqliteStore`.
-- Any other port name ``p`` resolves by importing ``mirk.store.<p>`` and calling
-  its module-level factory::
+- The names ``store``, ``kv``, ``collection`` and ``atomic`` all mean the
+  backend store itself: an `InMemoryStore`, or an open `SqliteStore`. ``atomic``
+  binds the store (`getVersioned`/`mutateAtomically` live on it directly), not a
+  separate facet.
+- Any other port name ``p`` resolves by importing first ``mirk.store.<p>`` and,
+  if that module does not exist, ``mirk.<p>`` — the store's own ports (``hash``)
+  live under the first, a sibling package's ports (``fixtures``, ``artifact``)
+  under the second — and calling its module-level factory::
 
       def conformance_target(backend: str, connection: object) -> object: ...
 
@@ -18,13 +22,25 @@ ports never edit this module:
   already opened rather than opening a second one against the same file.
   Return an object whose methods are named exactly as the corpus spells them.
 
-If the module does not exist, or exposes no ``conformance_target``, the scenario
-is a recorded skip rather than a failure. Skips are data: the suite counts them
-per port and the integrator makes them fatal.
+If neither module exists, or the one that does exposes no ``conformance_target``,
+the scenario is a recorded skip rather than a failure. Skips are data: the suite
+counts them per port and the integrator makes them fatal.
+
+## The `hash` port's wrapper expansion
+
+JSON cannot express three inputs `hash` scenarios need: negative zero, a lone
+surrogate, and the integer/float distinction. Corpus args for the `hash` port
+only may contain wrapper objects — exactly one key among ``$num`` (parse this
+decimal text as a float64), ``$codepoints`` (build a string from these code
+points, lone surrogates allowed), ``$b64`` (raw bytes) or ``$utf8`` (UTF-8 bytes
+of this string) — recursively through arrays and objects. `run_scenario`
+expands them before dispatch for that port only; every other port's args are
+ordinary JSON and mean themselves.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from importlib import import_module
@@ -38,6 +54,7 @@ __all__ = [
     "StepFailure",
     "StepOutcome",
     "TargetUnavailableError",
+    "expand_hash_wrappers",
     "normalize",
     "resolve_target",
     "run_scenario",
@@ -45,7 +62,7 @@ __all__ = [
     "scenario_port",
 ]
 
-STORE_PORTS = frozenset({"store", "kv", "collection"})
+STORE_PORTS = frozenset({"store", "kv", "collection", "atomic"})
 
 
 class TargetUnavailableError(Exception):
@@ -103,20 +120,28 @@ def scenario_port(scenario: Scenario) -> str:
 
 
 def resolve_target(port: str, backend: str, connection: object) -> object:
-    """Build the object a scenario's steps are dispatched onto."""
+    """Build the object a scenario's steps are dispatched onto.
+
+    Tries ``mirk.store.<port>`` first, then ``mirk.<port>`` (S0 ruling 8): the
+    store's own extra ports live in the first, a sibling package's ports (e.g.
+    ``mirk.fixtures``, ``mirk.artifact``) in the second.
+    """
     if port == "store":
         return connection
-    try:
-        module = import_module(f"mirk.store.{port}")
-    except ModuleNotFoundError as exc:
-        raise TargetUnavailableError(f"no module mirk.store.{port}") from exc
-    factory = getattr(module, "conformance_target", None)
-    if not callable(factory):
-        raise TargetUnavailableError(f"mirk.store.{port} exposes no conformance_target")
-    target = cast(Any, factory)(backend, connection)
-    if target is None:
-        raise TargetUnavailableError(f"mirk.store.{port}.conformance_target returned None")
-    return target
+    candidates = (f"mirk.store.{port}", f"mirk.{port}")
+    for module_name in candidates:
+        try:
+            module = import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+        factory = getattr(module, "conformance_target", None)
+        if not callable(factory):
+            raise TargetUnavailableError(f"{module_name} exposes no conformance_target")
+        target = cast(Any, factory)(backend, connection)
+        if target is None:
+            raise TargetUnavailableError(f"{module_name}.conformance_target returned None")
+        return target
+    raise TargetUnavailableError(f"no module {' or '.join(candidates)}")
 
 
 def normalize(value: Any) -> Any:
@@ -136,6 +161,30 @@ def _fallback(value: Any) -> Any:
     return str(value)
 
 
+def expand_hash_wrappers(value: Any) -> Any:
+    """Replace `hash`-port wrapper objects with the Python value they encode.
+
+    Recurses through plain lists and dicts. A dict is a wrapper only when it has
+    exactly one key drawn from the four names below; any other dict (including
+    one that happens to share a key name alongside others) is ordinary JSON and
+    is walked, not replaced.
+    """
+    if isinstance(value, list):
+        return [expand_hash_wrappers(item) for item in cast(list[Any], value)]
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        if list(mapping.keys()) == ["$num"]:
+            return float(cast(str, mapping["$num"]))
+        if list(mapping.keys()) == ["$codepoints"]:
+            return "".join(chr(int(point)) for point in cast(list[Any], mapping["$codepoints"]))
+        if list(mapping.keys()) == ["$b64"]:
+            return base64.b64decode(cast(str, mapping["$b64"]))
+        if list(mapping.keys()) == ["$utf8"]:
+            return cast(str, mapping["$utf8"]).encode("utf-8")
+        return {key: expand_hash_wrappers(item) for key, item in mapping.items()}
+    return value
+
+
 def run_step(target: object, op: str, args: list[Any]) -> StepOutcome:
     """Dispatch one step, reporting a returned value and a raise distinctly."""
     method = getattr(target, op, None)
@@ -150,10 +199,13 @@ def run_step(target: object, op: str, args: list[Any]) -> StepOutcome:
 def run_scenario(target: object, scenario: Scenario) -> list[StepFailure]:
     """Run every step in order, checking each ``expect`` before the next step."""
     failures: list[StepFailure] = []
+    expand_args = scenario_port(scenario) == "hash"
     for index, step in enumerate(scenario.steps):
         op = str(step.get("op", ""))
         raw_args = step.get("args")
         args: list[Any] = list(cast(list[Any], raw_args)) if isinstance(raw_args, list) else []
+        if expand_args:
+            args = [expand_hash_wrappers(item) for item in args]
         result = run_step(target, op, args)
         expect: Any = step.get("expect")
         if not isinstance(expect, dict):

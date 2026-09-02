@@ -1,0 +1,32 @@
+{
+  "id": "artifact/hashing/canonical-json/two-pow-53-plus-one",
+  "title": "an integer past 2^53 is clamped to the nearest float64",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$num": "9007199254740993"
+        }
+      ],
+      "expect": {
+        "value": "9007199254740992"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$num": "9007199254740993"
+        }
+      ],
+      "expect": {
+        "value": "c681da39d7273a6a24c15c9cac3a75526ff2ecf8ba4ee60346a0c70c8163bdb2"
+      }
+    }
+  ]
+}

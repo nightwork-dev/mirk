@@ -9,6 +9,12 @@
 // scenario's rows.
 
 import { InMemoryKv, InMemorySearchStore, InMemoryVectorStore, toAsync } from "../index.js";
+import {
+  canonicalDigest,
+  canonicalJson,
+  sha256Hex,
+  sha256HexBytes,
+} from "../canonical.js";
 import { SqliteAdapter } from "../adapters/sqlite.js";
 import { neighbors, traverse, traverseFrontierBatched } from "../graph.js";
 import {
@@ -36,7 +42,29 @@ const STORE_METHODS = [
   "remove",
   "count",
   "listWhereIn",
+  "getVersioned",
+  "mutateAtomically",
 ] as const;
+
+/** Every version token in the corpus is pinned, so both conformance stores mint
+ *  them under one identity and a token reads `conformance-v<n>`. */
+const CONFORMANCE_VERSION_IDENTITY = "conformance";
+
+/** The `hash` target: canonical JSON and SHA-256, with no backend behind them.
+ *  It is the same object for both backend names — the scenario still runs twice,
+ *  which costs nothing and keeps one execution path for every scenario. */
+function hashApi(): Record<string, unknown> {
+  return {
+    canonicalJson: (value: unknown) => canonicalJson(value),
+    canonicalDigest: (value: unknown) => canonicalDigest(value),
+    sha256Hex: (text: string) => sha256Hex(text),
+    sha256Bytes: (bytes: Uint8Array) => ({
+      algorithm: "sha256",
+      value: sha256HexBytes(bytes),
+      sizeBytes: bytes.byteLength,
+    }),
+  };
+}
 
 const VECTOR_METHODS = ["upsert", "upsertMany", "get", "has", "remove", "count", "search"] as const;
 
@@ -105,6 +133,10 @@ export function unsupportedCapabilities(
 export function openTarget(backend: BackendName, scenario: TargetRequest): OpenTarget {
   const kind = targetKindFor(scenario.ports);
 
+  if (kind === "hash") {
+    return { target: { kind, api: hashApi() }, dispose: () => {} };
+  }
+
   if (backend === "memory") {
     if (kind === "vector") {
       const store = new InMemoryVectorStore({ dimensions: vectorDimensionsFor(scenario.steps) });
@@ -114,7 +146,7 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
       const store = new InMemorySearchStore();
       return { target: { kind, api: methodApi(store, SEARCH_METHODS) }, dispose: () => {} };
     }
-    const store = new InMemoryKv();
+    const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
     return {
       target: { kind, api: kind === "graph" ? graphApi(store) : methodApi(store, STORE_METHODS) },
       dispose: () => {},
@@ -123,8 +155,12 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
 
   const adapter = new SqliteAdapter(
     kind === "vector"
-      ? { path: ":memory:", dimensions: vectorDimensionsFor(scenario.steps) }
-      : { path: ":memory:" },
+      ? {
+          path: ":memory:",
+          dimensions: vectorDimensionsFor(scenario.steps),
+          versionIdentity: CONFORMANCE_VERSION_IDENTITY,
+        }
+      : { path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY },
   );
   const dispose = () => adapter.close();
 

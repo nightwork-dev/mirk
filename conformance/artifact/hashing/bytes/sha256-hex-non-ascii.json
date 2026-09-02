@@ -1,0 +1,19 @@
+{
+  "id": "artifact/hashing/bytes/sha256-hex-non-ascii",
+  "title": "sha256Hex hashes the UTF-8 encoding of its text, not its code units",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "sha256Hex",
+      "args": [
+        "café 中文"
+      ],
+      "expect": {
+        "value": "0e206b41c05c5b1a1b06c3d71c7d7aec98939f12cad1dedce1f8bfb128aff8fd"
+      }
+    }
+  ]
+}

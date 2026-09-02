@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-boundary-1e20",
+  "title": "a decimal exponent of 20 stays in fixed form",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        100000000000000000000
+      ],
+      "expect": {
+        "value": "100000000000000000000"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        100000000000000000000
+      ],
+      "expect": {
+        "value": "c344e9487bfbd5c4e03c9fb90d62a5dde5e00b54d55c46e9f4a803aea162b80c"
+      }
+    }
+  ]
+}

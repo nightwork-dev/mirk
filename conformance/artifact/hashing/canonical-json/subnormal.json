@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/subnormal",
+  "title": "the smallest subnormal keeps its shortest round-trip form",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        5e-324
+      ],
+      "expect": {
+        "value": "5e-324"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        5e-324
+      ],
+      "expect": {
+        "value": "c46e7ca1be4c8734f373a56530787288fa2058d73d07855e9247e949f811a42a"
+      }
+    }
+  ]
+}

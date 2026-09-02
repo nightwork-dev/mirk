@@ -1,0 +1,19 @@
+{
+  "id": "store/atomic/reject-request-not-an-object",
+  "title": "a request that is not an object is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        "nope"
+      ],
+      "expect": {
+        "throws": "request must be a plain object"
+      }
+    }
+  ]
+}

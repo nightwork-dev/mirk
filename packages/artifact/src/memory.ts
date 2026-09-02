@@ -27,6 +27,7 @@ import {
   chunks,
   cloneJson,
 } from "./util.js";
+import { compareCodePoints } from "@mirk/store";
 
 export class ObjectAlreadyExistsError extends Error {
   constructor(key: string) {
@@ -103,7 +104,7 @@ export class InMemoryObjectStore implements ListableObjectStore {
     return [...this.#objects.values()]
       .filter(({ info }) => info.key.startsWith(prefix))
       .map(({ info }) => cloneJson(info))
-      .sort((a, b) => a.key.localeCompare(b.key));
+      .sort((a, b) => compareCodePoints(a.key, b.key));
   }
 }
 
@@ -280,7 +281,7 @@ export class InMemoryArtifactRepository
     ttlMs?: number;
     now?: number;
   }): Promise<ArtifactLeaseResult> {
-    const now = input.now ?? Date.now();
+    const now = input.now ?? this.#now();
     const ttlMs = Math.max(1, input.ttlMs ?? 30_000);
     this.#reclaimExpired(input.objectKey, now);
     const active = [...this.#leases.values()].filter(
@@ -326,7 +327,7 @@ export class InMemoryArtifactRepository
     ttlMs?: number;
     now?: number;
   }): Promise<ArtifactLeaseResult> {
-    const now = input.now ?? Date.now();
+    const now = input.now ?? this.#now();
     const current = this.#leases.get(input.leaseId);
     if (
       !current ||
@@ -430,15 +431,15 @@ export class InMemoryArtifactRepository
         `lineage edge already exists: ${edge.id}`
       );
     if (
-      edge.sourceArtifactId === edge.resultArtifactId ||
-      (await reaches(this, edge.resultArtifactId, edge.sourceArtifactId))
-    )
-      throw new ArtifactConflictError("lineage cycle forbidden");
-    if (
       !(await this.get(edge.sourceArtifactId)) ||
       !(await this.get(edge.resultArtifactId))
     )
       throw new Error("lineage endpoints must exist");
+    if (
+      edge.sourceArtifactId === edge.resultArtifactId ||
+      (await reaches(this, edge.resultArtifactId, edge.sourceArtifactId))
+    )
+      throw new ArtifactConflictError("lineage cycle forbidden");
     if (edge.parameters)
       assertBoundedJson(edge.parameters, "lineage parameters");
     this.#edges.set(edge.id, cloneJson(edge));
@@ -459,7 +460,7 @@ export function compareRecords(
   a: StoredArtifactRecord,
   b: StoredArtifactRecord
 ): number {
-  return b.createdAt - a.createdAt || b.id.localeCompare(a.id);
+  return b.createdAt - a.createdAt || compareCodePoints(b.id, a.id);
 }
 export function encodeCursor(record: StoredArtifactRecord): string {
   return `${record.createdAt}:${record.id}`;

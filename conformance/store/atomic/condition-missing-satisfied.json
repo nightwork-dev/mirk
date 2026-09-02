@@ -1,0 +1,63 @@
+{
+  "id": "store/atomic/condition-missing-satisfied",
+  "title": "a missing condition on an absent target lets the batch apply",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "92b42766b665c9f1ec75845cc327df61af45c7d22f9afb0867063843bbb76e52",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 1,
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

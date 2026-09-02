@@ -1,0 +1,88 @@
+{
+  "id": "store/atomic/condition-missing-conflict",
+  "title": "a missing condition on a written target conflicts and observes present",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        1
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "b",
+              "value": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "condition": {
+            "target": {
+              "kind": "key",
+              "key": "a"
+            },
+            "expected": "missing"
+          },
+          "observed": "present"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "b"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "set",
+      "args": [
+        "c",
+        3
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "c"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 3,
+          "version": "conformance-v2"
+        }
+      }
+    }
+  ]
+}

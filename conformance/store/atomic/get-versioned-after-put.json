@@ -1,0 +1,40 @@
+{
+  "id": "store/atomic/get-versioned-after-put",
+  "title": "a plain put mints a version token for the record target",
+  "ports": [
+    "atomic",
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "x",
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "c",
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "id": "x",
+            "n": 1
+          },
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

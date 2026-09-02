@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 
 from mirk.store import SqliteStore, hash_name
+from mirk.store.atomic import validate_atomic_request
 from mirk.store.conformance import repo_root
 from mirk.store.search import InMemorySearchStore
 from mirk.store.sqlite_search import SqliteSearchFacet
@@ -818,3 +819,282 @@ def test_both_languages_skip_an_occupied_suffixed_candidate(tmp_path: Path) -> N
     finally:
         store.close()
     assert _squatter_rows(ts_first) == expected_squatter
+
+
+# ── Atomic mutation across the two languages ────────────────────────────────
+
+DIST_ATOMIC = REPO / "packages" / "store" / "dist" / "atomic.js"
+
+DIGEST_SCRIPT = f"""
+import {{ validateAtomicRequest }} from {json.dumps(str(DIST_ATOMIC))};
+
+const requests = JSON.parse(process.argv[2]);
+console.log(
+  JSON.stringify(requests.map((request) => validateAtomicRequest(request).requestDigest))
+);
+"""
+
+# Raw JSON text, not a Python literal: the same bytes reach `json.loads` here and
+# `JSON.parse` under Node, so neither language's writer can quietly normalize a
+# case away before the digest sees it.
+DIGEST_REQUESTS_JSON = """[
+  {"operations": [{"op": "set", "key": "z", "value": {"deep": [-0.0, {"also": -0.0}]}}]},
+  {"operations": [{"op": "set", "key": "z", "value": {"deep": [0, {"also": 0}]}}]},
+  {"operations": [{"op": "set", "key": "k\\u00e9y",
+    "value": {"\\uffff": 1, "\\ud83d\\ude00": 2, "a": 3}}]},
+  {"operations": [{"op": "set", "key": "n", "value": {"a": 100.0, "b": 100}}]},
+  {"operations": [{"op": "set", "key": "n", "value": {"a": 100, "b": 100.0}}]},
+  {
+    "conditions": [
+      {"target": {"kind": "record", "collection": "c", "id": "a"}, "expected": "present"},
+      {"target": {"kind": "key", "key": "b"}, "expected": "missing"}
+    ],
+    "operations": [{"op": "put", "collection": "c", "item": {"id": "a", "n": 1}}],
+    "idempotency": {"key": "ignored-by-the-digest", "outcome": {"ok": true}}
+  },
+  {
+    "conditions": [
+      {"target": {"kind": "key", "key": "b"}, "expected": "missing"},
+      {"target": {"kind": "record", "collection": "c", "id": "a"}, "expected": "present"}
+    ],
+    "operations": [{"op": "put", "collection": "c", "item": {"id": "a", "n": 1}}],
+    "idempotency": {"key": "a-different-key", "outcome": {"ok": true}}
+  }
+]"""
+
+
+def test_request_digests_match_the_real_typescript(tmp_path: Path) -> None:
+    """The canonical-JSON contract, pinned against the shipped implementation.
+
+    Every digest here is produced twice: once by `mirk.store.atomic` and once by
+    `validateAtomicRequest` out of the built bundle under Node. Nothing is
+    hard-coded, so the assertion cannot pass by copying a stale constant.
+    """
+    requests: list[Any] = json.loads(DIGEST_REQUESTS_JSON)
+    mine = [validate_atomic_request(request).request_digest for request in requests]
+    theirs: list[str] = run_node_script(DIGEST_SCRIPT, tmp_path, DIGEST_REQUESTS_JSON)
+    assert mine == theirs
+
+    # A negative zero anywhere inside the value is the same request as a zero.
+    assert mine[0] == mine[1]
+    # An integral float and an int are one JSON number.
+    assert mine[3] == mine[4]
+    # Conditions sort before the digest and the idempotency key is excluded, so
+    # the last two requests are one request identity.
+    assert mine[5] == mine[6]
+    # The astral key really participates: it is not silently dropped.
+    assert len({*mine}) == 4
+
+
+ATOMIC_TS_WRITE_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2], versionIdentity: "ts" }});
+adapter.kv.set("seed", {{ n: 1 }});
+adapter.kv.set("doomed", true);
+adapter.kv.put("things", {{ id: "ghost", weight: 9 }});
+const seed = adapter.kv.getVersioned({{ kind: "key", key: "seed" }});
+const request = {{
+  conditions: [
+    {{ target: {{ kind: "key", key: "fresh" }}, expected: "missing" }},
+    {{
+      target: {{ kind: "key", key: "seed" }},
+      expected: "version",
+      version: seed.version,
+    }},
+  ],
+  operations: [
+    {{ op: "set", key: "fresh", value: {{ from: "ts", ratio: 1.5, whole: 2.0 }} }},
+    {{ op: "put", collection: "things", item: {{ id: "t1", weight: 2 }} }},
+    {{ op: "delete", key: "doomed" }},
+    {{ op: "remove", collection: "things", id: "ghost" }},
+  ],
+  idempotency: {{ key: "k1", outcome: {{ accepted: true, at: "ts" }} }},
+}};
+const result = adapter.kv.mutateAtomically(request);
+const conflicting = {{
+  operations: [{{ op: "set", key: "fresh", value: "different" }}],
+  idempotency: {{ key: "k1" }},
+}};
+adapter.close();
+console.log(JSON.stringify({{ result, seedVersion: seed.version, request, conflicting }}));
+"""
+
+
+ATOMIC_TS_READBACK_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const payload = JSON.parse(process.argv[3]);
+const adapter = new SqliteAdapter({{ path: process.argv[2], versionIdentity: "never-used" }});
+const out = {{
+  versions: payload.targets.map((target) => adapter.kv.getVersioned(target)),
+  replay: adapter.kv.mutateAtomically(payload.request),
+  conflict: adapter.kv.mutateAtomically(payload.conflicting),
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+def _version_number(token: str) -> int:
+    prefix, _, number = token.rpartition("-v")
+    assert prefix == "ts", f"token {token!r} does not carry the file's identity"
+    return int(number)
+
+
+def test_atomic_mutation_round_trips_between_the_two_languages(tmp_path: Path) -> None:
+    """TypeScript mutates a file atomically; Python replays it, then the reverse.
+
+    Both directions assert on the version tokens and on the request digest, so
+    the sequence, the persisted identity, the receipt table and the canonical
+    request encoding are all proven shared rather than described as shared.
+    """
+    db = tmp_path / "atomic-exchange.db"
+    written: dict[str, Any] = run_node_script(ATOMIC_TS_WRITE_SCRIPT, tmp_path, str(db))
+    ts_result: dict[str, Any] = written["result"]
+    assert ts_result["status"] == "applied"
+
+    store = SqliteStore(str(db), version_identity="python-would-have-used-this")
+    try:
+        # (a) Python reads the tokens TypeScript minted, out of the same file.
+        fresh = store.getVersioned({"kind": "key", "key": "fresh"})
+        record = store.getVersioned({"kind": "record", "collection": "things", "id": "t1"})
+        assert fresh is not None and record is not None
+        assert fresh == {
+            "value": {"from": "ts", "ratio": 1.5, "whole": 2},
+            "version": ts_result["versions"][0]["version"],
+        }
+        assert record["version"] == ts_result["versions"][1]["version"]
+        assert _version_number(fresh["version"]) > _version_number(written["seedVersion"])
+        # The delete and the remove dropped their tokens on both sides.
+        assert store.getVersioned({"kind": "key", "key": "doomed"}) is None
+        assert store.getVersioned({"kind": "record", "collection": "things", "id": "ghost"}) is None
+
+        # Python replays TypeScript's request under the same key and gets the
+        # receipt TypeScript wrote, digest and version tokens included.
+        replay = store.mutateAtomically(written["request"])
+        assert replay["status"] == "replayed"
+        assert {key: value for key, value in replay.items() if key != "status"} == {
+            key: value for key, value in ts_result.items() if key != "status"
+        }
+
+        # A different request under the same key is refused, and the digest it
+        # was measured against is the one TypeScript computed.
+        conflict = store.mutateAtomically(written["conflicting"])
+        assert conflict["status"] == "idempotency-conflict"
+        assert conflict["expectedRequestDigest"] == ts_result["requestDigest"]
+        assert conflict["receivedRequestDigest"] != ts_result["requestDigest"]
+
+        # (b) Python now writes its own atomic mutation into the same file.
+        python_request: dict[str, Any] = {
+            "conditions": [
+                {
+                    "target": {"kind": "key", "key": "fresh"},
+                    "expected": "version",
+                    "version": fresh["version"],
+                }
+            ],
+            "operations": [
+                {"op": "set", "key": "from-python", "value": {"n": 3}},
+                {"op": "put", "collection": "things", "item": {"id": "p1", "weight": 1}},
+            ],
+            "idempotency": {"key": "k2", "outcome": {"accepted": True, "at": "python"}},
+        }
+        python_result = store.mutateAtomically(python_request)
+        assert python_result["status"] == "applied"
+        # Python continued the file's sequence and identity, not its own.
+        assert _version_number(python_result["versions"][0]["version"]) == (
+            _version_number(record["version"]) + 1
+        )
+    finally:
+        store.close()
+
+    payload = json.dumps(
+        {
+            "targets": [
+                {"kind": "key", "key": "from-python"},
+                {"kind": "record", "collection": "things", "id": "p1"},
+            ],
+            "request": python_request,
+            "conflicting": {
+                "operations": [{"op": "set", "key": "from-python", "value": "other"}],
+                "idempotency": {"key": "k2"},
+            },
+        }
+    )
+    back: dict[str, Any] = run_node_script(ATOMIC_TS_READBACK_SCRIPT, tmp_path, str(db), payload)
+    assert [entry["version"] for entry in back["versions"]] == [
+        entry["version"] for entry in python_result["versions"]
+    ]
+    assert back["versions"][0]["value"] == {"n": 3}
+    assert back["replay"]["status"] == "replayed"
+    assert back["replay"]["requestDigest"] == python_result["requestDigest"]
+    assert back["replay"]["versions"] == python_result["versions"]
+    assert back["replay"]["outcome"] == {"accepted": True, "at": "python"}
+    assert back["conflict"]["status"] == "idempotency-conflict"
+    assert back["conflict"]["expectedRequestDigest"] == python_result["requestDigest"]
+
+
+LEGACY_TS_WRITE_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2], versionIdentity: "ts" }});
+adapter.kv.set("plain", {{ n: 1 }});
+adapter.kv.put("things", {{ id: "t1", weight: 2 }});
+const out = {{
+  key: adapter.kv.getVersioned({{ kind: "key", key: "plain" }}).version,
+  record: adapter.kv.getVersioned({{
+    kind: "record",
+    collection: "things",
+    id: "t1",
+  }}).version,
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+LEGACY_TS_READ_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2], versionIdentity: "never-used" }});
+const out = {{
+  key: adapter.kv.getVersioned({{ kind: "key", key: "plain" }}),
+  record: adapter.kv.getVersioned({{ kind: "record", collection: "things", id: "t1" }}),
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_plain_writes_carry_version_tokens_across_languages(tmp_path: Path) -> None:
+    """`set` and `put` mint tokens in both languages, and each reads the other's."""
+    ts_db = tmp_path / "legacy-ts.db"
+    ts_tokens: dict[str, str] = run_node_script(LEGACY_TS_WRITE_SCRIPT, tmp_path, str(ts_db))
+    store = SqliteStore(str(ts_db))
+    try:
+        key_read = store.getVersioned({"kind": "key", "key": "plain"})
+        record_read = store.getVersioned({"kind": "record", "collection": "things", "id": "t1"})
+        assert key_read is not None and record_read is not None
+        # The tokens TypeScript's plain writes persisted, not freshly minted ones.
+        assert key_read["version"] == ts_tokens["key"]
+        assert record_read["version"] == ts_tokens["record"]
+    finally:
+        store.close()
+
+    py_db = tmp_path / "legacy-py.db"
+    writer = SqliteStore(str(py_db), version_identity="ts")
+    try:
+        writer.set("plain", {"n": 1})
+        writer.put("things", {"id": "t1", "weight": 2})
+        expected_key = writer.getVersioned({"kind": "key", "key": "plain"})
+        expected_record = writer.getVersioned(
+            {"kind": "record", "collection": "things", "id": "t1"}
+        )
+        assert expected_key is not None and expected_record is not None
+    finally:
+        writer.close()
+
+    read_back: dict[str, Any] = run_node_script(LEGACY_TS_READ_SCRIPT, tmp_path, str(py_db))
+    assert read_back["key"] == expected_key
+    assert read_back["record"] == expected_record

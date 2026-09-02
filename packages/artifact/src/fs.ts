@@ -12,6 +12,7 @@ import type {
 } from "./types.js";
 import { ObjectAlreadyExistsError } from "./memory.js";
 import { assertObjectKey, chunks } from "./util.js";
+import { compareCodePoints } from "@mirk/store";
 
 /**
  * Filesystem-backed {@link ObjectStore} — durable object bytes on local disk,
@@ -163,7 +164,7 @@ export class FileObjectStore implements ListableObjectStore {
       const info = await this.head(key);
       if (info) infos.push(info);
     }
-    return infos.sort((a, b) => a.key.localeCompare(b.key));
+    return infos.sort((a, b) => compareCodePoints(a.key, b.key));
   }
 
   /** Resolve a suffixed key to an absolute path, refusing any escape from root.

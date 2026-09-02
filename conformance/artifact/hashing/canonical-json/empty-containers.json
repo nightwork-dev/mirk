@@ -1,0 +1,34 @@
+{
+  "id": "artifact/hashing/canonical-json/empty-containers",
+  "title": "empty containers nest without whitespace",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "a": {},
+          "b": []
+        }
+      ],
+      "expect": {
+        "value": "{\"a\":{},\"b\":[]}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "a": {},
+          "b": []
+        }
+      ],
+      "expect": {
+        "value": "aeeba1e56a144077f89e26c930dad7cf933e9383cfb8e33ddff618233b29be76"
+      }
+    }
+  ]
+}

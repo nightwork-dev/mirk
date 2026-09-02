@@ -1,0 +1,32 @@
+{
+  "id": "artifact/hashing/canonical-json/negative-zero",
+  "title": "negative zero prints as 0",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$num": "-0"
+        }
+      ],
+      "expect": {
+        "value": "0"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$num": "-0"
+        }
+      ],
+      "expect": {
+        "value": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+      }
+    }
+  ]
+}

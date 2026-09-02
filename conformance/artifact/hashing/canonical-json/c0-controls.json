@@ -1,0 +1,40 @@
+{
+  "id": "artifact/hashing/canonical-json/c0-controls",
+  "title": "C0 controls without a short form escape as lowercase \\u00XX",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$codepoints": [
+            0,
+            1,
+            31
+          ]
+        }
+      ],
+      "expect": {
+        "value": "\"\\u0000\\u0001\\u001f\""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$codepoints": [
+            0,
+            1,
+            31
+          ]
+        }
+      ],
+      "expect": {
+        "value": "842096a6d3fcd0968fe35809ea5810d33f7072b93743fc0f7b4ff484ae727d20"
+      }
+    }
+  ]
+}

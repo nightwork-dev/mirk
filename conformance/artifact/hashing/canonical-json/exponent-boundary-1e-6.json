@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-boundary-1e-6",
+  "title": "a decimal exponent of -6 stays in fixed form",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        0.000001
+      ],
+      "expect": {
+        "value": "0.000001"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        0.000001
+      ],
+      "expect": {
+        "value": "159fb29a827ad04b260aa6c8ab6d8637f8f2b38af5c4f3cb49d6a21205e040f8"
+      }
+    }
+  ]
+}

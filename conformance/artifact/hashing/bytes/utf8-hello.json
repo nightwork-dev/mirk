@@ -1,0 +1,25 @@
+{
+  "id": "artifact/hashing/bytes/utf8-hello",
+  "title": "sha256 over the UTF-8 bytes of a short string reports size and lowercase hex",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "sha256Bytes",
+      "args": [
+        {
+          "$utf8": "hello"
+        }
+      ],
+      "expect": {
+        "value": {
+          "algorithm": "sha256",
+          "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+          "sizeBytes": 5
+        }
+      }
+    }
+  ]
+}

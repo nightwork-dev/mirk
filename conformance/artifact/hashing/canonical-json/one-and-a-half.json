@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/one-and-a-half",
+  "title": "a simple fraction round-trips",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        1.5
+      ],
+      "expect": {
+        "value": "1.5"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        1.5
+      ],
+      "expect": {
+        "value": "9f29a130438b81170b92a42650f9a94291ecad60bd47af2a3886e75f7f728725"
+      }
+    }
+  ]
+}
