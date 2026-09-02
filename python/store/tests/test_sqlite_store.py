@@ -5,11 +5,16 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from mirk.store import SqliteStore, hash_name
-from mirk.store.sqlite import legacy_collection_table
+from mirk.store.sqlite import (
+    REGISTRY_TABLE,
+    is_table_registry_conflict,
+    legacy_collection_table,
+)
 
 
 def test_hash_name_matches_the_known_typescript_values() -> None:
@@ -364,3 +369,116 @@ def test_an_unclaimed_table_on_a_suffixed_candidate_is_skipped(tmp_path: Path) -
         assert store.connection.execute(f"SELECT id FROM {squatter}").fetchall() == [("foreign",)]
     finally:
         store.close()
+
+
+def test_losing_the_race_to_register_re_reads_the_registry_and_uses_the_winners_table(
+    tmp_path: Path,
+) -> None:
+    """Two connections resolving the same NEW logical name at once: both miss the
+    registry, both pick the same candidate, one INSERT wins and the other violates
+    the primary key. The loser must not surface that from an ordinary ``put`` —
+    it restarts resolution, finds the winner's row as a registry hit, and adopts
+    the winner's table.
+
+    The interleaving is forced: the loser's connection is a ``sqlite3.Connection``
+    subclass whose FIRST ``INSERT INTO _mirk_tables`` is preceded by the winner's
+    insert, table creation, and row, committed from a separate connection on the
+    same file — the same seam the TypeScript race test uses.
+    """
+    name = "race"
+    legacy = legacy_collection_table(name)
+    path = str(tmp_path / "race.db")
+    SqliteStore(path).close()
+
+    insert_sql = f"INSERT INTO {REGISTRY_TABLE} (kind, name, table_name) VALUES (?, ?, ?)"
+    winner = sqlite3.connect(path, isolation_level=None)
+    fired = False
+
+    class InterceptingConnection(sqlite3.Connection):
+        def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+            nonlocal fired
+            if not fired and sql == insert_sql:
+                fired = True
+                winner.execute(insert_sql, ("collection", name, legacy))
+                winner.execute(
+                    f"""CREATE TABLE IF NOT EXISTS {legacy} (
+                      id TEXT PRIMARY KEY,
+                      data JSON NOT NULL,
+                      created_at TEXT DEFAULT (datetime('now')),
+                      updated_at TEXT DEFAULT (datetime('now')))"""
+                )
+                winner.execute(
+                    f"INSERT INTO {legacy} (id, data) VALUES (?, ?)",
+                    ("w1", '{"id":"w1","tag":"winner"}'),
+                )
+            return super().execute(sql, parameters)
+
+    loser_connection = sqlite3.connect(path, isolation_level=None, factory=InterceptingConnection)
+    loser = SqliteStore(path, connection=loser_connection)
+    try:
+        loser.put(name, {"id": "l1", "tag": "loser"})
+        assert fired is True
+        assert loser.getById(name, "w1") == {"id": "w1", "tag": "winner"}
+        assert loser.getById(name, "l1") == {"id": "l1", "tag": "loser"}
+        rows = loser_connection.execute(
+            "SELECT table_name FROM _mirk_tables WHERE kind = 'collection' AND name = ?",
+            (name,),
+        ).fetchall()
+        # Exactly one row for the name, and it is the winner's table — the loser
+        # recorded no row of its own.
+        assert rows == [(legacy,)]
+    finally:
+        loser.close()
+        winner.close()
+
+
+def test_is_table_registry_conflict_matches_real_constraint_errors(tmp_path: Path) -> None:
+    """The predicate fires on both shapes of ``_mirk_tables`` constraint violation
+    and stays False for an unrelated locking error.
+    """
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            f"""CREATE TABLE {REGISTRY_TABLE} (
+              kind TEXT NOT NULL,
+              name TEXT NOT NULL,
+              table_name TEXT NOT NULL UNIQUE,
+              PRIMARY KEY (kind, name)
+            )"""
+        )
+        connection.execute(
+            f"INSERT INTO {REGISTRY_TABLE} (kind, name, table_name) VALUES (?, ?, ?)",
+            ("collection", "a", "t1"),
+        )
+        with pytest.raises(sqlite3.IntegrityError) as pk_violation:
+            connection.execute(
+                f"INSERT INTO {REGISTRY_TABLE} (kind, name, table_name) VALUES (?, ?, ?)",
+                ("collection", "a", "t2"),
+            )
+        assert is_table_registry_conflict(pk_violation.value) is True
+
+        with pytest.raises(sqlite3.IntegrityError) as unique_violation:
+            connection.execute(
+                f"INSERT INTO {REGISTRY_TABLE} (kind, name, table_name) VALUES (?, ?, ?)",
+                ("collection", "b", "t1"),
+            )
+        assert is_table_registry_conflict(unique_violation.value) is True
+    finally:
+        connection.close()
+
+    locked_path = str(tmp_path / "locked.db")
+    holder = sqlite3.connect(locked_path, isolation_level=None)
+    holder.execute("CREATE TABLE t (a)")
+    holder.execute("BEGIN IMMEDIATE")
+    holder.execute("INSERT INTO t VALUES (1)")
+    contender = sqlite3.connect(locked_path, isolation_level=None, timeout=0)
+    try:
+        with pytest.raises(sqlite3.OperationalError) as locked:
+            contender.execute("BEGIN IMMEDIATE")
+            contender.execute("INSERT INTO t VALUES (2)")
+        assert "database is locked" in str(locked.value)
+        assert is_table_registry_conflict(locked.value) is False
+    finally:
+        holder.execute("ROLLBACK")
+        holder.close()
+        contender.close()

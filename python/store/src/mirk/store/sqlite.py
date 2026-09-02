@@ -24,12 +24,14 @@ __all__ = [
     "META_TABLE",
     "REGISTRY_TABLE",
     "SCHEMA_VERSION",
+    "TABLE_RESOLUTION_ATTEMPTS",
     "SqliteStore",
     "build_limit_offset",
     "build_order_by",
     "build_where_clause",
     "ensure_registry",
     "hash_name",
+    "is_table_registry_conflict",
     "json_path",
     "legacy_collection_table",
     "lookup_table",
@@ -286,6 +288,20 @@ def _unavailable(connection: sqlite3.Connection, table: str, kind: str, name: st
     return registered is None and table_exists(connection, table)
 
 
+TABLE_RESOLUTION_ATTEMPTS = 5
+
+
+def is_table_registry_conflict(error: BaseException) -> bool:
+    """True for the constraint error two processes can produce when both resolve the
+    same new logical name at once: one INSERT into ``_mirk_tables`` wins, the other
+    violates its primary key or its UNIQUE ``table_name``. The loser must RESTART
+    resolution — the winner's row is now a registry hit — rather than surface a
+    constraint error from an ordinary ``put``.
+    """
+    message = str(error)
+    return "constraint failed" in message and REGISTRY_TABLE in message
+
+
 def resolve_table(connection: sqlite3.Connection, kind: str, name: str, legacy_name: str) -> str:
     """The physical table for a logical name, claiming one if it has none yet.
 
@@ -295,25 +311,52 @@ def resolve_table(connection: sqlite3.Connection, kind: str, name: str, legacy_n
     every candidate another name holds or an unregistered table already occupies.
     Hash collisions therefore separate instead of aliasing. The caller creates the
     table.
+
+    Two connections can resolve the same new logical name at once; one wins the
+    INSERT into ``_mirk_tables`` and the other loses to a constraint violation.
+    Resolution restarts from step 1 on a losing violation, up to five attempts —
+    by then the winner's row is a registry hit, so the loser adopts its table.
     """
-    with _registry_write(connection):
-        hit = lookup_table(connection, kind, name)
-        if hit is not None:
-            return hit
-        legacy = _checked_table_name(legacy_name)
-        adoptable = table_exists(connection, legacy) and not claimed_by_other(
-            connection, legacy, kind, name
-        )
-        if adoptable:
-            _record_table(connection, kind, name, legacy)
-            return legacy
-        candidate = legacy
-        suffix = 2
-        while _unavailable(connection, candidate, kind, name):
-            candidate = f"{legacy}_{suffix}"
-            suffix += 1
-        _record_table(connection, kind, name, candidate)
-        return candidate
+    for attempt in range(1, TABLE_RESOLUTION_ATTEMPTS + 1):
+        try:
+            return _resolve_table_once(connection, kind, name, legacy_name)
+        except sqlite3.IntegrityError as error:
+            if attempt >= TABLE_RESOLUTION_ATTEMPTS or not is_table_registry_conflict(error):
+                raise
+    raise AssertionError("unreachable")
+
+
+def _resolve_table_once(
+    connection: sqlite3.Connection, kind: str, name: str, legacy_name: str
+) -> str:
+    """One resolution pass: a registry lookup, then zero or more claim checks, then
+    (on a miss) one INSERT. Deliberately NOT wrapped in its own transaction — same
+    as the TypeScript ``resolveTableOnce`` this mirrors — so each step runs as its
+    own autocommit statement (or joins a transaction a caller already holds on this
+    connection) rather than holding a write lock for the whole pass. A lock held
+    for the whole pass would itself serialize two connections racing to register
+    the same new name, but at the cost of one blocking the other until it commits
+    or times out; the retry in ``resolve_table`` is the cheaper alternative,
+    catching the resulting constraint violation and re-reading the registry
+    instead of holding a lock a busy caller does not need.
+    """
+    hit = lookup_table(connection, kind, name)
+    if hit is not None:
+        return hit
+    legacy = _checked_table_name(legacy_name)
+    adoptable = table_exists(connection, legacy) and not claimed_by_other(
+        connection, legacy, kind, name
+    )
+    if adoptable:
+        _record_table(connection, kind, name, legacy)
+        return legacy
+    candidate = legacy
+    suffix = 2
+    while _unavailable(connection, candidate, kind, name):
+        candidate = f"{legacy}_{suffix}"
+        suffix += 1
+    _record_table(connection, kind, name, candidate)
+    return candidate
 
 
 def _record_table(connection: sqlite3.Connection, kind: str, name: str, table: str) -> None:

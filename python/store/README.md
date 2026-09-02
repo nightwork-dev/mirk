@@ -75,7 +75,11 @@ the table it already has under its logical name, in place, with no rewrite.
 is higher than this adapter understands raises rather than reading it by rules
 that no longer apply. The TypeScript adapter uses the same registry, the same
 candidate sequence, and the same version, so both languages resolve a shared file
-to the same tables.
+to the same tables. When two connections race to register the same new logical
+name, the loser's `_mirk_tables` insert raises a constraint violation; both
+languages catch it and restart resolution, up to five attempts, so the loser
+ends up reading the winner's row as a registry hit instead of surfacing the
+error from an ordinary write.
 
 ## The contract
 
