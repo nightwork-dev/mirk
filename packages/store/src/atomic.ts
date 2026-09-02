@@ -131,14 +131,87 @@ export class AtomicMutationIndeterminateError extends Error {
   }
 }
 
+/** The request bounds one store applies before its atomic decision point.
+ *
+ * These are a wire-contract guard, so their right value depends on how far the
+ * request travels. A remote adapter serializes the batch over a network and
+ * wants the conservative default; an embedded backend never leaves the process
+ * and can afford far more. Each store publishes what it enforces.
+ */
+export interface AtomicMutationLimits {
+  readonly maxOperations: number;
+  readonly maxConditions: number;
+  readonly maxRequestBytes: number;
+}
+
+/** The portable defaults: what every store enforced before limits were
+ *  configurable, and what a remote or unknown transport should keep. */
+export const DEFAULT_ATOMIC_LIMITS: AtomicMutationLimits = Object.freeze({
+  maxOperations: 128,
+  maxConditions: 128,
+  maxRequestBytes: 1024 * 1024,
+});
+
+/** In-process backends (the reference and the SQLite adapter) — the request is
+ *  never serialized onto a wire and the batch is one local transaction. */
+export const IN_PROCESS_ATOMIC_LIMITS: AtomicMutationLimits = Object.freeze({
+  maxOperations: 4096,
+  maxConditions: 1024,
+  maxRequestBytes: 16 * 1024 * 1024,
+});
+
+function limitField(
+  overrides: Partial<AtomicMutationLimits> | undefined,
+  base: AtomicMutationLimits,
+  field: keyof AtomicMutationLimits
+): number {
+  const value = overrides?.[field];
+  if (value === undefined) return base[field];
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(
+      `${field} must be a positive safe integer; got ${String(value)}.`
+    );
+  }
+  return value;
+}
+
+/** Merge caller overrides onto a backend's own defaults. */
+export function resolveAtomicLimits(
+  overrides?: Partial<AtomicMutationLimits>,
+  base: AtomicMutationLimits = DEFAULT_ATOMIC_LIMITS
+): AtomicMutationLimits {
+  return Object.freeze({
+    maxOperations: limitField(overrides, base, "maxOperations"),
+    maxConditions: limitField(overrides, base, "maxConditions"),
+    maxRequestBytes: limitField(overrides, base, "maxRequestBytes"),
+  });
+}
+
 export interface SyncAtomicMutationStore extends SyncVersionedReadStore {
+  /** The request bounds this store enforces. */
+  readonly atomicLimits: AtomicMutationLimits;
   mutateAtomically(request: AtomicMutationRequest): AtomicMutationResult;
 }
 
 export interface AsyncAtomicMutationStore extends AsyncVersionedReadStore {
+  /** The request bounds this store enforces. */
+  readonly atomicLimits: AtomicMutationLimits;
   mutateAtomically(
     request: AtomicMutationRequest
   ): Promise<AtomicMutationResult>;
+}
+
+function hasAtomicLimits(candidate: {
+  atomicLimits?: AtomicMutationLimits;
+}): boolean {
+  const limits = candidate.atomicLimits;
+  return (
+    typeof limits === "object" &&
+    limits !== null &&
+    typeof limits.maxOperations === "number" &&
+    typeof limits.maxConditions === "number" &&
+    typeof limits.maxRequestBytes === "number"
+  );
 }
 
 export function supportsAtomicMutation(
@@ -147,7 +220,8 @@ export function supportsAtomicMutation(
   const candidate = store as Partial<SyncAtomicMutationStore>;
   return (
     typeof candidate.getVersioned === "function" &&
-    typeof candidate.mutateAtomically === "function"
+    typeof candidate.mutateAtomically === "function" &&
+    hasAtomicLimits(candidate)
   );
 }
 
@@ -157,13 +231,22 @@ export function supportsAsyncAtomicMutation(
   const candidate = store as Partial<AsyncAtomicMutationStore>;
   return (
     typeof candidate.getVersioned === "function" &&
-    typeof candidate.mutateAtomically === "function"
+    typeof candidate.mutateAtomically === "function" &&
+    hasAtomicLimits(candidate)
   );
 }
 
-export const MAX_ATOMIC_CONDITIONS = 128;
-export const MAX_ATOMIC_OPERATIONS = 128;
-export const MAX_ATOMIC_REQUEST_BYTES = 1024 * 1024;
+/** @deprecated Read `store.atomicLimits.maxConditions`, or
+ *  `DEFAULT_ATOMIC_LIMITS.maxConditions` for the portable default. */
+export const MAX_ATOMIC_CONDITIONS = DEFAULT_ATOMIC_LIMITS.maxConditions;
+/** @deprecated Read `store.atomicLimits.maxOperations`, or
+ *  `DEFAULT_ATOMIC_LIMITS.maxOperations` for the portable default. */
+export const MAX_ATOMIC_OPERATIONS = DEFAULT_ATOMIC_LIMITS.maxOperations;
+/** @deprecated Read `store.atomicLimits.maxRequestBytes`, or
+ *  `DEFAULT_ATOMIC_LIMITS.maxRequestBytes` for the portable default. */
+export const MAX_ATOMIC_REQUEST_BYTES = DEFAULT_ATOMIC_LIMITS.maxRequestBytes;
+/** A fixed cap, not configurable: an idempotency outcome is persisted under its
+ *  key forever, so no backend may accept a larger one. */
 export const MAX_ATOMIC_OUTCOME_BYTES = 64 * 1024;
 
 const REQUEST_SCHEMA = "mirk-atomic-request/v1";
@@ -385,23 +468,25 @@ function normalizeCondition(value: unknown): StoreCondition {
 
 /** Validate and canonicalize a request before any backend decision point. */
 export function validateAtomicRequest(
-  request: AtomicMutationRequest
+  request: AtomicMutationRequest,
+  limits: AtomicMutationLimits = DEFAULT_ATOMIC_LIMITS
 ): ValidatedRequest {
   if (!isPlainObject(request)) invalid("request must be a plain object");
   if (!Array.isArray(request.operations) || request.operations.length === 0)
     invalid("operations must be a non-empty array");
-  if (request.operations.length > MAX_ATOMIC_OPERATIONS) {
+  if (request.operations.length > limits.maxOperations) {
     throw new AtomicMutationRejectedError(
       "operation-limit-exceeded",
-      `at most ${MAX_ATOMIC_OPERATIONS} operations are supported`
+      `request has ${request.operations.length} operations; this store's maxOperations is ${limits.maxOperations}`
     );
   }
   if (request.conditions !== undefined && !Array.isArray(request.conditions))
     invalid("conditions must be an array");
-  if ((request.conditions?.length ?? 0) > MAX_ATOMIC_CONDITIONS) {
+  const conditionCount = request.conditions?.length ?? 0;
+  if (conditionCount > limits.maxConditions) {
     throw new AtomicMutationRejectedError(
       "condition-limit-exceeded",
-      `at most ${MAX_ATOMIC_CONDITIONS} conditions are supported`
+      `request has ${conditionCount} conditions; this store's maxConditions is ${limits.maxConditions}`
     );
   }
 
@@ -450,7 +535,7 @@ export function validateAtomicRequest(
       if (outcomeBytes > MAX_ATOMIC_OUTCOME_BYTES) {
         throw new AtomicMutationRejectedError(
           "outcome-size-exceeded",
-          `outcome exceeds ${MAX_ATOMIC_OUTCOME_BYTES} bytes`
+          `outcome is ${outcomeBytes} bytes; the fixed outcome cap is ${MAX_ATOMIC_OUTCOME_BYTES} bytes`
         );
       }
       idempotency.outcome = outcome;
@@ -476,10 +561,10 @@ export function validateAtomicRequest(
           idempotency: { key: idempotency.key },
         });
   const requestBytes = encoder.encode(requestEncoding).byteLength;
-  if (requestBytes > MAX_ATOMIC_REQUEST_BYTES) {
+  if (requestBytes > limits.maxRequestBytes) {
     throw new AtomicMutationRejectedError(
       "request-size-exceeded",
-      `request exceeds ${MAX_ATOMIC_REQUEST_BYTES} bytes`
+      `request is ${requestBytes} bytes; this store's maxRequestBytes is ${limits.maxRequestBytes}`
     );
   }
   return {

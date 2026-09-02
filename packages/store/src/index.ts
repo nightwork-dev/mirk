@@ -23,6 +23,7 @@ export type {
 } from "./types.js";
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
+export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";
 export { namespaceStore } from "./namespace.js";
 
 // Optional declarative atomic mutation capability. This module is dependency-free
@@ -45,6 +46,7 @@ export type {
   AtomicMutationRejectionCode,
   SyncAtomicMutationStore,
   AsyncAtomicMutationStore,
+  AtomicMutationLimits,
 } from "./atomic.js";
 export {
   AtomicMutationRejectedError,
@@ -53,6 +55,9 @@ export {
   supportsAtomicMutation,
   supportsAsyncAtomicMutation,
   canonicalJson,
+  DEFAULT_ATOMIC_LIMITS,
+  IN_PROCESS_ATOMIC_LIMITS,
+  resolveAtomicLimits,
 } from "./atomic.js";
 
 // Vector port + in-memory reference + shared helpers

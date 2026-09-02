@@ -26,6 +26,7 @@ import type {
   StoreFilter,
 } from "../types.js";
 import type {
+  AtomicMutationLimits,
   AtomicMutationRequest,
   AtomicMutationResult,
   StoreCondition,
@@ -37,6 +38,8 @@ import type {
 import {
   AtomicMutationBackendError,
   cloneJson,
+  IN_PROCESS_ATOMIC_LIMITS,
+  resolveAtomicLimits,
   validateAtomicRequest,
 } from "../atomic.js";
 import type {
@@ -247,6 +250,10 @@ export interface SqliteAdapterOptions {
   dimensions?: number;
   /** Maximum time SQLite waits for another process's writer before returning SQLITE_BUSY. */
   busyTimeoutMs?: number;
+  /** Override any of the in-process atomic request bounds `.kv` enforces. The
+   *  batch is one local `BEGIN IMMEDIATE`, so these are sizing choices rather
+   *  than a wire contract. The idempotency outcome cap is fixed regardless. */
+  atomicLimits?: Partial<AtomicMutationLimits>;
 }
 
 export type SqliteTransactionMode = "deferred" | "immediate" | "exclusive";
@@ -318,7 +325,10 @@ export class SqliteAdapter {
       runSqliteBusyRetry(() => {
         this.db.pragma("journal_mode = WAL");
         ensureMirkRegistry(this.db);
-        kv = new SqliteKvFacet(this.db);
+        kv = new SqliteKvFacet(
+          this.db,
+          resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS)
+        );
         vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
         search = new SqliteSearchFacet(this.db);
       }, busyTimeoutMs);
@@ -463,7 +473,10 @@ class SqliteKvFacet
   private readonly resolvedTables = new Map<string, string>();
   private readonly versionPrefix: string;
 
-  constructor(private readonly db: Database.Database) {
+  constructor(
+    private readonly db: Database.Database,
+    readonly atomicLimits: AtomicMutationLimits = IN_PROCESS_ATOMIC_LIMITS
+  ) {
     this.db.pragma("foreign_keys = ON");
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS _kv (
@@ -685,7 +698,7 @@ class SqliteKvFacet
   }
 
   mutateAtomically(request: AtomicMutationRequest): AtomicMutationResult {
-    const validated = validateAtomicRequest(request);
+    const validated = validateAtomicRequest(request, this.atomicLimits);
     const transaction = this.db.transaction(() => this.decideAtomic(validated));
     try {
       return transaction.immediate();

@@ -9,6 +9,7 @@ import type {
   StoreFilter,
 } from "../types.js";
 import type {
+  AtomicMutationLimits,
   AtomicMutationRequest,
   AtomicMutationResult,
   AtomicCompletedMutationResult,
@@ -18,7 +19,13 @@ import type {
   SyncAtomicMutationStore,
   VersionedStoreValue,
 } from "../atomic.js";
-import { cloneJson, targetKey, validateAtomicRequest } from "../atomic.js";
+import {
+  cloneJson,
+  IN_PROCESS_ATOMIC_LIMITS,
+  resolveAtomicLimits,
+  targetKey,
+  validateAtomicRequest,
+} from "../atomic.js";
 import { compareCodePoints } from "../order.js";
 import { NON_SCALAR_FILTER_MESSAGE } from "../sql.js";
 
@@ -53,12 +60,27 @@ function assertScalarInValues(values: readonly unknown[]): void {
 
 let nextMemoryStoreId = 1;
 
+export interface InMemoryStoreOptions {
+  /** Override any of the in-process atomic request bounds. */
+  atomicLimits?: Partial<AtomicMutationLimits>;
+}
+
 export class InMemoryStore
   implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore
 {
   readonly meta: StoreMeta = {
     backend: "memory",
   };
+
+  /** The reference runs in-process, so it carries the in-process bounds. */
+  readonly atomicLimits: AtomicMutationLimits;
+
+  constructor(options: InMemoryStoreOptions = {}) {
+    this.atomicLimits = resolveAtomicLimits(
+      options.atomicLimits,
+      IN_PROCESS_ATOMIC_LIMITS
+    );
+  }
 
   /** Key-value storage. */
   private kv = new Map<string, unknown>();
@@ -213,7 +235,7 @@ export class InMemoryStore
   }
 
   mutateAtomically(request: AtomicMutationRequest): AtomicMutationResult {
-    const validated = validateAtomicRequest(request);
+    const validated = validateAtomicRequest(request, this.atomicLimits);
     const idempotencyKey = validated.idempotency?.key;
     if (idempotencyKey !== undefined) {
       const prior = this.receipts.get(idempotencyKey);
