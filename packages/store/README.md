@@ -91,9 +91,43 @@ if (supportsAtomicMutation(kv)) {
 ```
 
 Atomic payloads are JSON-safe only. Requests reject duplicate targets, empty batches, malformed
-values, and values above the portable condition, operation, request, or outcome limits before any
-decision. Idempotency receipts never expire and are durable in SQLite. `namespaceStore()` preserves
-the capability while binding targets, versions, and receipt keys to the namespace.
+values, and oversized requests before any decision. Idempotency receipts never expire and are
+durable in SQLite. `namespaceStore()` preserves the capability while binding targets, versions, and
+receipt keys to the namespace.
+
+### Request limits are per backend
+
+Request bounds are a wire-contract guard, so their right value depends on how far the request
+travels. Every atomic store publishes what it enforces as `store.atomicLimits`, and a wrapper
+(`namespaceStore`, `toAsync`) reports the limits of the store underneath it.
+
+| Limit | `DEFAULT_ATOMIC_LIMITS` | `IN_PROCESS_ATOMIC_LIMITS` |
+| --- | --- | --- |
+| `maxOperations` | 128 | 4096 |
+| `maxConditions` | 128 | 1024 |
+| `maxRequestBytes` | 1 MiB | 16 MiB |
+
+`InMemoryKv` and `SqliteAdapter.kv` both run in the calling process and use the in-process set: the
+request is never serialized onto a network and the batch is one local `BEGIN IMMEDIATE`. A remote
+or unknown transport should keep `DEFAULT_ATOMIC_LIMITS`.
+
+Override any field at construction:
+
+```ts
+const adapter = new SqliteAdapter({
+  path: "world.sqlite",
+  atomicLimits: { maxOperations: 512 },
+});
+adapter.kv.atomicLimits.maxOperations; // 512
+adapter.kv.atomicLimits.maxConditions; // 1024, the unoverridden in-process default
+```
+
+A rejection names the limit and its value, for example
+`request has 11 operations; this store's maxOperations is 10`.
+
+**The idempotency outcome cap is not configurable.** An outcome is persisted under its key forever,
+so `MAX_ATOMIC_OUTCOME_BYTES` (64 KiB) is a hard cap in every backend regardless of the limits
+above.
 
 ### Collections
 
