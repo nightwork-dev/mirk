@@ -11,10 +11,13 @@ import {
   canonicalJson,
   InMemoryKv,
   namespaceStore,
+  supportsAsyncAtomicMutation,
   supportsAtomicMutation,
+  toAsync,
 } from "./index.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
 import type {
+  AtomicMutationLimits,
   SyncAtomicMutationStore,
   SyncStore,
   StoreCondition,
@@ -29,16 +32,24 @@ function atomic(store: SyncStore): AtomicStore {
   return store;
 }
 
-function stores(): Array<
-  [string, () => { store: AtomicStore; close?: () => void }]
-> {
+interface StoreOptions {
+  atomicLimits?: Partial<AtomicMutationLimits>;
+}
+
+type MakeStore = (options?: StoreOptions) => {
+  store: AtomicStore;
+  close?: () => void;
+};
+
+function stores(): Array<[string, MakeStore]> {
   return [
-    ["memory", () => ({ store: atomic(new InMemoryKv()) })],
+    ["memory", (options) => ({ store: atomic(new InMemoryKv(options)) })],
     [
       "sqlite",
-      () => {
+      (options) => {
         const adapter = new SqliteAdapter({
           path: ":memory:",
+          ...options,
         });
         return { store: atomic(adapter.kv), close: () => adapter.close() };
       },
@@ -208,15 +219,177 @@ describe.each(stores())("%s atomic mutation contract", (_name, makeStore) => {
   });
 
   it("counts the idempotency key toward the canonical request limit", () => {
-    const { store, close } = makeStore();
+    const { store, close } = makeStore({
+      atomicLimits: { maxRequestBytes: 4096 },
+    });
     try {
       expect(() =>
         store.mutateAtomically({
           operations: [{ op: "set", key: "bounded", value: true }],
-          idempotency: { key: "k".repeat(1024 * 1024) },
+          idempotency: { key: "k".repeat(8192) },
         })
       ).toThrowError(AtomicMutationRejectedError);
       expect(store.get("bounded")).toBeNull();
+    } finally {
+      close?.();
+    }
+  });
+
+  it("accepts a batch far above the old fixed 128-operation limit", () => {
+    const { store, close } = makeStore();
+    try {
+      expect(store.atomicLimits.maxOperations).toBeGreaterThanOrEqual(4096);
+      const operations = Array.from({ length: 200 }, (_, index) => ({
+        op: "set" as const,
+        key: `wide:${index}`,
+        value: index,
+      }));
+      const applied = store.mutateAtomically({ operations });
+      expect(applied.status).toBe("applied");
+      if (applied.status !== "applied") return;
+      expect(applied.versions).toHaveLength(200);
+      expect(store.get("wide:0")).toBe(0);
+      expect(store.get("wide:199")).toBe(199);
+    } finally {
+      close?.();
+    }
+  });
+
+  it("rejects above an overridden operation limit and names the limit", () => {
+    const { store, close } = makeStore({ atomicLimits: { maxOperations: 10 } });
+    try {
+      expect(store.atomicLimits.maxOperations).toBe(10);
+      const operations = Array.from({ length: 11 }, (_, index) => ({
+        op: "set" as const,
+        key: `narrow:${index}`,
+        value: index,
+      }));
+      let thrown: unknown;
+      try {
+        store.mutateAtomically({ operations });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(AtomicMutationRejectedError);
+      const rejection = thrown as AtomicMutationRejectedError;
+      expect(rejection.code).toBe("operation-limit-exceeded");
+      expect(rejection.message).toContain("11 operations");
+      expect(rejection.message).toContain("maxOperations is 10");
+      expect(store.get("narrow:0")).toBeNull();
+
+      // Ten is still accepted, so the boundary is the override and not an
+      // off-by-one around it.
+      expect(
+        store.mutateAtomically({ operations: operations.slice(0, 10) }).status
+      ).toBe("applied");
+    } finally {
+      close?.();
+    }
+  });
+
+  it("rejects a condition count above an overridden condition limit", () => {
+    const { store, close } = makeStore({ atomicLimits: { maxConditions: 2 } });
+    try {
+      const conditions = Array.from({ length: 3 }, (_, index) => ({
+        target: { kind: "key" as const, key: `cond:${index}` },
+        expected: "missing" as const,
+      }));
+      let thrown: unknown;
+      try {
+        store.mutateAtomically({
+          conditions,
+          operations: [{ op: "set", key: "cond:out", value: 1 }],
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as AtomicMutationRejectedError).code).toBe(
+        "condition-limit-exceeded"
+      );
+      expect((thrown as Error).message).toContain("maxConditions is 2");
+      expect(store.get("cond:out")).toBeNull();
+    } finally {
+      close?.();
+    }
+  });
+
+  it("keeps the outcome cap fixed no matter how the limits are raised", () => {
+    const { store, close } = makeStore({
+      atomicLimits: {
+        maxOperations: 4096,
+        maxConditions: 4096,
+        maxRequestBytes: 64 * 1024 * 1024,
+      },
+    });
+    try {
+      // 64 KiB of payload plus the JSON quotes is over the fixed cap.
+      const outcome = { note: "o".repeat(64 * 1024) };
+      let thrown: unknown;
+      try {
+        store.mutateAtomically({
+          operations: [{ op: "set", key: "capped", value: 1 }],
+          idempotency: { key: "capped", outcome },
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as AtomicMutationRejectedError).code).toBe(
+        "outcome-size-exceeded"
+      );
+      expect((thrown as Error).message).toContain("65536");
+      expect(store.get("capped")).toBeNull();
+
+      // Just under the cap is still accepted, so the failure above is the cap
+      // and not the payload being malformed.
+      expect(
+        store.mutateAtomically({
+          operations: [{ op: "set", key: "capped", value: 1 }],
+          idempotency: {
+            key: "capped",
+            outcome: { note: "o".repeat(60 * 1024) },
+          },
+        }).status
+      ).toBe("applied");
+    } finally {
+      close?.();
+    }
+  });
+
+  it("reports the same limits through the namespaced and async wrappers", () => {
+    const { store, close } = makeStore({ atomicLimits: { maxOperations: 77 } });
+    try {
+      const namespaced = atomic(namespaceStore(store, "bound"));
+      expect(namespaced.atomicLimits).toEqual(store.atomicLimits);
+      expect(namespaced.atomicLimits.maxOperations).toBe(77);
+
+      const lifted = toAsync(store);
+      expect(supportsAsyncAtomicMutation(lifted)).toBe(true);
+      if (!supportsAsyncAtomicMutation(lifted)) return;
+      expect(lifted.atomicLimits).toEqual(store.atomicLimits);
+
+      const liftedNamespace = toAsync(namespaced);
+      if (!supportsAsyncAtomicMutation(liftedNamespace)) {
+        throw new Error("namespaced store lost the capability when lifted");
+      }
+      expect(liftedNamespace.atomicLimits.maxOperations).toBe(77);
+    } finally {
+      close?.();
+    }
+  });
+
+  it("rejects above the inner limit through the namespaced wrapper", () => {
+    const { store, close } = makeStore({ atomicLimits: { maxOperations: 3 } });
+    try {
+      const namespaced = atomic(namespaceStore(store, "bound"));
+      const operations = Array.from({ length: 4 }, (_, index) => ({
+        op: "set" as const,
+        key: `n:${index}`,
+        value: index,
+      }));
+      expect(() => namespaced.mutateAtomically({ operations })).toThrowError(
+        /maxOperations is 3/
+      );
+      expect(namespaced.get("n:0")).toBeNull();
     } finally {
       close?.();
     }
@@ -313,6 +486,82 @@ describe("atomic namespace and persistence behavior", () => {
           : {}),
       });
       reopened.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+
+  it("commits, rolls back, and reopens a 200-operation batch on a file", () => {
+    const path = join(
+      tmpdir(),
+      `mirk-atomic-wide-${process.pid}-${Date.now()}.db`
+    );
+    try {
+      const first = new SqliteAdapter({ path });
+      const operations = Array.from({ length: 200 }, (_, index) => ({
+        op: "set" as const,
+        key: `wide:${index}`,
+        value: index,
+      }));
+      expect(first.kv.mutateAtomically({ operations }).status).toBe("applied");
+
+      // A failing condition on a second 200-operation batch must leave nothing
+      // behind: the whole batch rolls back, not the operations after the check.
+      const second = Array.from({ length: 200 }, (_, index) => ({
+        op: "set" as const,
+        key: `rolled:${index}`,
+        value: index,
+      }));
+      const conflict = first.kv.mutateAtomically({
+        conditions: [
+          { target: { kind: "key", key: "wide:0" }, expected: "missing" },
+        ],
+        operations: second,
+      });
+      expect(conflict.status).toBe("conflict");
+      expect(first.kv.get("rolled:0")).toBeNull();
+      expect(first.kv.get("rolled:199")).toBeNull();
+      first.close();
+
+      const reopened = new SqliteAdapter({ path });
+      expect(reopened.kv.get("wide:0")).toBe(0);
+      expect(reopened.kv.get("wide:199")).toBe(199);
+      expect(reopened.kv.keys("rolled:")).toEqual([]);
+      expect(reopened.kv.keys("wide:")).toHaveLength(200);
+      reopened.close();
+    } finally {
+      rmSync(path, { force: true });
+      rmSync(`${path}-wal`, { force: true });
+      rmSync(`${path}-shm`, { force: true });
+    }
+  });
+
+  it("honors an adapter-level limit override on a file database", () => {
+    const path = join(
+      tmpdir(),
+      `mirk-atomic-capped-${process.pid}-${Date.now()}.db`
+    );
+    try {
+      const adapter = new SqliteAdapter({
+        path,
+        atomicLimits: { maxOperations: 10 },
+      });
+      expect(adapter.kv.atomicLimits.maxOperations).toBe(10);
+      // The other two bounds fall back to the in-process defaults.
+      expect(adapter.kv.atomicLimits.maxConditions).toBe(1024);
+      expect(adapter.kv.atomicLimits.maxRequestBytes).toBe(16 * 1024 * 1024);
+      expect(() =>
+        adapter.kv.mutateAtomically({
+          operations: Array.from({ length: 11 }, (_, index) => ({
+            op: "set" as const,
+            key: `k:${index}`,
+            value: index,
+          })),
+        })
+      ).toThrowError(/maxOperations is 10/);
+      adapter.close();
     } finally {
       rmSync(path, { force: true });
       rmSync(`${path}-wal`, { force: true });
