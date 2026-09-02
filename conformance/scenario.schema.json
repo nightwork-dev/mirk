@@ -76,6 +76,9 @@
         },
         {
           "$ref": "#/$defs/expectThrows"
+        },
+        {
+          "$ref": "#/$defs/expectInvalidPaths"
         }
       ]
     },
@@ -143,6 +146,21 @@
       "properties": {
         "throws": {
           "type": "string"
+        }
+      }
+    },
+    "expectInvalidPaths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invalidPaths"
+      ],
+      "properties": {
+        "invalidPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

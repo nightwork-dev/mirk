@@ -1,0 +1,79 @@
+{
+  "id": "fixtures/references/deeper-than-32-levels-is-invisible",
+  "title": "the reference walk stops below depth 32, so a very deep $ref is not extracted (item 74)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/deep.json": "{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"child\":{\"$ref\":\"theme:dark\"}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}",
+                "pages/shallow.json": "{\"child\":{\"child\":{\"child\":{\"$ref\":\"theme:dark\"}}}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:deep",
+              "type": "page",
+              "id": "deep",
+              "resolved": true
+            },
+            {
+              "ref": "page:shallow",
+              "type": "page",
+              "id": "shallow",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:shallow",
+              "to": "theme:dark",
+              "fieldPath": [
+                "child",
+                "child",
+                "child"
+              ]
+            }
+          ],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

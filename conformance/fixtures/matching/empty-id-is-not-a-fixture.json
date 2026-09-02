@@ -1,0 +1,43 @@
+{
+  "id": "fixtures/matching/empty-id-is-not-a-fixture",
+  "title": "a file whose whole name is the extension has an empty id and is not a fixture",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/.json": "{\"name\":\"Hidden\"}",
+                "themes/a.json": "{\"name\":\"A\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:a"
+        ]
+      }
+    }
+  ]
+}

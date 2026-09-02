@@ -1,0 +1,53 @@
+{
+  "id": "fixtures/matching/id-is-basename-without-extension",
+  "title": "a fixture id is the file basename with the matched extension removed",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:dark"
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark"
+        }
+      }
+    }
+  ]
+}

@@ -2,6 +2,12 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 
+[manifest]
+members = [
+    "mirk-fixtures",
+    "mirk-store",
+]
+
 [[package]]
 name = "attrs"
 version = "26.1.0"
@@ -57,9 +63,36 @@ wheels = [
 ]
 
 [[package]]
+name = "mirk-fixtures"
+version = "0.1.0"
+source = { editable = "fixtures" }
+dependencies = [
+    { name = "mirk-store" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jsonschema" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mirk-store", editable = "store" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = ">=4" },
+    { name = "pyright", specifier = ">=1.1" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
 name = "mirk-store"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "store" }
 
 [package.dev-dependencies]
 dev = [

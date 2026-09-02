@@ -21,11 +21,13 @@
 import {
   DEFAULT_TOL,
   isExpectIds,
+  isExpectInvalidPaths,
   isExpectThrows,
   isExpectValue,
   isExpectValues,
   type Expect,
 } from "./format.js";
+import { compareCodePoints } from "../order.js";
 import type { StepOutcome } from "./runner.js";
 
 function show(value: unknown): string {
@@ -137,6 +139,55 @@ function compareRecords(
   return null;
 }
 
+
+/** The instance paths a `validate` result reported as schema-invalid, sorted by
+ *  code point and de-duplicated. Shared by the generator (which derives the
+ *  expectation from the memory reference) and the comparator (which checks it),
+ *  so a generated list and a replayed list cannot mean different things.
+ *
+ *  Returns a message instead when the result is not a validation report, or
+ *  when it carries a diagnostic this form cannot speak for. */
+export function invalidPathsOf(value: unknown): string[] | string {
+  if (!isRecord(value)) {
+    return `at $: expected a validation report, got ${typeName(value)} ${show(value)}`;
+  }
+  if (typeof value.ok !== "boolean") {
+    return `at $.ok: expected a boolean, got ${show(value.ok)}`;
+  }
+  if (!Array.isArray(value.diagnostics)) {
+    return `at $.diagnostics: expected an array, got ${show(value.diagnostics)}`;
+  }
+  const paths = new Set<string>();
+  for (const [index, diagnostic] of value.diagnostics.entries()) {
+    if (!isRecord(diagnostic)) {
+      return `at $.diagnostics[${index}]: expected an object, got ${show(diagnostic)}`;
+    }
+    if (diagnostic.code !== "schema-invalid") {
+      // An `invalidPaths` expectation speaks only for schema validation. A
+      // missing reference or a parse failure hiding inside a validation report
+      // would otherwise pass unnoticed.
+      return `at $.diagnostics[${index}]: expected code "schema-invalid", got ${show(diagnostic.code)}`;
+    }
+    const fixture = diagnostic.fixture;
+    if (typeof fixture !== "string") {
+      return `at $.diagnostics[${index}].fixture: expected a string, got ${show(fixture)}`;
+    }
+    const fieldPath = diagnostic.fieldPath ?? "";
+    if (typeof fieldPath !== "string") {
+      return `at $.diagnostics[${index}].fieldPath: expected a string, got ${show(fieldPath)}`;
+    }
+    paths.add(`${fixture}#${fieldPath}`);
+  }
+  const list = [...paths].sort(compareCodePoints);
+  if (list.length === 0 && value.ok !== true) {
+    return "at $.ok: expected true, because no diagnostic was reported";
+  }
+  if (list.length > 0 && value.ok !== false) {
+    return `at $.ok: expected false, because ${list.length} schema-invalid diagnostic(s) were reported`;
+  }
+  return list;
+}
+
 /** Check one step's outcome against its expectation. `null` means agreement. */
 export function compareExpect(expect: Expect, actual: StepOutcome): string | null {
   if (isExpectThrows(expect)) {
@@ -168,6 +219,11 @@ export function compareExpect(expect: Expect, actual: StepOutcome): string | nul
       expect.ignoreFields ?? [],
       expect.tol ?? DEFAULT_TOL,
     );
+  }
+  if (isExpectInvalidPaths(expect)) {
+    const actualPaths = invalidPathsOf(actual.value);
+    if (typeof actualPaths === "string") return actualPaths;
+    return deepDiff(actualPaths, expect.invalidPaths, "$.invalidPaths");
   }
   if (isExpectIds(expect)) {
     if (!Array.isArray(actual.value)) {

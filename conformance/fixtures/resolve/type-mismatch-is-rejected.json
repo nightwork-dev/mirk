@@ -1,0 +1,49 @@
+{
+  "id": "fixtures/resolve/type-mismatch-is-rejected",
+  "title": "resolveRef with an expectedType that disagrees with the ref throws type-mismatch",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        {
+          "$ref": "theme:dark"
+        },
+        "page"
+      ],
+      "expect": {
+        "throws": "Expected ref of type \"page\" but got \"theme\"."
+      }
+    }
+  ]
+}

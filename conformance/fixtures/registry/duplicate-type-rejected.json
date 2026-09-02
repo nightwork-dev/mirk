@@ -1,0 +1,38 @@
+{
+  "id": "fixtures/registry/duplicate-type-rejected",
+  "title": "registering the same type twice throws duplicate-type",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "theme",
+              "directory": "other"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {}
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "Fixture type \"theme\" is already registered."
+      }
+    }
+  ]
+}

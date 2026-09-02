@@ -71,8 +71,53 @@ const loader = createFixtureLoader({ registry, sources: [defaults] });
 const dark = await loader.load("theme:dark");
 ```
 
-Schemas use the Standard Schema v1 contract. The package does not choose Zod, Valibot, ArkType, or
-any other validator for you.
+A type declares its shape one of two ways, and may declare both.
+
+**`jsonSchema`** is a JSON Schema 2020-12 DOCUMENT — data, not code — so the same
+declaration validates the same authored files in TypeScript and in the Python
+port. The engine is injected, because the root entry stays browser-safe and free
+of runtime dependencies:
+
+```ts
+import Ajv2020 from "ajv/dist/2020.js";
+
+const themeType = defineFixtureType({
+  type: "theme",
+  directory: "themes",
+  jsonSchema: {
+    type: "object",
+    required: ["name"],
+    properties: { name: { type: "string" } },
+  },
+});
+
+const loader = createFixtureLoader({
+  registry,
+  sources: [defaults],
+  jsonSchemaValidator: (document) => {
+    const validate = new Ajv2020({ allErrors: true }).compile(document);
+    return (value) =>
+      validate(value)
+        ? []
+        : (validate.errors ?? []).map((error) => ({
+            message: error.message ?? "invalid",
+            path: error.instancePath.slice(1).split("/").filter(Boolean),
+          }));
+  },
+});
+```
+
+A type that declares `jsonSchema` and gets no `jsonSchemaValidator` fails loudly
+rather than loading unvalidated data. `jsonSchema: true` is the explicit way to
+say "any document".
+
+**`schema`** is a Standard Schema v1 validator and is optional. The package does
+not choose Zod, Valibot, ArkType, or any other validator for you. When both are
+present, `jsonSchema` runs first and the Standard Schema's OUTPUT becomes the
+fixture value. A type declaring neither is rejected when it is registered.
+
+Either way the failure surface is one error, `FixtureValidationError`, and one
+diagnostic code, `schema-invalid`.
 
 Parsers are injected. JSON is built in; YAML, JSON5, TOML, or custom formats are caller choices, not
 root-package bundle tax.

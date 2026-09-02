@@ -167,7 +167,23 @@ Evidence file `docs/evidence/python-port/<date>-artifact-handshake.md` with
 commands and output. This is the phase's first acceptance proof; nothing
 in wave 1 A2 starts until it has run at least one direction.
 
-### F1 / F2 · fixtures
+### F1 / F2 · fixtures — DONE 2026-09-02
+
+Landed together: `conformance/fixtures/` (88 scenarios), `python/fixtures`
+(`mirk-fixtures`), the uv workspace at `python/`, CI over both members.
+Evidence, including the wheel installed into a clean venv:
+`docs/evidence/python-port/2026-09-02-fixtures-green.md`. Two decisions made
+during the wave, both binding: host parser text is never contract (a
+`validateDiagnostics` op plus `ignoreFields: ["message"]` pins a parse
+failure's shape, and the message stays as it is so the CLI still shows the
+parser's explanation); and `@mirk/fixtures` keeps its own copy of
+`compareCodePoints` in `src/order.ts` with a cross-check test against the
+store's, because a runtime dependency on `@mirk/store` closes a workspace
+cycle (store's conformance tooling dev-depends on fixtures) that breaks a
+clean `pnpm build`. The same cycle will appear when A1's scenario module
+imports `@mirk/artifact`; that package already runtime-depends on
+`@mirk/store`, so check the build order before adding the dev dependency and
+be ready to move the sibling-port targets out of `@mirk/store`.
 
 As ruled above. F1 scenario module `scripts/scenarios/fixtures.ts` covering
 the digest's 44 pure scenarios over the memory source plus store-source
@@ -176,6 +192,46 @@ directory `fixtures/`. F2: `python/fixtures` (`mirk-fixtures`, depends on
 `mirk-store` only), registry, define type, layering with the exact precedence
 and merge semantics, keyed maps, explain, refs, memory/store/filesystem
 sources, `conformance_target`. Changeset minor for `@mirk/fixtures`.
+
+#### Fixtures port rulings (strategist, 2026-09-02)
+
+F1 and F2 run concurrently, so the `fixtures` port contract is fixed here.
+F1 records the final wording in `conformance/README.md`; F2 mirrors it.
+
+- **Port name `fixtures`**, a target per scenario per backend that wraps the
+  backend's store (memory `InMemoryKv`/`InMemoryStore`, or the SQLite
+  adapter) so store-source scenarios run on both backends. Scenario ids
+  `fixtures/<group>/<name>`; `fixtures` joins the generated directory list.
+- **First step is `configure(spec)`** (setup, no expect) with
+  `spec.types: [{type, directory, extensions?, document?, purpose?,
+  referenceMode?, mergeStrategy?, jsonSchema?}]` where `mergeStrategy` is a
+  builtin name and `jsonSchema` defaults to `true` when omitted, and
+  `spec.sources: [{kind: "memory", name, priority, files: {relativePath:
+  text}} | {kind: "store", name, priority, collection, pathPrefix?,
+  extension?, items: [...]}]`. Store items are written through the backend
+  store by the target before the source is constructed. Parsers: JSON only.
+- **Ops after `configure`:** `load(ref)`, `list(type?)`, `types()`,
+  `validate(ref?)`, `explain(ref)`, `referenceGraph()`, `resolveRef(text)`,
+  `invalidate(ref?)`, `seedStore(options)` followed by `readSeeded(collection,
+  id)` for the sink. Results are plain JSON with the TypeScript key spelling;
+  Python returns dicts with the same keys. Errors this package raises itself
+  (`patch-without-base`, `map-id-mismatch`, …) use the exact-message
+  `throws` form.
+- **Validation is compared by paths, never by message.** New expect form
+  `{"invalidPaths": [...]}` on a `validate` result: the sorted (code point),
+  de-duplicated list of `"<ref>#<instancePath>"` strings for every diagnostic
+  with code `schema-invalid`, where `instancePath` is the dot-joined leaf
+  path (`formatIssuePath`); `ok` must be `false` when the list is non-empty;
+  diagnostics with any other code fail the step (use `value` for those).
+  Aggregate keyword paths (`oneOf`, `anyOf`, `if`) are excluded by both
+  engines; Python flattens `context`. Validators: Ajv 2020 `allErrors: true`
+  in TypeScript; `jsonschema` `Draft202012Validator` in Python, both injected
+  by the conformance backends, never a package dependency. The corpus never
+  asserts `throws` for `schema-invalid`.
+- **Hooks are language-local.** Function `mergeStrategy`,
+  `validateReferences`, `extractReferences`, `materialize`, YAML and other
+  parsers, the filesystem source, the package source and the CLI stay out of
+  the corpus and are pinned by each language's own tests.
 
 ### A1 / A2 · artifact
 

@@ -1,0 +1,43 @@
+{
+  "id": "fixtures/validation/boolean-false-schema-rejects-everything",
+  "title": "jsonSchema false rejects every document, at the empty instance path",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": false
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "fixtures/validation/pattern-violation",
+  "title": "a pattern failure reports the property's path",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "accent"
+                ],
+                "properties": {
+                  "accent": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/bad.json": "{\"accent\":\"red\"}",
+                "themes/good.json": "{\"accent\":\"#AABBCC\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:bad#accent"
+        ]
+      }
+    }
+  ]
+}

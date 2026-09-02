@@ -20,6 +20,7 @@ from mirk.store.conformance import (
     TargetUnavailableError,
     assertion_free_scenarios,
     compare_expect,
+    compare_invalid_paths,
     corpus_dir,
     load_scenarios,
     resolve_target,
@@ -275,3 +276,78 @@ def _scenario_with_steps(identifier: str, steps: list[dict[str, Any]]) -> Scenar
 
     data: dict[str, Any] = {"id": identifier, "ports": ["store"], "steps": steps}
     return Scenario(id=identifier, path=Path(f"{identifier}.json"), data=data)
+
+
+# ── The `fixtures` port and the `invalidPaths` expect form ───────────────────
+
+
+def test_the_fixtures_port_resolves_through_the_sibling_package() -> None:
+    """F2: `mirk.store.fixtures` does not exist, so resolution falls through to
+    `mirk.fixtures`. The runner never names the package."""
+    pytest.importorskip("mirk.fixtures")
+    target = resolve_target("fixtures", "memory", InMemoryStore())
+    assert callable(target.configure)  # type: ignore[attr-defined]
+
+
+def _validation_report(*diagnostics: dict[str, Any]) -> StepOutcome:
+    return StepOutcome.returned({"ok": not diagnostics, "diagnostics": list(diagnostics)})
+
+
+def _invalid(fixture: str, field_path: str) -> dict[str, Any]:
+    return {
+        "severity": "error",
+        "code": "schema-invalid",
+        "message": "engine-specific wording",
+        "fixture": fixture,
+        "fieldPath": field_path,
+    }
+
+
+def test_invalid_paths_compares_the_sorted_deduplicated_path_set() -> None:
+    outcome = _validation_report(
+        _invalid("theme:a", "palette.bg"),
+        _invalid("theme:a", "name"),
+        _invalid("theme:a", "name"),
+    )
+    expect: dict[str, Any] = {"invalidPaths": ["theme:a#name", "theme:a#palette.bg"]}
+    assert compare_invalid_paths(outcome, expect) is None
+
+
+def test_invalid_paths_ignores_the_engine_specific_message() -> None:
+    """The whole point of the form: two engines word the same failure
+    differently, so only the instance path is contractual."""
+    ajv_like = _validation_report({**_invalid("theme:a", "name"), "message": "must be string"})
+    python_like = _validation_report({**_invalid("theme:a", "name"), "message": "5 is not of type"})
+    expect: dict[str, Any] = {"invalidPaths": ["theme:a#name"]}
+    assert compare_invalid_paths(ajv_like, expect) is None
+    assert compare_invalid_paths(python_like, expect) is None
+
+
+def test_invalid_paths_fails_a_diagnostic_with_another_code() -> None:
+    outcome = _validation_report(
+        {
+            "severity": "error",
+            "code": "missing-reference",
+            "message": "x",
+            "fixture": "theme:a",
+        }
+    )
+    detail = compare_invalid_paths(outcome, {"invalidPaths": []})
+    assert detail is not None
+    assert "missing-reference" in detail
+
+
+def test_invalid_paths_requires_ok_false_when_paths_are_present() -> None:
+    outcome = StepOutcome.returned({"ok": True, "diagnostics": [_invalid("theme:a", "name")]})
+    detail = compare_invalid_paths(outcome, {"invalidPaths": ["theme:a#name"]})
+    assert detail is not None
+    assert "$.ok" in detail
+
+
+def test_invalid_paths_accepts_a_clean_report() -> None:
+    assert compare_invalid_paths(_validation_report(), {"invalidPaths": []}) is None
+
+
+def test_invalid_paths_rejects_a_raise_and_a_non_report() -> None:
+    assert compare_invalid_paths(StepOutcome.raised("boom"), {"invalidPaths": []}) is not None
+    assert compare_invalid_paths(StepOutcome.returned([1, 2]), {"invalidPaths": []}) is not None

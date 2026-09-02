@@ -1,0 +1,54 @@
+{
+  "id": "fixtures/resolve/inline-value-without-an-expected-type-passes-through",
+  "title": "with no expectedType a non-ref value is returned unchanged",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        {
+          "any": [
+            1,
+            null,
+            "x"
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "any": [
+            1,
+            null,
+            "x"
+          ]
+        }
+      }
+    }
+  ]
+}

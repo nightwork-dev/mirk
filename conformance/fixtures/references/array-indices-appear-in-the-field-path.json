@@ -1,0 +1,86 @@
+{
+  "id": "fixtures/references/array-indices-appear-in-the-field-path",
+  "title": "an array contributes numeric field-path segments",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "themes/light.json": "{\"name\":\"Light\"}",
+                "pages/home.json": "{\"themes\":[{\"$ref\":\"theme:dark\"},{\"$ref\":\"theme:light\"}]}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            },
+            {
+              "ref": "theme:light",
+              "type": "theme",
+              "id": "light",
+              "resolved": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:home",
+              "to": "theme:dark",
+              "fieldPath": [
+                "themes",
+                "0"
+              ]
+            },
+            {
+              "from": "page:home",
+              "to": "theme:light",
+              "fieldPath": [
+                "themes",
+                "1"
+              ]
+            }
+          ],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

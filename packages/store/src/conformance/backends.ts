@@ -16,6 +16,7 @@ import {
   sha256HexBytes,
 } from "../canonical.js";
 import { SqliteAdapter } from "../adapters/sqlite.js";
+import { fixturesApi, type FixturesBackendStore } from "./fixtures-target.js";
 import { neighbors, traverse, traverseFrontierBatched } from "../graph.js";
 import {
   targetKindFor,
@@ -138,6 +139,13 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   }
 
   if (backend === "memory") {
+    if (kind === "fixtures") {
+      const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+      return {
+        target: { kind, api: fixturesApi(store as unknown as FixturesBackendStore) },
+        dispose: () => {},
+      };
+    }
     if (kind === "vector") {
       const store = new InMemoryVectorStore({ dimensions: vectorDimensionsFor(scenario.steps) });
       return { target: { kind, api: methodApi(store, VECTOR_METHODS) }, dispose: () => {} };
@@ -164,6 +172,12 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   );
   const dispose = () => adapter.close();
 
+  if (kind === "fixtures") {
+    return {
+      target: { kind, api: fixturesApi(adapter.kv as unknown as FixturesBackendStore) },
+      dispose,
+    };
+  }
   if (kind === "vector") {
     return { target: { kind, api: methodApi(adapter.vector, VECTOR_METHODS) }, dispose };
   }

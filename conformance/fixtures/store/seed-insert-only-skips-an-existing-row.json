@@ -1,0 +1,81 @@
+{
+  "id": "fixtures/store/seed-insert-only-skips-an-existing-row",
+  "title": "insert-only reports an existing row as skipped rather than overwriting it",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "theme": "themes_out"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "written": [
+            {
+              "type": "theme",
+              "ref": "theme:dark",
+              "collection": "themes_out",
+              "id": "dark"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "theme": "themes_out"
+          },
+          "mode": "insert-only"
+        }
+      ],
+      "expect": {
+        "value": {
+          "written": [],
+          "skipped": [
+            {
+              "type": "theme",
+              "ref": "theme:dark",
+              "collection": "themes_out",
+              "id": "dark",
+              "reason": "exists"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -10,6 +10,8 @@
 //   { ids: true }                          ordered result ids only
 //   { throws: true }                       must throw; the generator pins the
 //                                          exact message
+//   { invalidPaths: true }                 a validate result, compared by the
+//                                          set of failing instance paths
 //
 // A step with no marker is setup. Setup still has to succeed: a setup step that
 // throws fails generation and fails replay.
@@ -39,7 +41,14 @@ export interface MarkThrows {
   throws: true;
 }
 
-export type StepMarker = MarkValue | MarkValues | MarkIds | MarkThrows;
+/** Compare this `validate` result by the set of instance paths that failed
+ *  schema validation, never by an engine's message text. The generator pins the
+ *  sorted, de-duplicated list. */
+export interface MarkInvalidPaths {
+  invalidPaths: true;
+}
+
+export type StepMarker = MarkValue | MarkValues | MarkIds | MarkThrows | MarkInvalidPaths;
 
 /** A step as authored: an operation, its positional args, and optionally the
  *  form of the assertion. */
@@ -79,6 +88,10 @@ export function isMarkIds(marker: StepMarker): marker is MarkIds {
 
 export function isMarkThrows(marker: StepMarker): marker is MarkThrows {
   return "throws" in marker;
+}
+
+export function isMarkInvalidPaths(marker: StepMarker): marker is MarkInvalidPaths {
+  return "invalidPaths" in marker;
 }
 
 /** Two or more kebab segments. The first is the corpus directory the generator

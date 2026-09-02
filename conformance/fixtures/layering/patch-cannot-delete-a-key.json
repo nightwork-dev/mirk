@@ -1,0 +1,57 @@
+{
+  "id": "fixtures/layering/patch-cannot-delete-a-key",
+  "title": "no strategy removes a key: a deep patch retains what it omits and overwrites with null (items 75, 76)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\",\"keep\":{\"a\":1},\"drop\":{\"b\":2}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"drop\":null}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark",
+          "keep": {
+            "a": 1
+          },
+          "drop": null
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "id": "fixtures/references/malformed-ref-is-a-graph-diagnostic",
+  "title": "a $ref whose value is not a valid ref becomes an invalid-ref diagnostic on the graph (item 31)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"not a ref\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "not a ref",
+              "type": "<malformed>",
+              "id": "not a ref",
+              "resolved": false
+            },
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:home",
+              "to": "not a ref",
+              "fieldPath": [
+                "theme"
+              ]
+            }
+          ],
+          "diagnostics": [
+            {
+              "severity": "error",
+              "code": "invalid-ref",
+              "message": "Invalid fixture ref \"not a ref\".",
+              "fixture": "page:home",
+              "fieldPath": "theme"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "value": {
+          "ok": false,
+          "diagnostics": [
+            {
+              "severity": "error",
+              "code": "invalid-ref",
+              "message": "Invalid fixture ref \"not a ref\".",
+              "fixture": "page:home",
+              "fieldPath": "theme"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

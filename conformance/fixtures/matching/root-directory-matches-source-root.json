@@ -1,0 +1,43 @@
+{
+  "id": "fixtures/matching/root-directory-matches-source-root",
+  "title": "directory \"\" matches files at the source root (item 73)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": ""
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "dark.json": "{\"name\":\"Dark\"}",
+                "nested/x.json": "{\"name\":\"X\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:dark"
+        ]
+      }
+    }
+  ]
+}

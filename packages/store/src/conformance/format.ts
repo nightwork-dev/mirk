@@ -43,7 +43,24 @@ export interface ExpectThrows {
   throws: string;
 }
 
-export type Expect = ExpectValue | ExpectValues | ExpectIds | ExpectThrows;
+/** The set of instance paths a `validate` result reported as schema-invalid.
+ *
+ *  Two JSON Schema engines (Ajv here, `jsonschema` in Python) word every
+ *  message differently and count errors differently, so a message is not
+ *  contract and a `throws` form cannot express this. What IS contract is WHICH
+ *  parts of WHICH fixture failed: a sorted, de-duplicated list of
+ *  `"<ref>#<instancePath>"`, where `instancePath` is the dot-joined leaf path
+ *  `formatIssuePath` renders (`palette.0.hex`; the empty string for the whole
+ *  document).
+ *
+ *  The step also fails if the result carries a diagnostic whose code is not
+ *  `schema-invalid` — use a `value` expect for those — or if `ok` disagrees
+ *  with the list being empty. */
+export interface ExpectInvalidPaths {
+  invalidPaths: string[];
+}
+
+export type Expect = ExpectValue | ExpectValues | ExpectIds | ExpectThrows | ExpectInvalidPaths;
 
 /** One operation against the scenario's target. `op` is a port method name as
  *  spelled in the TypeScript port; `args` are positional JSON values.
@@ -84,6 +101,10 @@ export function isExpectThrows(expect: Expect): expect is ExpectThrows {
   return "throws" in expect;
 }
 
+export function isExpectInvalidPaths(expect: Expect): expect is ExpectInvalidPaths {
+  return "invalidPaths" in expect;
+}
+
 /** The default tolerance for `approxFields`. Vector scores only; ordering, ids,
  *  counts and messages are exact everywhere. */
 export const DEFAULT_TOL = 1e-6;
@@ -122,6 +143,7 @@ export const scenarioSchema: Record<string, unknown> = {
         { $ref: "#/$defs/expectValues" },
         { $ref: "#/$defs/expectIds" },
         { $ref: "#/$defs/expectThrows" },
+        { $ref: "#/$defs/expectInvalidPaths" },
       ],
     },
     expectValue: {
@@ -155,6 +177,14 @@ export const scenarioSchema: Record<string, unknown> = {
       additionalProperties: false,
       required: ["throws"],
       properties: { throws: { type: "string" } },
+    },
+    // A validation result compared by the set of failing instance paths, never
+    // by an engine's message text.
+    expectInvalidPaths: {
+      type: "object",
+      additionalProperties: false,
+      required: ["invalidPaths"],
+      properties: { invalidPaths: { type: "array", items: { type: "string" } } },
     },
   },
 };

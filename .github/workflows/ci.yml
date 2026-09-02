@@ -66,24 +66,32 @@ jobs:
       # a test step. The Python compat tests shell out to node against the built
       # `@mirk/store` dist, which the install and build steps above already
       # produced in this job.
-      - name: Install Python dev dependencies
-        working-directory: python/store
-        run: uv sync --group dev
+      - name: Install Python workspace
+        working-directory: python
+        run: uv sync --all-packages --group dev
 
       # The Python port replays the same corpus. Running only the TypeScript
       # suite would let the two implementations drift apart between commits,
       # which is the one thing the corpus exists to prevent.
-      - name: Python tests
+      - name: Python tests (store)
         working-directory: python/store
         run: uv run pytest -q
 
-      - name: Python typecheck
+      - name: Python tests (fixtures)
+        working-directory: python/fixtures
+        run: uv run pytest -q
+
+      - name: Python typecheck (store)
         working-directory: python/store
         run: uv run pyright
 
+      - name: Python typecheck (fixtures)
+        working-directory: python/fixtures
+        run: uv run pyright
+
       - name: Python lint
-        working-directory: python/store
-        run: uv run ruff check .
+        working-directory: python
+        run: uv run ruff check store fixtures
 
       - name: Verify packed package releases
         run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --receipt-dir .mirk-release

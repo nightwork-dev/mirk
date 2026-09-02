@@ -60,6 +60,7 @@ conformance/
   graph/*.json           graph traversal scenarios
   artifact/hashing/canonical-json/*.json   canonical text and its digest
   artifact/hashing/bytes/*.json            content digests over raw bytes
+  fixtures/**/*.json     authored-data loader scenarios
 ```
 
 A scenario's `id` is its path under `conformance/` without the `.json`
@@ -99,8 +100,9 @@ Rules:
   `{"values": [...]}` for a list of records compared position by position;
   `{"ids": [...]}` for ordered result ids only, used where the contract fixes
   ranking and nothing else; `{"throws": "<exact message>"}` when the operation
-  must raise with that message. There is no unordered form: the contract fixes
-  order everywhere. A step without `expect` is setup.
+  must raise with that message; `{"invalidPaths": [...]}` for a validation
+  result, described under "The `fixtures` port" below. There is no unordered
+  form: the contract fixes order everywhere. A step without `expect` is setup.
 - A `values` expect takes two optional modifiers, and may carry both at once.
   `approxFields` with `tol` compares the named fields within that tolerance
   instead of exactly. `ignoreFields` removes the named fields from both sides
@@ -157,14 +159,15 @@ A skip lets a typo in `ports`, or a capability that quietly stopped loading,
 retire a scenario from every backend at once — which is the exact failure the
 corpus exists to prevent.
 
-- `ports` are the seven port names. Five bind a backend: `kv`, `collection`,
+- `ports` are the eight port names. Five bind a backend: `kv`, `collection`,
   `vector`, `search`, `graph`. `atomic` binds the same object as `kv` and
   `collection` and adds `getVersioned` and `mutateAtomically` to it. `hash`
   binds a pure target with no backend behind it — `canonicalJson`,
   `canonicalDigest`, `sha256Hex(text)` and `sha256Bytes(bytes)` — which is why
   a `hash` scenario produces the same result under every backend name and is
-  still run under each of them. Every backend in both languages implements all
-  seven, so an unsatisfiable port is a corpus error.
+  still run under each of them. `fixtures` binds an authored-data loader over
+  the backend store, described below. Every backend in both languages
+  implements all eight, so an unsatisfiable port is a corpus error.
 - `capabilities` are the optional ones. The only known name today is
   `listWhereIn`; anything else is a typo and fails the same way. Each runner
   declares, per backend, which capabilities that backend has **right now**,
@@ -185,6 +188,109 @@ corpus exists to prevent.
 Each runner reports the capability set it found per backend, so a silently
 degraded environment (sqlite-vec missing from CI, say) is visible in the log
 rather than inferred from a suspiciously fast green.
+
+## The `fixtures` port
+
+`@mirk/fixtures` loads authored documents through layered sources, so its
+scenarios need a target that is configured before it is used. Every `fixtures`
+scenario's FIRST step is `configure(spec)`, a setup step carrying the whole
+declaration as data.
+
+```json
+{ "op": "configure", "args": [{
+  "types": [{ "type": "theme", "directory": "themes",
+              "jsonSchema": { "type": "object", "required": ["name"] },
+              "mergeStrategy": "deep" }],
+  "sources": [{ "kind": "memory", "name": "base", "priority": 0,
+                "files": { "themes/dark.json": "{\"name\":\"Dark\"}" } }],
+  "referenceMode": "explicit-only"
+}] }
+```
+
+- **A type is data.** `type` and `directory` are required; `extensions`,
+  `document` (`{"kind":"map","idField":…}`), `purpose`, `referenceMode` and
+  `mergeStrategy` (a builtin NAME — `replace`, `deep`, `array-replace`) are
+  optional. `jsonSchema` is a JSON Schema 2020-12 document and defaults to
+  `true`, the schema that accepts every value; `null` declares no contract at
+  all, which the registry rejects. A function `mergeStrategy` and the
+  `validateReferences`, `extractReferences` and `materialize` hooks are code,
+  cannot cross a language boundary, and are pinned by each language's own tests
+  instead.
+- **A source is a layer.** `{"kind":"memory", name, priority, files}` maps
+  relative paths to document TEXT. `{"kind":"store", name, priority, collection,
+  pathPrefix?, extension?, items}` writes each item through the scenario's
+  backend store first and then reads it back through the store source, so a
+  store scenario exercises the real backend on both memory and SQLite. An item
+  is `{id, content, extension?, relativePath?}`; `extension` falls back to the
+  source's, then to `.json`.
+- **Ops after `configure`:** `load(ref)`, `list(type?)`, `types()`,
+  `validate(ref?)`, `explain(ref)` (the provenance object), `referenceGraph()`,
+  `resolveRef(value, expectedType?)`, `invalidate(ref?)`, `seedStore(options)`
+  and `readSeeded(collection, id)`.
+- **Results are plain JSON with the TypeScript key spelling.** A field whose
+  value is `undefined` is ABSENT, not null — both languages omit the same keys.
+  `referenceGraph()` is serialized as `{nodes, edges, diagnostics}` with `nodes`
+  sorted by `ref` and `edges` sorted by `from`, `to`, then the dot-joined
+  `fieldPath`, all by code point.
+- **Errors this package raises itself** (`patch-without-base`,
+  `map-id-mismatch`, `unsafe-relative-path`, …) use the exact-message `throws`
+  form, like every other port.
+
+### Validation is compared by paths, never by message
+
+`{"invalidPaths": [...]}` is the only expect form for a `validate` result that
+reports schema failures. Ajv and Python's `jsonschema` word every message
+differently and count errors differently, so a message is not contract. What is
+contract is which part of which fixture failed:
+
+- the sorted (code point), de-duplicated list of `"<ref>#<instancePath>"`, where
+  `instancePath` is the dot-joined leaf path (`swatches.1.hex`, or the empty
+  string for the document itself);
+- `ok` must be `false` when the list is non-empty and `true` when it is empty;
+- a diagnostic with any code other than `schema-invalid` FAILS the step — use
+  the `value` form for those, which pins the message as usual.
+
+Two rules make the engines agree and both languages implement them:
+
+- **aggregate keywords are dropped.** An `anyOf`, `oneOf`, `if` or `not` error
+  reports "some combination failed" at a path both engines spell differently.
+  The branch failures underneath it are kept; Ajv emits them alongside, Python
+  flattens them out of `context`.
+- **a `required` failure keeps the containing object's path** and does not
+  append the missing property. Ajv puts that name in `params`, Python only in
+  the message text; appending it in one language and not the other would
+  diverge.
+
+The corpus never asserts `throws` for a `schema-invalid` failure.
+
+### One more message the corpus does not own: `parse-failed`
+
+`parse-failed` wraps the host parser's own words verbatim
+(`Parse error: <whatever it said>`). V8 says `Expected property name or '}' in
+JSON at position 2`; CPython says `Expecting property name enclosed in double
+quotes: line 1 column 3 (char 2)`. No implementation choice reconciles them,
+because the parser is the language's, so this message is not contract either.
+
+It stays in the message rather than moving to `hint`, because the CLI's
+human-readable output prints `message` and not `hint`: hiding the parser's
+explanation of a broken file would cost a real reader more than it buys the
+corpus. Instead the corpus compares such a diagnostic with the message removed.
+`validateDiagnostics(ref?)` returns a validation report's `diagnostics` array so
+the `values` form applies, and `ignoreFields: ["message"]` drops the field from
+both sides AND from the stored expectation, so no host text reaches the corpus:
+
+```json
+{ "op": "validateDiagnostics", "args": [],
+  "expect": { "values": [{ "severity": "error", "code": "parse-failed",
+                           "fixture": "theme", "source": "pack",
+                           "path": "themes/bad.json" }],
+              "ignoreFields": ["message"] } }
+```
+
+That `list()` aborts on a parse error where `validate()` degrades is pinned by
+each language's own tests for the same reason. Every OTHER `list()`-throws
+scenario raises a message Mirk itself writes, so those stay exact-message
+`throws` steps.
 
 ## Governance
 

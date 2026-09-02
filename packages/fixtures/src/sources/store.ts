@@ -1,3 +1,4 @@
+import { compareCodePoints } from "../order.js";
 import { FixtureError } from "../errors.js";
 import type { FixtureLoader, FixtureSource, FixtureSourceEntry, LoadedFixture, MaybePromise } from "../types.js";
 
@@ -83,7 +84,7 @@ export function createStoreFixtureSource<TItem = StoredFixtureItem>(
     cache = [...mapped].sort((a, b) => {
       const aPath = relativePathFor(a, opts.pathPrefix);
       const bPath = relativePathFor(b, opts.pathPrefix);
-      return aPath.localeCompare(bPath) || a.id.localeCompare(b.id);
+      return compareCodePoints(aPath, bPath) || compareCodePoints(a.id, b.id);
     });
     itemByLocator.clear();
     for (const [locator, item] of nextItemByLocator) itemByLocator.set(locator, item);

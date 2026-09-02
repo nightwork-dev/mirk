@@ -1,0 +1,101 @@
+{
+  "id": "fixtures/store/seed-can-carry-provenance",
+  "title": "includeProvenance stores the layer stack alongside the value (item 41)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"accent\":\"red\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "theme": "themes"
+          },
+          "includeProvenance": true
+        }
+      ],
+      "expect": {
+        "value": {
+          "written": [
+            {
+              "type": "theme",
+              "ref": "theme:dark",
+              "collection": "themes",
+              "id": "dark"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "themes",
+        "dark"
+      ],
+      "expect": {
+        "value": {
+          "id": "dark",
+          "value": {
+            "name": "Dark",
+            "accent": "red"
+          },
+          "provenance": {
+            "finalRef": "theme:dark",
+            "layers": [
+              {
+                "sourceId": "base",
+                "layer": "base",
+                "priority": 0,
+                "path": "themes/dark.json",
+                "kind": "base"
+              },
+              {
+                "sourceId": "overrides",
+                "layer": "overrides",
+                "priority": 1,
+                "path": "themes/dark.json",
+                "kind": "patch"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

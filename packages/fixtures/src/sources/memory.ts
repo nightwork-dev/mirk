@@ -1,3 +1,4 @@
+import { compareCodePoints } from "../order.js";
 import { FixtureError } from "../errors.js";
 import type { FixtureSource, FixtureSourceEntry } from "../types.js";
 
@@ -12,7 +13,7 @@ export function createMemoryFixtureSource(opts: MemoryFixtureSourceOptions): Fix
   return {
     id: opts.id,
     list(): FixtureSourceEntry[] {
-      return [...files.keys()].sort().map((relativePath) => ({ relativePath, locator: relativePath }));
+      return [...files.keys()].sort(compareCodePoints).map((relativePath) => ({ relativePath, locator: relativePath }));
     },
     read(entry: FixtureSourceEntry): string {
       const content = files.get(entry.locator);

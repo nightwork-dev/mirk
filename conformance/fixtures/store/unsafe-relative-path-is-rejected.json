@@ -1,0 +1,45 @@
+{
+  "id": "fixtures/store/unsafe-relative-path-is-rejected",
+  "title": "a store item whose relativePath escapes the source throws unsafe-relative-path (item 39)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "escape",
+                  "relativePath": "../outside.json",
+                  "content": "{\"name\":\"Nope\"}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "throws": "Source \"db\" failed to list entries: Store fixture relativePath \"../outside.json\" is not a safe source-relative path."
+      }
+    }
+  ]
+}

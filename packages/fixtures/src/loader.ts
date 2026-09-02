@@ -1,3 +1,4 @@
+import { compareCodePoints } from "./order.js";
 import { FixtureError, FixtureValidationError, diagnosticsFromError } from "./errors.js";
 import { isPatchDocument, mergeWithStrategy, normalizeLayers, patchBody, provenanceCtx } from "./layering.js";
 import { buildReferenceGraph } from "./reference-graph.js";
@@ -10,6 +11,8 @@ import type {
   FixtureProvenanceLayer,
   FixtureSourceEntry,
   FixtureTypeDefinition,
+  JsonSchemaDocument,
+  JsonSchemaValidator,
   LayeredSource,
   LoadedFixture,
   Parser,
@@ -45,6 +48,9 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   const rawCache = new Map<string, LoadedFixture>();
   const materialCache = new Map<string, unknown>();
   const parsedDocumentCache = new Map<string, unknown>();
+  // One compiled validator per type definition. The factory is the caller's,
+  // so compilation cost is theirs to pay once, not once per fixture.
+  const jsonSchemaValidators = new Map<FixtureTypeDefinition, JsonSchemaValidator>();
 
   function defOrThrow(type: string, refForError: string): FixtureTypeDefinition {
     const def = opts.registry.get(type);
@@ -333,6 +339,28 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     return out;
   }
 
+  function jsonSchemaValidatorFor(def: FixtureTypeDefinition, document: JsonSchemaDocument): JsonSchemaValidator {
+    const cached = jsonSchemaValidators.get(def);
+    if (cached) return cached;
+    if (!opts.jsonSchemaValidator) {
+      // Loud, not silent. A missing engine must never read as "this fixture
+      // has no shape contract".
+      throw new FixtureError({
+        severity: "error",
+        code: "no-json-schema-validator",
+        message: `Fixture type "${def.type}" declares "jsonSchema" but no JSON Schema validator was supplied.`,
+        hint: "Pass jsonSchemaValidator to createFixtureLoader().",
+      });
+    }
+    const validator = opts.jsonSchemaValidator(document);
+    jsonSchemaValidators.set(def, validator);
+    return validator;
+  }
+
+  /** The whole validation surface, in order: the cross-language `jsonSchema`
+   *  first, then the optional Standard Schema, whose OUTPUT becomes the value.
+   *  Both failure modes are one error type and one diagnostic code, so callers,
+   *  the CLI envelope and the exit-code classification are unchanged. */
   async function validateAgainstSchema(
     ref: string,
     sourceId: string,
@@ -340,6 +368,13 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     parsed: unknown,
     def: FixtureTypeDefinition,
   ): Promise<unknown> {
+    if (def.jsonSchema !== undefined) {
+      const issues = jsonSchemaValidatorFor(def, def.jsonSchema)(parsed);
+      if (issues.length > 0) {
+        throw new FixtureValidationError(ref, sourceId, relativePath, issues);
+      }
+    }
+    if (!def.schema) return parsed;
     const result = await def.schema["~standard"].validate(parsed);
     if ("issues" in result && result.issues) {
       throw new FixtureValidationError(ref, sourceId, relativePath, result.issues);
@@ -493,7 +528,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       }
     }
 
-    return [...refs].sort();
+    return [...refs].sort(compareCodePoints);
   }
 
   async function resolveRef<T>(value: RefOrInline<T>, expectedType?: string): Promise<T> {
@@ -526,11 +561,13 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
 
     if (expectedType) {
       const def = defOrThrow(expectedType, `<inline ${expectedType}>`);
-      const parsed = await def.schema["~standard"].validate(value);
-      if ("issues" in parsed && parsed.issues) {
-        throw new FixtureValidationError(`<inline ${expectedType}>`, "<inline>", "<inline>", parsed.issues);
-      }
-      return parsed.value as T;
+      return await validateAgainstSchema(
+        `<inline ${expectedType}>`,
+        "<inline>",
+        "<inline>",
+        value,
+        def,
+      ) as T;
     }
 
     return value as T;
@@ -695,7 +732,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         }
       }
     }
-    return [...refs].sort();
+    return [...refs].sort(compareCodePoints);
   }
 
   function makeValidationContext(ref: string, skipSources: ReadonlySet<string>): ValidationContext {

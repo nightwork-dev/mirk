@@ -1,0 +1,50 @@
+{
+  "id": "fixtures/registry/types-sorted-by-code-point",
+  "title": "types() sorts registered type names by code point, whatever order they were registered in",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "zeta",
+              "directory": "zeta"
+            },
+            {
+              "type": "alpha",
+              "directory": "alpha"
+            },
+            {
+              "type": "Beta",
+              "directory": "beta"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "types",
+      "args": [],
+      "expect": {
+        "value": [
+          "Beta",
+          "alpha",
+          "zeta"
+        ]
+      }
+    }
+  ]
+}

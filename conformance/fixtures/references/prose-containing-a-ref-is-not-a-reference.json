@@ -1,0 +1,73 @@
+{
+  "id": "fixtures/references/prose-containing-a-ref-is-not-a-reference",
+  "title": "bare-ref detection checks the WHOLE string, so prose is never a reference (item 29)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "referenceMode": "explicit-and-bare",
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"note\":\"Use theme:missing in prose only.\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "value": {
+          "ok": true,
+          "diagnostics": []
+        }
+      }
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            }
+          ],
+          "edges": [],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

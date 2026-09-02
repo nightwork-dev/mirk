@@ -49,6 +49,7 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | implemented; receipt-green                  |
 | MR-22 | vec0 path: delete                                         | `@mirk/store/sqlite`, `python/store` | near | implemented; receipt-green                  |
 | MR-22b | Does the libSQL native vector path execute?              | `@mirk/store-libsql`          | near    | proposed; probe needed                      |
+| MR-23 | Python port of `@mirk/fixtures`                           | `python/fixtures` (mirk-fixtures) | near | implemented; corpus-green; wheel path proven |
 
 ## Current closure
 
@@ -255,6 +256,21 @@ are inert.
 `@mirk/store-libsql` reports `accelerated` for its own `vector_top_k` path, and
 nothing has yet proven that path runs rather than falling through to JS cosine,
 which is exactly the failure MR-22 found next door.
+
+### MR-23 · Python port of `@mirk/fixtures`
+
+`mirk-fixtures` loads authored documents through layered memory, store and
+filesystem sources with the same precedence, patching, provenance, reference
+graph and seeding as `@mirk/fixtures`, proven by `conformance/fixtures/` (88
+scenarios, both backends, both languages). Fixture types declare `jsonSchema`;
+the engine is injected in both languages (Ajv 2020 in TypeScript tests,
+`jsonschema` in Python tests) so neither package carries a runtime dependency,
+and validation is compared by failing instance paths, never by message. Every
+`localeCompare` in `@mirk/fixtures` became code point order on the way. Evidence,
+including the wheel installed into a clean venv and run from outside the
+checkout:
+[`evidence/python-port/2026-09-02-fixtures-green.md`](evidence/python-port/2026-09-02-fixtures-green.md).
+The CLI and the package-resource source are not ported by ruling.
 
 ## Medium term
 

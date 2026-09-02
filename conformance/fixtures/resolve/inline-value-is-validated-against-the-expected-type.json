@@ -1,0 +1,58 @@
+{
+  "id": "fixtures/resolve/inline-value-is-validated-against-the-expected-type",
+  "title": "an inline value with an expectedType is validated and returned",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        {
+          "name": "Inline"
+        },
+        "theme"
+      ],
+      "expect": {
+        "value": {
+          "name": "Inline"
+        }
+      }
+    }
+  ]
+}

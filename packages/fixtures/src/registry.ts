@@ -1,3 +1,4 @@
+import { compareCodePoints } from "./order.js";
 import { FixtureError } from "./errors.js";
 import type { FixtureRegistryLike, FixtureTypeDefinition } from "./types.js";
 
@@ -5,6 +6,16 @@ export class FixtureRegistry implements FixtureRegistryLike {
   private readonly defs = new Map<string, FixtureTypeDefinition>();
 
   register(def: FixtureTypeDefinition): void {
+    // A type with no contract at all would load anything, silently, in every
+    // language. `jsonSchema: true` is the explicit way to say "any value".
+    if (def.jsonSchema === undefined && !def.schema) {
+      throw new FixtureError({
+        severity: "error",
+        code: "missing-schema",
+        message: `Fixture type "${def.type}" must declare "jsonSchema" or "schema".`,
+        hint: 'Use `jsonSchema: true` for a type whose documents are unconstrained.',
+      });
+    }
     if (this.defs.has(def.type)) {
       throw new FixtureError({
         severity: "error",
@@ -24,7 +35,7 @@ export class FixtureRegistry implements FixtureRegistryLike {
   }
 
   types(): string[] {
-    return [...this.defs.keys()].sort();
+    return [...this.defs.keys()].sort(compareCodePoints);
   }
 }
 

@@ -1,0 +1,50 @@
+{
+  "id": "fixtures/layering/shadowed-patch-ref-mismatch-still-fires",
+  "title": "a $patch naming another ref throws even when it sits below the selected base (item 12)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "low",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:other\",\"accent\":\"red\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "high",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Patch declares \"$patch: theme:other\" but is being applied to \"theme:dark\"."
+      }
+    }
+  ]
+}

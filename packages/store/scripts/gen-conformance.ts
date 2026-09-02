@@ -31,6 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { compareExpect } from "../src/conformance/compare.js";
 import {
   isMarkIds,
+  isMarkInvalidPaths,
   isMarkThrows,
   isMarkValue,
   isMarkValues,
@@ -46,7 +47,7 @@ import {
 } from "../src/conformance/format.js";
 import { openTarget, unsupportedCapabilities } from "../src/conformance/backends.js";
 import { executeStep, type StepOutcome } from "../src/conformance/runner.js";
-import { stripIgnored } from "../src/conformance/compare.js";
+import { invalidPathsOf, stripIgnored } from "../src/conformance/compare.js";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
@@ -55,7 +56,7 @@ const SCENARIOS_DIR = join(SCRIPT_DIR, "scenarios");
 
 /** Only these subdirectories are cleared. README.md lives at the corpus root
  *  and is not generated, so it survives. */
-const GENERATED_DIRS = ["store", "vector", "search", "graph", "artifact"] as const;
+const GENERATED_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures"] as const;
 
 export interface GenerationSummary {
   outDir: string;
@@ -142,6 +143,15 @@ function deriveExpect(
   }
 
   if (isMarkValue(marker)) return { value: outcome.value };
+  if (isMarkInvalidPaths(marker)) {
+    const paths = invalidPathsOf(outcome.value);
+    if (typeof paths === "string") {
+      throw new Error(
+        `${scenarioId} step ${index} (${step.op}): an \`invalidPaths\` marker needs a validation report: ${paths}`,
+      );
+    }
+    return { invalidPaths: paths };
+  }
   if (isMarkIds(marker)) return { ids: idsOf(scenarioId, index, outcome.value) };
   if (isMarkValues(marker)) {
     if (!Array.isArray(outcome.value)) {

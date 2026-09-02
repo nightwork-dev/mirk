@@ -234,6 +234,41 @@ export default { registry, sources: [source] };
     });
   });
 
+  // The CLI used to sort diagnostics by code unit and the graph by ICU
+  // collation — two comparators in one file. Both are code point order now, and
+  // "Z" against "a" is the case that tells them apart.
+  it("sorts graph nodes and edges by code point, not by collation", async () => {
+    const config = await writeModule(`
+const files = {
+  "templates/Zebra.json": "{\\"theme\\":{\\"$ref\\":\\"theme:Zulu\\"}}",
+  "templates/apple.json": "{\\"theme\\":{\\"$ref\\":\\"theme:alpha\\"}}"
+};
+const schema = { "~standard": { version: 1, vendor: "test", validate: value => ({ value }) } };
+const theme = { type: "theme", directory: "themes", schema };
+const template = { type: "template", directory: "templates", schema };
+const registry = { get: type => type === "theme" ? theme : type === "template" ? template : undefined, has: type => type === "theme" || type === "template", types: () => ["theme", "template"] };
+const source = { id: "memory", list: () => Object.keys(files).map(relativePath => ({ relativePath, locator: relativePath })), read: entry => files[entry.relativePath] };
+export default { registry, sources: [source] };
+`);
+
+    const graph = await executeFixtureCli(["graph", config, "--json"]);
+    const result = graph.envelope.result as {
+      nodes: Array<{ ref: string }>;
+      edges: Array<{ from: string }>;
+    };
+
+    expect(result.nodes.map((node) => node.ref)).toEqual([
+      "template:Zebra",
+      "template:apple",
+      "theme:Zulu",
+      "theme:alpha",
+    ]);
+    expect(result.edges.map((edge) => edge.from)).toEqual([
+      "template:Zebra",
+      "template:apple",
+    ]);
+  });
+
   it("escapes fixture refs and field paths in DOT graph output", async () => {
     const targetRef = 'theme:quoted"ref\\\\tail';
     const fieldPath = ['meta"quoted', "line\nbreak"];

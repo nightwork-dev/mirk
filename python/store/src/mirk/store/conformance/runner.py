@@ -36,6 +36,16 @@ points, lone surrogates allowed), ``$b64`` (raw bytes) or ``$utf8`` (UTF-8 bytes
 of this string) — recursively through arrays and objects. `run_scenario`
 expands them before dispatch for that port only; every other port's args are
 ordinary JSON and mean themselves.
+
+## The `invalidPaths` expect form
+
+Schema validation is the one place the corpus cannot compare messages: Ajv and
+`jsonschema` word failures differently, count them differently, and encode
+paths differently. A step whose ``expect`` carries ``invalidPaths`` is checked
+against the sorted, de-duplicated set of ``"<ref>#<instancePath>"`` strings
+built from the `schema-invalid` diagnostics of a validation report, and against
+nothing else. A diagnostic of any other code fails the step, so this form
+cannot launder a missing reference or a parse error into a clean pass.
 """
 
 from __future__ import annotations
@@ -54,6 +64,7 @@ __all__ = [
     "StepFailure",
     "StepOutcome",
     "TargetUnavailableError",
+    "compare_invalid_paths",
     "expand_hash_wrappers",
     "normalize",
     "resolve_target",
@@ -199,6 +210,48 @@ def run_step(target: object, op: str, args: list[Any]) -> StepOutcome:
         return StepOutcome.raised(str(exc))
 
 
+def compare_invalid_paths(outcome: StepOutcome, expect: dict[str, Any]) -> str | None:
+    """Check a `validate` result against the `invalidPaths` expect form.
+
+    Two JSON Schema engines cannot agree on wording, error counts or path
+    encodings, so a validation scenario compares only WHICH parts of a document
+    failed: the sorted, de-duplicated set of ``"<ref>#<instancePath>"`` strings
+    over diagnostics whose code is ``schema-invalid``. A diagnostic with any
+    other code fails the step rather than being filtered out, so this form can
+    never launder a missing reference or a parse error into a clean pass.
+    """
+    if not outcome.ok:
+        return f"expected a validation report, got a raise: {outcome.message!r}"
+    report: Any = outcome.value
+    if not isinstance(report, dict) or "diagnostics" not in report:
+        return f"$: expected a validation report object, got {report!r}"
+    report_obj = cast(dict[str, Any], report)
+
+    raw_diagnostics: Any = report_obj.get("diagnostics")
+    if not isinstance(raw_diagnostics, list):
+        return f"$.diagnostics: expected an array, got {raw_diagnostics!r}"
+
+    paths: set[str] = set()
+    for item in cast(list[Any], raw_diagnostics):
+        if not isinstance(item, dict):
+            return f"$.diagnostics: expected diagnostic objects, got {item!r}"
+        diagnostic = cast(dict[str, Any], item)
+        code = diagnostic.get("code")
+        if code != "schema-invalid":
+            return f"$.diagnostics: unexpected diagnostic code {code!r}; use `value` for those"
+        paths.add(f"{diagnostic.get('fixture', '')}#{diagnostic.get('fieldPath', '')}")
+
+    expected_raw: Any = expect["invalidPaths"]
+    expected = [str(entry) for entry in cast(list[Any], expected_raw)]
+    actual = sorted(paths)
+    if actual != expected:
+        return f"$.invalidPaths: expected {expected!r}, got {actual!r}"
+    reported_ok: Any = report_obj.get("ok")
+    if actual and reported_ok is not False:
+        return f"$.ok: expected false with {len(actual)} invalid paths, got {reported_ok!r}"
+    return None
+
+
 def run_scenario(target: object, scenario: Scenario) -> list[StepFailure]:
     """Run every step in order, checking each ``expect`` before the next step."""
     failures: list[StepFailure] = []
@@ -215,7 +268,11 @@ def run_scenario(target: object, scenario: Scenario) -> list[StepFailure]:
             if not result.ok:
                 failures.append(StepFailure(index, op, f"setup raised: {result.message!r}"))
             continue
-        detail = compare_expect(result, cast(dict[str, Any], expect))
+        clause = cast(dict[str, Any], expect)
+        if "invalidPaths" in clause:
+            detail = compare_invalid_paths(result, clause)
+        else:
+            detail = compare_expect(result, clause)
         if detail is not None:
             failures.append(StepFailure(index, op, detail))
             break

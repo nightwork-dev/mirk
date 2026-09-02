@@ -1,0 +1,71 @@
+{
+  "id": "fixtures/references/type-level-mode-overrides-the-loader",
+  "title": "a type's own referenceMode wins over the loader's",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages",
+              "referenceMode": "explicit-and-bare"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":\"theme:dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:home",
+              "to": "theme:dark",
+              "fieldPath": [
+                "theme"
+              ]
+            }
+          ],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

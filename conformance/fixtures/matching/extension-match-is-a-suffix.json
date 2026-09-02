@@ -1,0 +1,45 @@
+{
+  "id": "fixtures/matching/extension-match-is-a-suffix",
+  "title": "extension matching is endsWith, so a.min.json under [.json] is the fixture a.min (item 72)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "extensions": [
+                ".json"
+              ]
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/a.min.json": "{\"name\":\"A\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:a.min"
+        ]
+      }
+    }
+  ]
+}

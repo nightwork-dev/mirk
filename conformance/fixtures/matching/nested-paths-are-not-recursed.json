@@ -1,0 +1,52 @@
+{
+  "id": "fixtures/matching/nested-paths-are-not-recursed",
+  "title": "a file below the type directory does not match: the tail must contain no slash",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "themes/nested/deep.json": "{\"name\":\"Deep\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:dark"
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:deep"
+      ],
+      "expect": {
+        "throws": "Fixture \"theme:deep\" not found in any registered source."
+      }
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "id": "fixtures/validation/nested-object-failure",
+  "title": "a failure inside a nested object reports the full dotted path",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "palette"
+                ],
+                "properties": {
+                  "palette": {
+                    "type": "object",
+                    "required": [
+                      "fg"
+                    ],
+                    "properties": {
+                      "fg": {
+                        "type": "string"
+                      },
+                      "bg": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"palette\":{\"fg\":1,\"bg\":2}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#palette.bg",
+          "theme:dark#palette.fg"
+        ]
+      }
+    }
+  ]
+}

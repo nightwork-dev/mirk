@@ -21,11 +21,28 @@ import {
 } from "./conformance/backends.js";
 import { executeStep, unsupportedPorts, type BackendName } from "./conformance/runner.js";
 
-const CORPUS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "conformance");
+/** The committed corpus, unless `MIRK_CONFORMANCE_DIR` points elsewhere. The
+ *  override exists so a scenario author can replay a corpus generated into a
+ *  scratch directory (`conformance:gen --out …`) without touching the shared
+ *  one; it is the same convention the Python suite uses. An override is logged,
+ *  because a green run against the wrong corpus proves nothing. */
+const DEFAULT_CORPUS_DIR = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "conformance",
+);
+const CORPUS_DIR = process.env.MIRK_CONFORMANCE_DIR
+  ? resolve(process.env.MIRK_CONFORMANCE_DIR)
+  : DEFAULT_CORPUS_DIR;
+if (CORPUS_DIR !== DEFAULT_CORPUS_DIR) {
+  console.log(`conformance corpus overridden by MIRK_CONFORMANCE_DIR: ${CORPUS_DIR}`);
+}
 const BACKENDS: BackendName[] = ["memory", "sqlite"];
 /** Directories the generator owns. A directory that exists must carry at least
  *  one scenario AND have at least one of them executed by every backend. */
-const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact"] as const;
+const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures"] as const;
 
 function jsonFiles(dir: string): string[] {
   const out: string[] = [];
@@ -115,6 +132,12 @@ function expectProblem(value: unknown): string | null {
   }
   if (joined === "throws") {
     return typeof record.throws === "string" ? null : '"throws" must be a string';
+  }
+  if (joined === "invalidPaths") {
+    return Array.isArray(record.invalidPaths)
+      && record.invalidPaths.every((path) => typeof path === "string")
+      ? null
+      : '"invalidPaths" must be an array of strings';
   }
   if (keys.includes("values")) {
     const allowed = ["approxFields", "ignoreFields", "tol", "values"];

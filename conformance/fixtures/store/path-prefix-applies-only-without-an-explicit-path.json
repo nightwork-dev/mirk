@@ -1,0 +1,75 @@
+{
+  "id": "fixtures/store/path-prefix-applies-only-without-an-explicit-path",
+  "title": "an explicit relativePath ignores pathPrefix; without one the path is <prefix>/<id><ext> (item 36)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "derived",
+                  "content": "{\"name\":\"Derived\"}"
+                },
+                {
+                  "id": "explicit",
+                  "relativePath": "themes/explicit.json",
+                  "content": "{\"name\":\"Explicit\"}"
+                }
+              ],
+              "pathPrefix": "themes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:derived",
+          "theme:explicit"
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:derived"
+      ],
+      "expect": {
+        "value": {
+          "name": "Derived"
+        }
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:explicit"
+      ],
+      "expect": {
+        "value": {
+          "name": "Explicit"
+        }
+      }
+    }
+  ]
+}

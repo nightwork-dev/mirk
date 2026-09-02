@@ -1,0 +1,54 @@
+{
+  "id": "fixtures/map/patch-id-mismatch-rejected",
+  "title": "a PATCH map entry whose explicit id disagrees with its key throws map-id-mismatch (item 9)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"name\":\"Dark\"}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/overrides.json": "{\"dark\":{\"$patch\":\"theme:dark\",\"id\":\"other\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Map key \"dark\" does not match explicit id \"other\"."
+      }
+    }
+  ]
+}

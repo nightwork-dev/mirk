@@ -16,8 +16,10 @@ export type BackendName = "memory" | "sqlite";
 
 /** Which target a scenario's `ports` select. `kv`, `collection` and `atomic`
  *  are one object (SyncStore), so they share the "store" target. `hash` binds a
- *  pure, backend-independent target: canonical JSON and SHA-256. */
-export type TargetKind = "store" | "vector" | "search" | "graph" | "hash";
+ *  pure, backend-independent target: canonical JSON and SHA-256. `fixtures`
+ *  binds an authored-data loader over the backend store, so a store-source
+ *  scenario runs against the real backend. */
+export type TargetKind = "store" | "vector" | "search" | "graph" | "hash" | "fixtures";
 
 export interface Target {
   kind: TargetKind;
@@ -33,8 +35,8 @@ export type StepOutcome =
  *  runners FAIL on it and name the port. Skipping would let a typo in `ports`
  *  silently retire a scenario from every backend at once. */
 export const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
-  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "graph"],
-  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "graph"],
+  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures"],
+  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures"],
 };
 
 /** The ports a scenario names that this backend cannot bind. Empty is the only
@@ -45,6 +47,7 @@ export function unsupportedPorts(backend: BackendName, ports: readonly string[])
 }
 
 export function targetKindFor(ports: readonly string[]): TargetKind {
+  if (ports.includes("fixtures")) return "fixtures";
   if (ports.includes("hash")) return "hash";
   if (ports.includes("vector")) return "vector";
   if (ports.includes("search")) return "search";

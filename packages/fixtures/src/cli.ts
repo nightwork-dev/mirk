@@ -1,3 +1,4 @@
+import { compareCodePoints } from "./order.js";
 import { createFixtureLoader } from "./loader.js";
 import { diagnosticsFromError } from "./errors.js";
 import type {
@@ -554,7 +555,7 @@ function serializeGraph(graph: ReferenceGraph): SerializedGraph {
       id: node.id,
       resolved: node.resolved,
     }))
-    .sort((a, b) => a.ref.localeCompare(b.ref));
+    .sort((a, b) => compareCodePoints(a.ref, b.ref));
   const edges = graph.edges
     .map((edge) => ({
       from: edge.from,
@@ -562,7 +563,8 @@ function serializeGraph(graph: ReferenceGraph): SerializedGraph {
       fieldPath: edge.fieldPath.map(String),
     }))
     .sort((a, b) =>
-      `${a.from}\u0000${a.to}\u0000${a.fieldPath.join(".")}`.localeCompare(
+      compareCodePoints(
+        `${a.from}\u0000${a.to}\u0000${a.fieldPath.join(".")}`,
         `${b.from}\u0000${b.to}\u0000${b.fieldPath.join(".")}`
       )
     );

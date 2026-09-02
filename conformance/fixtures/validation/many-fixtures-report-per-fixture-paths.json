@@ -1,0 +1,56 @@
+{
+  "id": "fixtures/validation/many-fixtures-report-per-fixture-paths",
+  "title": "each failing fixture contributes its own <ref>#<path> entries",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/a.json": "{\"name\":1}",
+                "themes/b.json": "{}",
+                "themes/c.json": "{\"name\":\"Fine\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:a#name",
+          "theme:b#"
+        ]
+      }
+    }
+  ]
+}
