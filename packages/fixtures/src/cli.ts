@@ -471,7 +471,7 @@ function renderHuman(
         result !== null &&
         "refs" in result &&
         Array.isArray((result as { refs?: unknown }).refs)
-          ? [...(result as { refs: unknown[] }).refs].map(String).sort()
+          ? [...(result as { refs: unknown[] }).refs].map(String).sort(compareCodePoints)
           : [];
       return refs.length > 0 ? refs.join("\n") : "(no fixtures)";
     }

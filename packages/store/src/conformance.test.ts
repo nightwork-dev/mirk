@@ -19,7 +19,14 @@ import {
   openTarget,
   unsupportedCapabilities,
 } from "./conformance/backends.js";
-import { executeStep, unsupportedPorts, type BackendName } from "./conformance/runner.js";
+import {
+  executeStep,
+  targetKindFor,
+  unsupportedPorts,
+  type BackendName,
+} from "./conformance/runner.js";
+import { ajvValidatorFactory } from "./conformance/json-schema.js";
+import type { JsonSchemaDocument } from "@mirk/fixtures";
 
 /** The committed corpus, unless `MIRK_CONFORMANCE_DIR` points elsewhere. The
  *  override exists so a scenario author can replay a corpus generated into a
@@ -275,4 +282,58 @@ afterAll(() => {
     }
   }
   expect(present.has("store"), "the corpus has no store scenarios").toBe(true);
+});
+
+// ── Conformance tooling ─────────────────────────────────────────────────────
+// The generator and the replay share these two helpers. Neither is exercised by
+// the corpus itself: a validator that erases a failure produces a corpus that
+// agrees with itself, and a runner that picks silently among conflicting ports
+// never reaches a scenario the corpus would reject.
+
+describe("ajvValidatorFactory", () => {
+  const pathsOf = (schema: JsonSchemaDocument, value: unknown): string[][] =>
+    ajvValidatorFactory(schema)(value).map((issue) => [...(issue.path ?? [])].map(String));
+
+  it("keeps a `not` failure, which has no branch failure underneath it", () => {
+    const schema = { type: "object", properties: { x: { not: { const: "bad" } } } };
+    expect(pathsOf(schema, { x: "bad" })).toEqual([["x"]]);
+    expect(pathsOf(schema, { x: "fine" })).toEqual([]);
+  });
+
+  it("keeps a oneOf matched by more than one branch", () => {
+    const schema = {
+      type: "object",
+      properties: { v: { oneOf: [{ type: "number" }, { type: "integer" }] } },
+    };
+    expect(pathsOf(schema, { v: 1 })).toEqual([["v"]]);
+  });
+
+  it("drops the aggregate when a branch failure covers its path", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        v: { oneOf: [{ type: "object", required: ["a"], properties: { a: { type: "string" } } }] },
+      },
+    };
+    expect(pathsOf(schema, { v: { a: 1 } })).toEqual([["v", "a"]]);
+  });
+});
+
+describe("targetKindFor", () => {
+  it("resolves the single non-store port", () => {
+    expect(targetKindFor(["fixtures"])).toBe("fixtures");
+    expect(targetKindFor(["kv", "collection", "atomic"])).toBe("store");
+    expect(targetKindFor(["hash", "kv"])).toBe("hash");
+  });
+
+  it("refuses two different non-store ports, naming both", () => {
+    expect(() => targetKindFor(["fixtures", "hash"])).toThrowError(
+      "a scenario names several non-store ports: fixtures, hash.",
+    );
+  });
+
+  it("refuses a port with no target", () => {
+    expect(() => targetKindFor(["nonsense"])).toThrowError("no target for ports");
+    expect(() => targetKindFor([])).toThrowError("no target for ports");
+  });
 });

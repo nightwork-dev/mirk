@@ -14,6 +14,8 @@ import json
 from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple, cast
 
+from mirk.store.filter import normalize_json_numbers
+
 from .errors import FixtureError, FixtureValidationError, diagnostics_from_error
 from .layering import (
     NormalizedLayeredSource,
@@ -44,10 +46,30 @@ from .types import (
     ValidationReport,
 )
 
-__all__ = ["FixtureLoader", "create_fixture_loader"]
+__all__ = ["FixtureLoader", "create_fixture_loader", "parse_json_document"]
 
 _MAX_REFERENCE_DEPTH = 32
 _MISSING = object()
+
+
+def _reject_json_constant(constant: str) -> Any:
+    raise ValueError(f"Unexpected token {constant[0]!r} in JSON")
+
+
+def parse_json_document(text: str) -> Any:
+    """Parse a fixture document the way `JSON.parse` does.
+
+    `json.loads` differs from the JavaScript parser in two ways that change what
+    a document MEANS, so both are corrected here rather than left as a silent
+    per-language reading of one file:
+
+    * `NaN`, `Infinity` and `-Infinity` are bare literals CPython accepts and
+      JavaScript rejects, so they raise and become a `parse-failed` diagnostic.
+    * An integer above 2^53 stays exact in Python and rounds to the nearest
+      float64 in JavaScript. `normalize_json_numbers` applies the same rounding
+      the store already applies on its write path.
+    """
+    return normalize_json_numbers(json.loads(text, parse_constant=_reject_json_constant))
 
 
 class _FileCandidate(NamedTuple):
@@ -84,7 +106,7 @@ class FixtureLoader:
     ) -> None:
         self._registry = registry
         self._layered = normalize_layers(sources)
-        self._parsers: dict[str, Parser] = {".json": json.loads}
+        self._parsers: dict[str, Parser] = {".json": parse_json_document}
         if parsers:
             self._parsers.update(parsers)
         self._reference_mode: ReferenceMode | None = reference_mode

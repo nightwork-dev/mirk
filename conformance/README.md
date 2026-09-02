@@ -252,10 +252,15 @@ contract is which part of which fixture failed:
 
 Two rules make the engines agree and both languages implement them:
 
-- **aggregate keywords are dropped.** An `anyOf`, `oneOf`, `if` or `not` error
-  reports "some combination failed" at a path both engines spell differently.
-  The branch failures underneath it are kept; Ajv emits them alongside, Python
-  flattens them out of `context`.
+- **an aggregate keyword is dropped only when something underneath it already
+  failed.** An `anyOf`, `oneOf`, `if` or `not` error reports "some combination
+  failed" at a path both engines spell differently, so it is dropped when a
+  NON-aggregate failure is already reported at the same instance path or a
+  deeper one — Ajv emits those alongside, Python flattens them out of
+  `context`. An aggregate with no such failure is KEPT at its own path.
+  `{"not": {"const": "bad"}}` against `"bad"`, and a `oneOf` matched by two
+  branches, are failures with nothing underneath them; dropping those would
+  report an empty path list and call an invalid document valid.
 - **a `required` failure keeps the containing object's path** and does not
   append the missing property. Ajv puts that name in `params`, Python only in
   the message text; appending it in one language and not the other would

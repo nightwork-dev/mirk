@@ -177,12 +177,40 @@ def test_a_root_required_failure_reports_the_empty_path() -> None:
     assert [list(cast(Any, issue)["path"]) for issue in issues] == [[]]
 
 
-def test_a_not_failure_reports_nothing_because_the_aggregate_is_dropped() -> None:
-    """`not` has no branch failures underneath it, so dropping the aggregate
-    leaves an empty set. Both engines behave this way; a type that needs `not`
-    enforced pins it with a residual check, not with a path."""
+def test_a_not_failure_is_reported_at_its_own_path() -> None:
+    """`not` has no branch failures underneath it. Dropping the aggregate would
+    leave an empty issue set, which reads as a valid document, so the aggregate
+    is the only evidence there is and it is kept at its own instance path."""
     schema: dict[str, Any] = {"type": "object", "properties": {"x": {"not": {"const": "bad"}}}}
-    assert json_schema_validator_factory(schema)({"x": "bad"}) == []
+    issues = json_schema_validator_factory(schema)({"x": "bad"})
+    assert [list(cast(Any, issue)["path"]) for issue in issues] == [["x"]]
+    assert json_schema_validator_factory(schema)({"x": "fine"}) == []
+
+
+def test_an_overlapping_one_of_is_reported_at_its_own_path() -> None:
+    """Matching two branches is a failure with nothing underneath it: the
+    engines report only that too many branches matched."""
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"v": {"oneOf": [{"type": "number"}, {"type": "integer"}]}},
+    }
+    issues = json_schema_validator_factory(schema)({"v": 1})
+    assert [list(cast(Any, issue)["path"]) for issue in issues] == [["v"]]
+
+
+def test_a_one_of_branch_failure_replaces_the_aggregate_with_the_leaf_path() -> None:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "v": {
+                "oneOf": [
+                    {"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}}
+                ]
+            }
+        },
+    }
+    issues = json_schema_validator_factory(schema)({"v": {"a": 1}})
+    assert [list(cast(Any, issue)["path"]) for issue in issues] == [["v", "a"]]
 
 
 def test_an_if_then_failure_surfaces_the_branch_not_the_aggregate() -> None:

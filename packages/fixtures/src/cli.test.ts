@@ -96,6 +96,19 @@ describe("fixture CLI", () => {
     });
   });
 
+  it("prints the human list in code point order, not UTF-16 code unit order", async () => {
+    // U+FFFD is one code unit; U+1F600 is a surrogate pair whose lead unit sorts
+    // below it. A bare `.sort()` puts the emoji first and disagrees with every
+    // other ordering in Mirk, including the `--json` refs it renders from.
+    const config = await writeConfig({
+      "themes/a\u{1F600}b.json": JSON.stringify({ name: "emoji" }),
+      "themes/a\uFFFDb.json": JSON.stringify({ name: "replacement" }),
+    });
+    const list = await executeFixtureCli(["list", config]);
+    expect(list.exitCode).toBe(0);
+    expect(list.text).toBe("theme:a\uFFFDb\ntheme:a\u{1F600}b");
+  });
+
   it("supports list filtering, graph formats, and provenance explain", async () => {
     const config = await writeConfig({
       "themes/dark.json": JSON.stringify({ name: "dark" }),

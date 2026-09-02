@@ -1095,6 +1095,66 @@ export const scenarios = [
     },
     [{ op: "validate", args: [], expect: invalidPaths }],
   ),
+  scenario(
+    "validation/not-keyword-is-kept-when-it-stands-alone",
+    "a `not` that matched has no branch failure underneath, so the aggregate is the only evidence",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["x"],
+            properties: { x: { not: { const: "bad" } } },
+          },
+        }),
+      ],
+      sources: [
+        memory("pack", 0, {
+          "themes/dark.json": { x: "bad" },
+          "themes/light.json": { x: "fine" },
+        }),
+      ],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/one-of-overlapping-branches-is-kept",
+    "a oneOf matched by more than one branch reports no branch failure, so the aggregate is kept",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["v"],
+            properties: { v: { oneOf: [{ type: "number" }, { type: "integer" }] } },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { v: 1 } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/one-of-branch-failure-drops-the-aggregate",
+    "a oneOf whose branch failed deeper reports only the leaf path, never the aggregate's",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["v"],
+            properties: {
+              v: {
+                oneOf: [{ type: "object", required: ["a"], properties: { a: { type: "string" } } }],
+              },
+            },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { v: { a: 1 } } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
 
   // ── Store source and sink (items 35, 36, 39-43) ──────────────────────────
   scenario(

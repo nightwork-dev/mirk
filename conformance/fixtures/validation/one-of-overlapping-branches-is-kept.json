@@ -1,0 +1,60 @@
+{
+  "id": "fixtures/validation/one-of-overlapping-branches-is-kept",
+  "title": "a oneOf matched by more than one branch reports no branch failure, so the aggregate is kept",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "v"
+                ],
+                "properties": {
+                  "v": {
+                    "oneOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"v\":1}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#v"
+        ]
+      }
+    }
+  ]
+}

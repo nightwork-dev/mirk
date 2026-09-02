@@ -46,15 +46,32 @@ export function unsupportedPorts(backend: BackendName, ports: readonly string[])
   return ports.filter((port) => !supported.includes(port));
 }
 
+/** Port names that bind the backend store itself, and so collapse to one
+ *  target rather than competing for it. */
+const STORE_PORTS = new Set(["store", "kv", "collection", "atomic"]);
+
+const NON_STORE_KINDS = new Set<string>(["fixtures", "hash", "vector", "search", "graph"]);
+
+/** The single target a scenario's steps are dispatched onto.
+ *
+ *  A scenario naming two DIFFERENT non-store ports has no single target, so it
+ *  fails naming both rather than being resolved by the order of the checks. A
+ *  silent pick would let `["fixtures", "hash"]` run as a fixtures scenario here
+ *  and fail in Python, which raises on the same input. */
 export function targetKindFor(ports: readonly string[]): TargetKind {
-  if (ports.includes("fixtures")) return "fixtures";
-  if (ports.includes("hash")) return "hash";
-  if (ports.includes("vector")) return "vector";
-  if (ports.includes("search")) return "search";
-  if (ports.includes("graph")) return "graph";
-  if (ports.includes("kv") || ports.includes("collection") || ports.includes("atomic"))
+  const specific = [...new Set(ports.filter((port) => !STORE_PORTS.has(port)))];
+  if (specific.length === 0) {
+    if (ports.length === 0) throw new Error(`no target for ports ${JSON.stringify(ports)}.`);
     return "store";
-  throw new Error(`no target for ports ${JSON.stringify(ports)}.`);
+  }
+  if (specific.length > 1) {
+    throw new Error(`a scenario names several non-store ports: ${[...specific].sort().join(", ")}.`);
+  }
+  const kind = specific[0]!;
+  if (!NON_STORE_KINDS.has(kind)) {
+    throw new Error(`no target for ports ${JSON.stringify(ports)}.`);
+  }
+  return kind as TargetKind;
 }
 
 export function isNumberArray(value: unknown): value is number[] {

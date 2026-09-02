@@ -250,6 +250,22 @@ def test_a_malformed_document_reports_a_parse_error() -> None:
     assert info.value.diagnostic["code"] == "parse-failed"
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_the_javascript_non_constants_are_a_parse_failure(literal: str) -> None:
+    """CPython reads these three bare literals as floats; `JSON.parse` rejects
+    them. Accepting them would let one file mean different things per port."""
+    source = memory("s", {"themes/a.json": '{"v": ' + literal + "}"})
+    with pytest.raises(FixtureError) as info:
+        loader(registry(theme()), [source]).load("theme:a")
+    assert info.value.diagnostic["code"] == "parse-failed"
+
+
+def test_an_integer_beyond_float64_is_read_at_its_nearest_double() -> None:
+    """JavaScript has only float64, so `JSON.parse` cannot hold 2^53 + 1."""
+    source = memory("s", {"themes/a.json": '{"v": 9007199254740993}'})
+    assert loader(registry(theme()), [source]).load("theme:a") == {"v": 9007199254740992}
+
+
 def test_a_matched_extension_with_no_parser_is_rejected_on_load() -> None:
     source = memory("s", {"themes/a.yaml": "x"})
     with pytest.raises(FixtureError) as info:
@@ -452,11 +468,21 @@ def test_materialize_context_load_raw_returns_the_value_not_the_loaded_fixture()
     assert seen == [{"v": 1}]
 
 
-def test_materialize_results_are_cached_even_with_no_hook() -> None:
+def test_a_materialized_value_is_computed_once_and_reused() -> None:
+    """The hook builds a NEW object every call, so identity across two loads can
+    only come from the materialization cache and never from the raw one."""
+    calls: list[str] = []
+
+    def materialize(value: Any, ctx: Any) -> Any:
+        del ctx
+        calls.append("call")
+        return {"v": value["v"]}
+
     source = memory("s", {"themes/a.json": '{"v":1}'})
-    fixtures = loader(registry(theme()), [source])
+    fixtures = loader(registry(theme(materialize=materialize)), [source])
     first = fixtures.materialize("theme:a")
     assert fixtures.materialize("theme:a") is first
+    assert calls == ["call"]
 
 
 def test_invalidate_for_one_ref_still_clears_the_document_cache() -> None:
@@ -470,12 +496,6 @@ def test_invalidate_for_one_ref_still_clears_the_document_cache() -> None:
     assert fixtures.load("theme:a") == {"v": 1}
     fixtures.invalidate("theme:a")
     assert fixtures.load("theme:a") == {"v": 2}
-
-
-def test_purpose_is_carried_and_never_read() -> None:
-    source = memory("s", {"themes/a.json": '{"v":1}'})
-    fixtures = loader(registry(theme(purpose="lookup")), [source])
-    assert fixtures.load("theme:a") == {"v": 1}
 
 
 def test_list_filters_by_type_and_ignores_an_unregistered_one() -> None:

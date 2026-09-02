@@ -68,6 +68,36 @@ describe("filesystem fixture source", () => {
     }
   });
 
+  it("reports a dangling symlink as a read failure, wherever it points", () => {
+    // `realpathSync` throws before the root check runs, so a broken link that
+    // points outside the root is never `source-path-escape`. The Python port
+    // has to order its own existence check the same way.
+    const outside = mkdtempSync(join(tmpdir(), "mirk-fixtures-outside-"));
+    try {
+      withTemporaryDirectory((root) => {
+        symlinkSync(join(outside, "gone.json"), join(root, "dangling.json"));
+        const source = createFilesystemFixtureSource({ id: "files", root });
+        expect(() => source.list()).toThrowError(expect.objectContaining({
+          diagnostic: expect.objectContaining({
+            code: "source-read-failed",
+            path: "dangling.json",
+          }),
+        }));
+      });
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("substitutes replacement characters for bytes that are not UTF-8", async () => {
+    await withTemporaryDirectory(async (root) => {
+      writeFileSync(join(root, "bad.json"), Buffer.from([0x7b, 0xff, 0x7d]));
+      const source = createFilesystemFixtureSource({ id: "files", root });
+      const entries = await source.list();
+      expect(await source.read(entries[0]!)).toBe("{\uFFFD}");
+    });
+  });
+
   it("does not expose an unavailable absolute root in diagnostics", () => {
     const root = join(tmpdir(), "mirk-fixtures-missing", "private");
     expect(() => createFilesystemFixtureSource({ id: "files", root })).toThrowError(

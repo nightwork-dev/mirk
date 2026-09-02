@@ -1,0 +1,56 @@
+{
+  "id": "fixtures/validation/not-keyword-is-kept-when-it-stands-alone",
+  "title": "a `not` that matched has no branch failure underneath, so the aggregate is the only evidence",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "x"
+                ],
+                "properties": {
+                  "x": {
+                    "not": {
+                      "const": "bad"
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"x\":\"bad\"}",
+                "themes/light.json": "{\"x\":\"fine\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#x"
+        ]
+      }
+    }
+  ]
+}

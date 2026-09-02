@@ -11,11 +11,14 @@
 // count errors differently, so three rules make the two engines agree:
 //
 //   1. `allErrors: true` — every failure, not the first.
-//   2. Aggregate keywords (`anyOf`, `oneOf`, `if`, `not`) are DROPPED. Both
-//      engines report the branch failures underneath them; Ajv emits the
-//      aggregate alongside, and Python nests them in `context`. Keeping the
-//      aggregate would pin a path that means "some combination failed", which
-//      is the one thing the two engines spell differently.
+//   2. An aggregate keyword (`anyOf`, `oneOf`, `if`, `not`) is dropped ONLY
+//      when a non-aggregate failure is already reported at the same instance
+//      path or a deeper one. Then the branch failures underneath say the same
+//      thing in a spelling both engines share, and the aggregate would add a
+//      path meaning "some combination failed". When there is no such failure —
+//      `{not: {const: "bad"}}` on `"bad"`, an overlapping `oneOf` — dropping it
+//      would report zero issues and turn an invalid document into a valid one,
+//      so the aggregate is KEPT at its own path.
 //   3. A `required` failure keeps the CONTAINING object's path and does not
 //      append the missing property. Ajv puts the name in `params`; Python puts
 //      it only in the message text. Appending it in one language and not the
@@ -40,6 +43,11 @@ function pointerSegments(instancePath: string): string[] {
     .map((segment) => segment.replaceAll("~1", "/").replaceAll("~0", "~"));
 }
 
+/** Is `candidate` the aggregate's own instance path, or a path inside it? */
+function coversPath(aggregatePath: string, candidate: string): boolean {
+  return candidate === aggregatePath || candidate.startsWith(`${aggregatePath}/`);
+}
+
 /** The `JsonSchemaValidatorFactory` a conformance fixtures loader is built
  *  with. `strict: false` keeps Ajv from rejecting a schema the specification
  *  allows; the corpus pins behavior for VALID schema documents. */
@@ -50,9 +58,17 @@ export function ajvValidatorFactory(document: JsonSchemaDocument): JsonSchemaVal
   return (value: unknown): StandardSchemaV1Issue[] => {
     if (validate(value)) return [];
     const errors = validate.errors ?? [];
+    const leafPaths = errors
+      .filter((error) => !AGGREGATE_KEYWORDS.has(error.keyword))
+      .map((error) => error.instancePath);
     const issues: StandardSchemaV1Issue[] = [];
     for (const error of errors) {
-      if (AGGREGATE_KEYWORDS.has(error.keyword)) continue;
+      if (
+        AGGREGATE_KEYWORDS.has(error.keyword) &&
+        leafPaths.some((path) => coversPath(error.instancePath, path))
+      ) {
+        continue;
+      }
       issues.push({
         message: `${error.keyword}: ${error.message ?? "invalid"}`,
         path: pointerSegments(error.instancePath),

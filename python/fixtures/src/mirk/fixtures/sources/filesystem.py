@@ -58,7 +58,10 @@ class FilesystemFixtureSource:
             raise _source_error(self.id, file.relativePath, "entry changed after it was listed")
 
         try:
-            return Path(current).read_text(encoding="utf-8")
+            # `readFileSync(path, "utf8")` substitutes U+FFFD for a byte
+            # sequence that is not UTF-8 rather than failing, so a file of
+            # invalid bytes reaches the parser in both ports and fails there.
+            return Path(current).read_text(encoding="utf-8", errors="replace")
         except OSError as error:
             raise _source_error(self.id, file.relativePath, "could not read entry") from error
 
@@ -105,11 +108,15 @@ def _walk(root: str, source_id: str) -> list[_ListedFile]:
             is_symlink = os.path.islink(discovered)
             try:
                 real_path = os.path.realpath(discovered)
-                _assert_inside_root(root, real_path, source_id, relative_path)
                 if not os.path.exists(real_path):
-                    # A broken symlink: `realpathSync` throws in Node, so this
-                    # must be an error here too rather than a silent skip.
+                    # A broken symlink. `realpathSync` throws in Node BEFORE the
+                    # root check runs, so a dangling link that points outside the
+                    # root is `source-read-failed` in both ports, never
+                    # `source-path-escape`: Python's `realpath` does not throw,
+                    # so the existence check has to stand in for it here and it
+                    # has to stand in the same place.
                     raise FileNotFoundError(real_path)
+                _assert_inside_root(root, real_path, source_id, relative_path)
                 is_directory = os.path.isdir(real_path)
                 is_file = os.path.isfile(real_path)
             except FixtureError:
@@ -132,6 +139,8 @@ def _resolve_listed_file(root: str, relative_path: str, source_id: str) -> str:
     _assert_relative_path(relative_path, source_id)
     try:
         real_path = os.path.realpath(os.path.join(root, *relative_path.split("/")))
+        if not os.path.exists(real_path):
+            raise FileNotFoundError(real_path)
         _assert_inside_root(root, real_path, source_id, relative_path)
         if not os.path.isfile(real_path):
             raise IsADirectoryError(real_path)

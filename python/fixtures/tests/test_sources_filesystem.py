@@ -92,6 +92,32 @@ def test_a_symlink_pointing_outside_the_root_is_an_escape(tmp_path: Path) -> Non
     assert info.value.diagnostic.get("path") == "themes/leak.json"
 
 
+def test_a_dangling_symlink_is_a_read_failure_wherever_it_points(tmp_path: Path) -> None:
+    """Node's `realpathSync` throws before the root check runs, so a broken link
+    is `source-read-failed` there even when it points outside the root. The
+    existence check stands in that same place here."""
+    root = tmp_path / "root"
+    (root / "themes").mkdir(parents=True)
+    os.symlink(tmp_path / "outside" / "gone.json", root / "themes" / "dangling.json")
+
+    with pytest.raises(FixtureError) as info:
+        FilesystemFixtureSource("fs", root).list()
+    assert info.value.diagnostic["code"] == "source-read-failed"
+    assert info.value.diagnostic.get("path") == "themes/dangling.json"
+
+
+def test_bytes_that_are_not_utf8_become_replacement_characters(tmp_path: Path) -> None:
+    """`readFileSync(path, "utf8")` substitutes U+FFFD rather than failing, so a
+    file of invalid bytes must reach the parser here too."""
+    theme = tmp_path / "themes"
+    theme.mkdir(parents=True)
+    (theme / "bad.json").write_bytes(b"{\xff}")
+
+    source = FilesystemFixtureSource("fs", tmp_path)
+    entries = source.list()
+    assert source.read(entries[0]) == "{\ufffd}"
+
+
 def test_a_symlinked_directory_is_not_descended_into(tmp_path: Path) -> None:
     real = tmp_path / "root" / "themes"
     real.mkdir(parents=True)

@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, cast
@@ -156,10 +157,26 @@ def resolve_target(port: str, backend: str, connection: object) -> object:
 
 
 def normalize(value: Any) -> Any:
-    """Reduce a result to plain JSON so it can be compared with corpus literals."""
-    if value is None or isinstance(value, bool | int | float | str):
+    """Reduce a result to plain JSON so it can be compared with corpus literals.
+
+    JSON has no non-finite number. `JSON.stringify` writes `null` for one, so
+    the TypeScript runner compares `null` and this one has to as well: leaving a
+    `nan` in place makes every comparison against it false, and refusing to
+    encode it turns a returned value into a reported raise.
+    """
+    if value is None or isinstance(value, bool | int | str):
         return value
-    return json.loads(json.dumps(value, allow_nan=False, ensure_ascii=False, default=_fallback))
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    return json.loads(
+        json.dumps(value, ensure_ascii=False, default=_fallback),
+        parse_constant=_non_finite_is_null,
+    )
+
+
+def _non_finite_is_null(constant: str) -> None:
+    del constant
+    return None
 
 
 def _fallback(value: Any) -> Any:
@@ -219,36 +236,62 @@ def compare_invalid_paths(outcome: StepOutcome, expect: dict[str, Any]) -> str |
     over diagnostics whose code is ``schema-invalid``. A diagnostic with any
     other code fails the step rather than being filtered out, so this form can
     never launder a missing reference or a parse error into a clean pass.
+
+    Every check the TypeScript comparator makes is made here, in the same order,
+    because a laxer comparator lets a port pass a scenario the other port fails:
+    ``ok`` must be a real boolean, and it must agree with the path list in both
+    directions — ``{"ok": false, "diagnostics": []}`` is a report that claims a
+    failure it cannot name.
     """
     if not outcome.ok:
         return f"expected a validation report, got a raise: {outcome.message!r}"
     report: Any = outcome.value
-    if not isinstance(report, dict) or "diagnostics" not in report:
+    if not isinstance(report, dict):
         return f"$: expected a validation report object, got {report!r}"
     report_obj = cast(dict[str, Any], report)
+
+    reported_ok: Any = report_obj.get("ok")
+    if not isinstance(reported_ok, bool):
+        return f"$.ok: expected a boolean, got {reported_ok!r}"
 
     raw_diagnostics: Any = report_obj.get("diagnostics")
     if not isinstance(raw_diagnostics, list):
         return f"$.diagnostics: expected an array, got {raw_diagnostics!r}"
 
     paths: set[str] = set()
-    for item in cast(list[Any], raw_diagnostics):
+    for index, item in enumerate(cast(list[Any], raw_diagnostics)):
         if not isinstance(item, dict):
-            return f"$.diagnostics: expected diagnostic objects, got {item!r}"
+            return f"$.diagnostics[{index}]: expected an object, got {item!r}"
         diagnostic = cast(dict[str, Any], item)
         code = diagnostic.get("code")
         if code != "schema-invalid":
-            return f"$.diagnostics: unexpected diagnostic code {code!r}; use `value` for those"
-        paths.add(f"{diagnostic.get('fixture', '')}#{diagnostic.get('fieldPath', '')}")
+            return (
+                f"$.diagnostics[{index}]: expected code 'schema-invalid', got {code!r}; "
+                "use `value` for those"
+            )
+        fixture: Any = diagnostic.get("fixture")
+        if not isinstance(fixture, str):
+            return f"$.diagnostics[{index}].fixture: expected a string, got {fixture!r}"
+        field_path: Any = diagnostic.get("fieldPath")
+        if field_path is None:
+            field_path = ""
+        if not isinstance(field_path, str):
+            return f"$.diagnostics[{index}].fieldPath: expected a string, got {field_path!r}"
+        paths.add(f"{fixture}#{field_path}")
+
+    actual = sorted(paths)
+    if not actual and reported_ok is not True:
+        return "$.ok: expected true, because no diagnostic was reported"
+    if actual and reported_ok is not False:
+        return (
+            f"$.ok: expected false, because {len(actual)} schema-invalid "
+            f"diagnostic(s) were reported"
+        )
 
     expected_raw: Any = expect["invalidPaths"]
     expected = [str(entry) for entry in cast(list[Any], expected_raw)]
-    actual = sorted(paths)
     if actual != expected:
         return f"$.invalidPaths: expected {expected!r}, got {actual!r}"
-    reported_ok: Any = report_obj.get("ok")
-    if actual and reported_ok is not False:
-        return f"$.ok: expected false with {len(actual)} invalid paths, got {reported_ok!r}"
     return None
 
 

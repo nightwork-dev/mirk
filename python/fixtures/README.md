@@ -17,9 +17,10 @@ Python process and a Node process read the same fixture pack the same way.
 uv add mirk-fixtures
 ```
 
-Zero runtime dependencies beyond `mirk-store`, and that one only for the store
-source's structural type. The JSON Schema engine is **injected**, never
-imported, so this package holds no opinion about which one you use.
+No third-party runtime dependencies. The install pulls `mirk-store`, which this
+package depends on for the store source's structural type and for the JSON
+number rules a document is read under. The JSON Schema engine is **injected**,
+never imported, so this package holds no opinion about which one you use.
 
 ## Namespace package
 
@@ -158,7 +159,10 @@ loader.load("theme:dark")
 A row is `{id, content, extension, relativePath?}`. The path is
 `<path_prefix>/<id><extension>` unless the row carries its own `relativePath`,
 which is used as given. The listing is cached until you call
-`source.invalidate()`, which the loader never does for you.
+`source.invalidate()`, which the loader never does for you. Refreshing a
+store-backed loader takes both calls in order: `source.invalidate()` drops the
+listing, then `loader.invalidate()` drops the parsed and materialized values
+built from it.
 
 `seed_store_from_fixtures` runs the other way, writing loaded fixtures into a
 collection:
@@ -169,8 +173,9 @@ store.getById("themes", "dark")
 # {"id": "dark", "value": {"name": "Dark"}, "provenance": {...}}
 ```
 
-Every fixture is collected and validated before any write, so a failure anywhere
-leaves the collection untouched rather than half-written.
+Every fixture is collected and validated before the first write, so a validation
+failure or a load failure writes nothing. A write that fails partway through the
+batch is NOT rolled back: the rows already written stay written.
 
 ## Reports
 

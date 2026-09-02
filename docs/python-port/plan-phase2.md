@@ -228,6 +228,13 @@ F1 records the final wording in `conformance/README.md`; F2 mirrors it.
   in TypeScript; `jsonschema` `Draft202012Validator` in Python, both injected
   by the conformance backends, never a package dependency. The corpus never
   asserts `throws` for `schema-invalid`.
+- **Aggregate keywords (post-review, 2026-09-02).** An `anyOf`/`oneOf`/`if`/
+  `not` error is dropped only when a non-aggregate failure exists at the same
+  or a deeper instance path; otherwise it is kept at its own path, so a `not`
+  or overlapping `oneOf` failure still makes the document invalid. Portable
+  schemas keep regex patterns to ASCII classes and avoid `contains`; see
+  `docs/python-port/reviews/2026-09-02-wave1-fixtures-code-review-luna.md`
+  for the recorded divergences.
 - **Hooks are language-local.** Function `mergeStrategy`,
   `validateReferences`, `extractReferences`, `materialize`, YAML and other
   parsers, the filesystem source, the package source and the CLI stay out of

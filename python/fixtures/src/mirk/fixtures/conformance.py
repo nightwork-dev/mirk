@@ -32,8 +32,10 @@ from .types import (
 __all__ = ["conformance_target", "json_schema_validator_factory"]
 
 # `anyOf`, `oneOf`, `if` and `not` report "some combination failed" at a path
-# the two engines spell differently. Both drop the aggregate and keep the branch
-# failures underneath, so the two path sets can be compared.
+# the two engines spell differently, so the aggregate is dropped whenever the
+# branch failures underneath say the same thing. When there are none — an
+# overlapping `oneOf`, a `not` whose subschema matched — dropping it would
+# report zero issues and call an invalid document valid, so it is kept.
 _AGGREGATE_KEYWORDS = frozenset({"anyOf", "oneOf", "if", "not"})
 
 _DECLARABLE_FIELDS = (
@@ -64,12 +66,27 @@ def json_schema_validator_factory(
 
 
 def _leaf_errors(error: Any) -> Iterator[Any]:
+    """The errors an aggregate stands for, or the error itself.
+
+    An aggregate keyword nests its branch failures in ``context``. Flatten
+    those and report them instead of the aggregate, which is the path spelling
+    the two engines share. An aggregate with nothing underneath it — ``not``
+    never has context, and an overlapping ``oneOf`` reports only that too many
+    branches matched — is yielded as itself, because dropping it would erase
+    the only evidence the document is invalid.
+    """
     context: Any = getattr(error, "context", None)
+    if error.validator in _AGGREGATE_KEYWORDS:
+        nested: list[Any] = list(context) if context else []
+        leaves = [leaf for sub in nested for leaf in _leaf_errors(sub)]
+        if leaves:
+            yield from leaves
+            return
+        yield error
+        return
     if context:
         for sub in context:
             yield from _leaf_errors(sub)
-        return
-    if error.validator in _AGGREGATE_KEYWORDS:
         return
     yield error
 

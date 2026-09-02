@@ -23,6 +23,7 @@ from mirk.store.conformance import (
     compare_invalid_paths,
     corpus_dir,
     load_scenarios,
+    normalize,
     resolve_target,
     run_scenario,
     run_step,
@@ -303,6 +304,19 @@ def _invalid(fixture: str, field_path: str) -> dict[str, Any]:
     }
 
 
+def test_normalize_renders_a_non_finite_float_as_null() -> None:
+    """`JSON.stringify` writes `null` for NaN and the infinities, so the corpus
+    can only ever carry `null` and both runners must produce it. Refusing to
+    encode one turned a returned value into a reported raise."""
+    assert normalize(float("nan")) is None
+    assert normalize(float("inf")) is None
+    assert normalize(float("-inf")) is None
+    assert normalize({"a": [float("nan"), 1.5], "b": float("-inf")}) == {
+        "a": [None, 1.5],
+        "b": None,
+    }
+
+
 def test_invalid_paths_compares_the_sorted_deduplicated_path_set() -> None:
     outcome = _validation_report(
         _invalid("theme:a", "palette.bg"),
@@ -351,3 +365,41 @@ def test_invalid_paths_accepts_a_clean_report() -> None:
 def test_invalid_paths_rejects_a_raise_and_a_non_report() -> None:
     assert compare_invalid_paths(StepOutcome.raised("boom"), {"invalidPaths": []}) is not None
     assert compare_invalid_paths(StepOutcome.returned([1, 2]), {"invalidPaths": []}) is not None
+
+
+def test_invalid_paths_requires_ok_true_when_no_path_is_reported() -> None:
+    """A report that claims failure but names nothing is a bug in the port, not
+    a clean pass. The TypeScript comparator rejects it, so this one does too."""
+    outcome = StepOutcome.returned({"ok": False, "diagnostics": []})
+    detail = compare_invalid_paths(outcome, {"invalidPaths": []})
+    assert detail is not None
+    assert "$.ok" in detail
+
+
+def test_invalid_paths_requires_ok_to_be_a_boolean() -> None:
+    reports: list[dict[str, Any]] = [
+        {"diagnostics": []},
+        {"ok": "yes", "diagnostics": []},
+        {"ok": 1, "diagnostics": []},
+    ]
+    for report in reports:
+        detail = compare_invalid_paths(StepOutcome.returned(report), {"invalidPaths": []})
+        assert detail is not None, report
+        assert "$.ok" in detail
+
+
+def test_invalid_paths_requires_a_string_fixture_and_field_path() -> None:
+    bad_fixture = StepOutcome.returned(
+        {"ok": False, "diagnostics": [{**_invalid("theme:a", "name"), "fixture": 7}]}
+    )
+    assert compare_invalid_paths(bad_fixture, {"invalidPaths": ["7#name"]}) is not None
+    bad_path = StepOutcome.returned(
+        {"ok": False, "diagnostics": [{**_invalid("theme:a", "name"), "fieldPath": 3}]}
+    )
+    assert compare_invalid_paths(bad_path, {"invalidPaths": ["theme:a#3"]}) is not None
+
+
+def test_invalid_paths_treats_a_missing_field_path_as_the_document_itself() -> None:
+    diagnostic = {k: v for k, v in _invalid("theme:a", "").items() if k != "fieldPath"}
+    outcome = StepOutcome.returned({"ok": False, "diagnostics": [diagnostic]})
+    assert compare_invalid_paths(outcome, {"invalidPaths": ["theme:a#"]}) is None
