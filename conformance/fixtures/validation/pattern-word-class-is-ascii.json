@@ -1,0 +1,55 @@
+{
+  "id": "fixtures/validation/pattern-word-class-is-ascii",
+  "title": "\\w in a pattern is ASCII: \"é\" fails and \"e_1\" passes",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "slug"
+                ],
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "pattern": "^\\w+$"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/accented.json": "{\"slug\":\"é\"}",
+                "themes/ascii.json": "{\"slug\":\"e_1\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:accented#slug"
+        ]
+      }
+    }
+  ]
+}

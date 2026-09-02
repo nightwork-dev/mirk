@@ -52,17 +52,43 @@ def test_extension_order_decides_the_parsed_id() -> None:
     assert loader(reverse, [source], parsers=parsers).list() == ["u:a"]
 
 
-def test_the_document_cache_is_keyed_without_the_extension() -> None:
-    """A quirk carried over deliberately: the parsed-document cache key is
-    source, locator and path, so a second type matching the same file with an
-    extension that has no parser reads the cached document instead of failing.
-    Confirmed against TypeScript, which lists both refs here."""
-    source = memory("s", {"themes/a.min.json": "{}"})
+def test_the_document_cache_is_keyed_by_the_matched_extension() -> None:
+    """One file, two types, two parsers, two parses.
+
+    `t` matches `themes/a.min.json` through `.json` and `u` matches it through
+    `.min.json`, so the two types read it with different parsers and must get
+    different documents. Keying the parsed-document cache by source, locator
+    and path alone would serve `t`'s parse to `u`.
+    """
+    source = memory("s", {"themes/a.min.json": '{"name":"A"}'})
     both = registry(
         theme(type="t", extensions=[".json", ".min.json"]),
         theme(type="u", extensions=[".min.json", ".json"]),
     )
-    assert loader(both, [source]).list() == ["t:a.min", "u:a"]
+
+    def parse_min(text: str) -> dict[str, str]:
+        return {"parser": "min", "raw": text}
+
+    fixtures = loader(both, [source], parsers={".min.json": parse_min})
+    assert fixtures.list() == ["t:a.min", "u:a"]
+    assert fixtures.load("t:a.min") == {"name": "A"}
+    assert fixtures.load("u:a") == {"parser": "min", "raw": '{"name":"A"}'}
+
+
+def test_two_sources_cannot_share_an_id() -> None:
+    """The parsed-document cache, the skipped-source set and every diagnostic
+    key a source by its id, so two layers sharing one would collapse into each
+    other with no local symptom."""
+    with pytest.raises(FixtureError) as info:
+        loader(
+            registry(theme()),
+            [
+                memory("pack", {"themes/a.json": '{"v":1}'}),
+                memory("pack", {"themes/a.json": '{"v":2}'}),
+            ],
+        )
+    assert str(info.value) == 'Duplicate fixture source id "pack".'
+    assert info.value.diagnostic["code"] == "duplicate-source"
 
 
 def test_two_files_resolving_to_one_id_in_one_layer_collide() -> None:

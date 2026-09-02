@@ -44,6 +44,7 @@ const BUILTIN_PARSERS: Record<string, ParserEntry> = {
 
 export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   const layeredSources = normalizeLayers(opts.sources);
+  assertDistinctSourceIds(layeredSources);
   const parsers = normalizeParsers(opts.parsers);
   const rawCache = new Map<string, LoadedFixture>();
   const materialCache = new Map<string, unknown>();
@@ -151,10 +152,14 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   }
 
   async function readAndParse(candidate: FileCandidate): Promise<unknown> {
+    // The matched EXTENSION is part of the key. Two types can match the same
+    // file through different extension lists, and so through different parsers;
+    // without the extension the second type would read the first one's parse.
     const cacheKey = [
       candidate.layered.source.id,
       candidate.entry.locator,
       candidate.entry.relativePath,
+      candidate.ext,
     ].join("\u0000");
     if (parsedDocumentCache.has(cacheKey)) {
       return parsedDocumentCache.get(cacheKey);
@@ -809,6 +814,30 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     referenceGraph,
     invalidate,
   };
+}
+
+/** Source ids must be distinct across the layer stack.
+ *
+ *  The parsed-document cache, the skipped-source set and every diagnostic key
+ *  a source by its id, so two layers sharing one id collapse into each other:
+ *  the lower layer's document is served for the higher one and a source
+ *  skipped for a read error takes its namesake down with it. That is a data
+ *  bug with no local symptom, so it is refused where it is introduced. */
+function assertDistinctSourceIds(layers: ReadonlyArray<LayeredSource>): void {
+  const seen = new Set<string>();
+  for (const layered of layers) {
+    const id = layered.source.id;
+    if (seen.has(id)) {
+      throw new FixtureError({
+        severity: "error",
+        code: "duplicate-source",
+        message: `Duplicate fixture source id "${id}".`,
+        source: id,
+        hint: "Give every fixture source a distinct id; layer order is set by priority, not by id.",
+      });
+    }
+    seen.add(id);
+  }
 }
 
 function normalizeParsers(

@@ -76,6 +76,67 @@ describe("registry", () => {
   });
 });
 
+describe("the layer stack", () => {
+  it("refuses two sources sharing an id", () => {
+    // The parsed-document cache, the skipped-source set and every diagnostic
+    // key a source by its id, so two layers sharing one collapse into each
+    // other with no local symptom.
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType({ type: "theme", directory: "themes", schema: anySchema }));
+    const lower = createMemoryFixtureSource({
+      id: "pack",
+      files: { "themes/dark.json": JSON.stringify({ v: 1 }) },
+    });
+    const higher = createMemoryFixtureSource({
+      id: "pack",
+      files: { "themes/dark.json": JSON.stringify({ v: 2 }) },
+    });
+
+    expect(() =>
+      createFixtureLoader({
+        registry,
+        sources: [
+          { source: lower, layer: "base", priority: 0 },
+          { source: higher, layer: "app", priority: 10 },
+        ],
+      }),
+    ).toThrow('Duplicate fixture source id "pack".');
+  });
+
+  it("keys the parsed-document cache by the matched extension", async () => {
+    // One file, two types, two parsers, two parses. `t` matches
+    // themes/a.min.json through `.json` and `u` matches it through
+    // `.min.json`, so keying by source, locator and path alone would serve
+    // t's parse to u.
+    const registry = createFixtureRegistry();
+    registry.register(defineFixtureType({
+      type: "t",
+      directory: "themes",
+      extensions: [".json", ".min.json"],
+      schema: anySchema,
+    }));
+    registry.register(defineFixtureType({
+      type: "u",
+      directory: "themes",
+      extensions: [".min.json", ".json"],
+      schema: anySchema,
+    }));
+    const source = createMemoryFixtureSource({
+      id: "pack",
+      files: { "themes/a.min.json": JSON.stringify({ name: "A" }) },
+    });
+    const loader = createFixtureLoader({
+      registry,
+      sources: [source],
+      parsers: { ".min.json": (content: string) => ({ parser: "min", raw: content }) },
+    });
+
+    expect(await loader.list()).toEqual(["t:a.min", "u:a"]);
+    expect(await loader.load("t:a.min")).toEqual({ name: "A" });
+    expect(await loader.load("u:a")).toEqual({ parser: "min", raw: JSON.stringify({ name: "A" }) });
+  });
+});
+
 describe("fixture loading", () => {
   it("loads keyed fixture maps and layers individual entries with source-key provenance", async () => {
     const registry = createFixtureRegistry();

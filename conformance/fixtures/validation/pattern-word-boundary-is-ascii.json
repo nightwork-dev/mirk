@@ -1,0 +1,55 @@
+{
+  "id": "fixtures/validation/pattern-word-boundary-is-ascii",
+  "title": "\\b sits at an ASCII word edge, so \"éfoo\" contains a bounded \"foo\"",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "pattern": "\\bfoo\\b"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/accented.json": "{\"text\":\"éfoo\"}",
+                "themes/joined.json": "{\"text\":\"afoo\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:joined#text"
+        ]
+      }
+    }
+  ]
+}

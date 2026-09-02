@@ -71,6 +71,21 @@ schema document and returns a validator works. `mirk.fixtures.conformance`
 exports `json_schema_validator_factory`, the one the test suite injects, if you
 want a working default rather than the six lines above.
 
+**An injected engine owns regex dialect parity.** JSON Schema says a `pattern`
+is an ECMAScript regular expression, and Python's `re` is a different dialect
+that disagrees silently: `\w`, `\W`, `\d`, `\D`, `\b` and `\B` read the
+Unicode sets where ECMAScript reads the ASCII ones, `\s` omits U+FEFF, `$` also
+matches before a trailing newline, and `.` excludes only `\n`. The pattern
+compiles either way and simply accepts a different set of strings, so
+`^\w+$` accepts `"é"` here and rejects it in a JavaScript host. The six-line
+factory above has that behavior. `json_schema_validator_factory` does not: it
+compiles every `pattern` and `patternProperties` key through
+`mirk.fixtures.ecma_regex.translate`, and raises `UnportablePatternError`
+naming the construct when a pattern uses something the translation cannot
+express (`\p{...}`, `\cX`, `\u{...}`, a negated shorthand inside a character
+class, `(?<name>...)`). Use it, or reuse `translate` in your own factory, if
+the same packs are read by both languages.
+
 Method names keep the TypeScript camelCase spelling (`loadRaw`,
 `referenceGraph`) and every structured result is a plain dict with the
 TypeScript key spelling, so a corpus operation dispatches identically in both

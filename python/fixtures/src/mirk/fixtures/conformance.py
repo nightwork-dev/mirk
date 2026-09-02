@@ -10,13 +10,21 @@ The JSON Schema engine is injected here, never imported by the package: the
 corpus compares the *set of failing instance paths*, so `jsonschema` and Ajv
 only have to agree about which parts of a document are wrong, not about how to
 word it.
+
+`pattern` and `patternProperties` are the one place agreeing about the paths
+still needs agreeing about the words. JSON Schema says a pattern is an
+ECMAScript regular expression and Python's `re` is a different dialect, so this
+validator compiles every pattern through `ecma_regex.translate` rather than
+handing it to `re` as written.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
+from functools import lru_cache
 from typing import Any
 
+from .ecma_regex import compile_ecma
 from .loader import FixtureLoader
 from .registry import FixtureRegistry
 from .sources.memory import MemoryFixtureSource
@@ -38,6 +46,14 @@ __all__ = ["conformance_target", "json_schema_validator_factory"]
 # report zero issues and call an invalid document valid, so it is kept.
 _AGGREGATE_KEYWORDS = frozenset({"anyOf", "oneOf", "if", "not"})
 
+# `contains` joins them, with one difference: it never stands for branch
+# failures worth reporting. Ajv says why each item failed to match the
+# subschema and `jsonschema` says nothing at all, so the item paths are a
+# search trace rather than a verdict and BOTH engines report only the array.
+# `minContains` and `maxContains` are one `contains` error in Ajv and separate
+# keyword names here; all three land on the array path.
+_CONTAINS_KEYWORDS = frozenset({"contains", "minContains", "maxContains"})
+
 _DECLARABLE_FIELDS = (
     "extensions",
     "document",
@@ -50,23 +66,74 @@ _DECLARABLE_FIELDS = (
 def json_schema_validator_factory(
     document: JsonSchemaDocument,
 ) -> Callable[[Any], Sequence[SchemaIssue]]:
-    """Compile a schema document with `jsonschema`'s draft 2020-12 validator."""
-    from jsonschema.validators import Draft202012Validator
-
-    validator: Any = Draft202012Validator(document)
+    """Compile a schema document with `jsonschema`'s draft 2020-12 validator,
+    reading `pattern` in the ECMAScript dialect JSON Schema specifies."""
+    validator: Any = _ecma_validator_class()(document)
 
     def validate(value: Any) -> list[SchemaIssue]:
-        issues: list[SchemaIssue] = []
+        flattened: list[tuple[Any, bool]] = []
         for error in validator.iter_errors(value):
-            for leaf in _leaf_errors(error):
-                issues.append({"message": str(leaf.message), "path": list(leaf.absolute_path)})
+            flattened.extend(_leaf_errors(error))
+        # An aggregate kept as itself still yields to a real failure at its own
+        # path or below: Ajv reports both and drops the aggregate there, so this
+        # side must too.
+        covered = [
+            tuple(error.absolute_path) for error, is_aggregate in flattened if not is_aggregate
+        ]
+        issues: list[SchemaIssue] = []
+        for error, is_aggregate in flattened:
+            path = tuple(error.absolute_path)
+            if is_aggregate and any(candidate[: len(path)] == path for candidate in covered):
+                continue
+            issues.append({"message": str(error.message), "path": list(path)})
         return issues
 
     return validate
 
 
-def _leaf_errors(error: Any) -> Iterator[Any]:
+def _ecma_pattern(validator: Any, patrn: str, instance: Any, schema: Any) -> Iterator[Any]:
+    """`pattern`, read as ECMAScript rather than as Python `re`."""
+    from jsonschema.exceptions import ValidationError
+
+    if validator.is_type(instance, "string") and not compile_ecma(patrn).search(instance):
+        yield ValidationError(f"{instance!r} does not match {patrn!r}")
+
+
+def _ecma_pattern_properties(
+    validator: Any, patternProperties: Any, instance: Any, schema: Any
+) -> Iterator[Any]:
+    """`patternProperties`, matching property names the same way."""
+    if not validator.is_type(instance, "object"):
+        return
+    for pattern, subschema in patternProperties.items():
+        matcher = compile_ecma(pattern)
+        for key, value in instance.items():
+            if matcher.search(key):
+                yield from validator.descend(value, subschema, path=key, schema_path=pattern)
+
+
+@lru_cache(maxsize=1)
+def _ecma_validator_class() -> Any:
+    """Draft 2020-12 with the two regex keywords replaced.
+
+    Built once: `jsonschema.validators.extend` creates a class, and a fresh
+    class per schema would defeat the library's own reference resolution cache.
+    """
+    import jsonschema.validators
+
+    validators: Any = jsonschema.validators
+    return validators.extend(
+        validators.Draft202012Validator,
+        {"pattern": _ecma_pattern, "patternProperties": _ecma_pattern_properties},
+    )
+
+
+def _leaf_errors(error: Any) -> Iterator[tuple[Any, bool]]:
     """The errors an aggregate stands for, or the error itself.
+
+    Each yielded pair is ``(error, is_aggregate)``; the flag says the error was
+    kept as an aggregate rather than being a failure of its own, which is what
+    the covered-drop rule needs.
 
     An aggregate keyword nests its branch failures in ``context``. Flatten
     those and report them instead of the aggregate, which is the path spelling
@@ -74,21 +141,28 @@ def _leaf_errors(error: Any) -> Iterator[Any]:
     never has context, and an overlapping ``oneOf`` reports only that too many
     branches matched — is yielded as itself, because dropping it would erase
     the only evidence the document is invalid.
+
+    ``contains`` is always yielded as itself. Whatever it may carry in
+    ``context`` describes the search for a matching item, and Ajv drops the
+    same paths on the other side.
     """
     context: Any = getattr(error, "context", None)
+    if error.validator in _CONTAINS_KEYWORDS:
+        yield (error, True)
+        return
     if error.validator in _AGGREGATE_KEYWORDS:
         nested: list[Any] = list(context) if context else []
         leaves = [leaf for sub in nested for leaf in _leaf_errors(sub)]
         if leaves:
             yield from leaves
             return
-        yield error
+        yield (error, True)
         return
     if context:
         for sub in context:
             yield from _leaf_errors(sub)
         return
-    yield error
+    yield (error, False)
 
 
 class _FixturesTarget:

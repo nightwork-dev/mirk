@@ -519,6 +519,17 @@ export const scenarios = [
       { op: "explain", args: ["theme:dark"], expect: value },
     ],
   ),
+  configureThrows(
+    "layering/duplicate-source-id-rejected",
+    "two layers cannot share a source id: the caches and the skip set key by it",
+    {
+      types: [type("theme", "themes")],
+      sources: [
+        memory("pack", 0, { "themes/dark.json": { name: "Base" } }),
+        memory("pack", 1, { "themes/dark.json": { name: "Higher" } }),
+      ],
+    },
+  ),
   scenario(
     "layering/patch-cannot-delete-a-key",
     "no strategy removes a key: a deep patch retains what it omits and overwrites with null (items 75, 76)",
@@ -1152,6 +1163,166 @@ export const scenarios = [
         }),
       ],
       sources: [memory("pack", 0, { "themes/dark.json": { v: { a: 1 } } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+
+  // ── contains: the array-level verdict is the only portable path ──────────
+  // Ajv reports why each item failed to match the `contains` subschema and
+  // Python's `jsonschema` reports nothing but the array. Those item paths are
+  // a search trace rather than a verdict on the item, so both engines drop
+  // them and keep the array path under the aggregate rule.
+  scenario(
+    "validation/contains-with-no-match-reports-the-array-path",
+    "a contains failure reports the array's own path, never the items it searched",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["tags"],
+            properties: { tags: { type: "array", contains: { type: "number" } } },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { tags: ["a", "b"] } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/contains-satisfied-keeps-an-unrelated-item-failure",
+    "an item failing `items` is reported at its own path while a satisfied contains says nothing",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["tags"],
+            properties: {
+              tags: {
+                type: "array",
+                items: { type: ["number", "string"] },
+                contains: { type: "number" },
+              },
+            },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { tags: [1, true] } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/contains-yields-to-a-real-item-failure",
+    "an array whose item genuinely failed reports the item, and the contains verdict drops",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["tags"],
+            properties: {
+              tags: {
+                type: "array",
+                items: { type: "number" },
+                contains: { type: "string" },
+              },
+            },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { tags: [true] } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/min-contains-not-met-reports-the-array-path",
+    "minContains is one contains error in Ajv and its own keyword in Python; both land on the array",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["tags"],
+            properties: {
+              tags: { type: "array", contains: { type: "number" }, minContains: 2 },
+            },
+          },
+        }),
+      ],
+      sources: [memory("pack", 0, { "themes/dark.json": { tags: [1, "a"] } })],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+
+  // ── pattern: ECMAScript, not the host language's regex dialect ───────────
+  // JSON Schema says a pattern is an ECMAScript regular expression. Ajv
+  // compiles one with the `u` flag, where `\w`, `\d` and `\b` are ASCII;
+  // Python's `re` is Unicode by default and would accept every string these
+  // three scenarios reject.
+  scenario(
+    "validation/pattern-word-class-is-ascii",
+    "\\w in a pattern is ASCII: \"é\" fails and \"e_1\" passes",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["slug"],
+            properties: { slug: { type: "string", pattern: "^\\w+$" } },
+          },
+        }),
+      ],
+      sources: [
+        memory("pack", 0, {
+          "themes/accented.json": { slug: "é" },
+          "themes/ascii.json": { slug: "e_1" },
+        }),
+      ],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/pattern-digit-class-is-ascii",
+    "\\d in a pattern is 0-9, so an Arabic-Indic digit is not a digit",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["code"],
+            properties: { code: { type: "string", pattern: "\\d" } },
+          },
+        }),
+      ],
+      sources: [
+        memory("pack", 0, {
+          "themes/arabic-indic.json": { code: "\u0663" },
+          "themes/ascii.json": { code: "3" },
+        }),
+      ],
+    },
+    [{ op: "validate", args: [], expect: invalidPaths }],
+  ),
+  scenario(
+    "validation/pattern-word-boundary-is-ascii",
+    "\\b sits at an ASCII word edge, so \"éfoo\" contains a bounded \"foo\"",
+    {
+      types: [
+        type("theme", "themes", {
+          jsonSchema: {
+            type: "object",
+            required: ["text"],
+            properties: { text: { type: "string", pattern: "\\bfoo\\b" } },
+          },
+        }),
+      ],
+      sources: [
+        memory("pack", 0, {
+          "themes/accented.json": { text: "\u00e9foo" },
+          "themes/joined.json": { text: "afoo" },
+        }),
+      ],
     },
     [{ op: "validate", args: [], expect: invalidPaths }],
   ),

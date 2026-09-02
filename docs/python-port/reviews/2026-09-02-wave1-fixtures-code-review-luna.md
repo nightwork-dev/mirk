@@ -46,21 +46,37 @@ the fixes landed in the follow-up commit with guards that went red first.
 - **14 (low) — refreshing a store-backed loader needs two invalidate calls.**
   Documented.
 
-## Known divergences, recorded and not fixed this wave
+## Closed on branch `python-port/fixtures-divergences`
 
-- **5 — `contains`** produces different path sets (Ajv keeps item paths and
-  the root; `jsonschema` the root only). No corpus scenario uses it. Outside
-  the portable subset until a normalization rule is written.
-- **6 — regex dialects differ**: `^\w+$` on `"é"` fails in Ajv (ASCII `\w`)
-  and passes in Python's `re` (Unicode). Portable schemas keep patterns to
-  ASCII classes and explicit ranges; the corpus does.
-- **8 — duplicate source ids collide in the parsed-document cache** in both
-  languages (pre-existing TypeScript behavior, ported faithfully). Rejecting
-  duplicate ids at construction is a behavior change for a later changeset.
-- **9 — the parsed-document cache key omits the extension** in both
-  languages, so a second type matching one file through another parser
-  reads the first parse. Pre-existing; carried over on purpose and pinned so
-  the fix is deliberate when it comes.
+All four divergences recorded by this review are fixed, each with a guard that
+was red on the code before it.
+
+- **5 — `contains`.** Ajv emitted per-item branch errors while evaluating
+  `contains` alongside the array-level error; `jsonschema` emitted only the
+  array-level one. `contains` now joins the aggregate set in both adapters:
+  errors produced inside a `contains` evaluation are dropped (Ajv: the
+  `schemaPath` passes through `/contains`; Python: they never appear) and the
+  array-path error is kept under the same rule as the other aggregates.
+  `minContains`/`maxContains` land on the array in both. Four corpus scenarios
+  under `fixtures/validation/`; rule written into `conformance/README.md`.
+- **6 — regex dialects.** `json_schema_validator_factory` now extends
+  `Draft202012Validator` with `pattern` and `patternProperties` that compile
+  through `mirk.fixtures.ecma_regex.translate`, an ECMAScript-to-Python
+  translation covering `\w \W \d \D \b \B \s \S ^ $ .` and refusing, by
+  name, what it cannot express. A twenty-pattern table taken from Node
+  (`new RegExp(p, "u").test(s)`) is a unit test; three corpus scenarios pin
+  `^\w+$` against `"é"`, `\d` against an Arabic-Indic digit, and `\bfoo\b`
+  inside `"éfoo"`. `python/fixtures/README.md` records that a caller injecting
+  its own engine owns dialect parity.
+- **8 — duplicate source ids.** Both loaders now refuse the layer stack at
+  construction with `duplicate-source` and the message
+  `Duplicate fixture source id "<id>".`. Corpus scenario
+  `fixtures/layering/duplicate-source-id-rejected`, plus a test in each
+  language; changeset updated, since it is observable.
+- **9 — the parsed-document cache key omits the extension.** The matched
+  extension is part of the key in both languages. Not a corpus case: it needs a
+  second registered parser, which is code. The Python test that called it a
+  quirk now asserts the custom parser's output, and has a TypeScript twin.
 
 ## Criteria the reviewer would change
 

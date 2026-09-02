@@ -222,7 +222,9 @@ declaration as data.
   backend store first and then reads it back through the store source, so a
   store scenario exercises the real backend on both memory and SQLite. An item
   is `{id, content, extension?, relativePath?}`; `extension` falls back to the
-  source's, then to `.json`.
+  source's, then to `.json`. **Source ids are distinct.** The parsed-document
+  cache, the skipped-source set and every diagnostic key a source by its id, so
+  a spec declaring two sources with one id is refused at `configure`.
 - **Ops after `configure`:** `load(ref)`, `list(type?)`, `types()`,
   `validate(ref?)`, `explain(ref)` (the provenance object), `referenceGraph()`,
   `resolveRef(value, expectedType?)`, `invalidate(ref?)`, `seedStore(options)`
@@ -233,8 +235,8 @@ declaration as data.
   sorted by `ref` and `edges` sorted by `from`, `to`, then the dot-joined
   `fieldPath`, all by code point.
 - **Errors this package raises itself** (`patch-without-base`,
-  `map-id-mismatch`, `unsafe-relative-path`, …) use the exact-message `throws`
-  form, like every other port.
+  `map-id-mismatch`, `unsafe-relative-path`, `duplicate-source`, …) use the
+  exact-message `throws` form, like every other port.
 
 ### Validation is compared by paths, never by message
 
@@ -250,21 +252,45 @@ contract is which part of which fixture failed:
 - a diagnostic with any code other than `schema-invalid` FAILS the step — use
   the `value` form for those, which pins the message as usual.
 
-Two rules make the engines agree and both languages implement them:
+Four rules make the engines agree and both languages implement them:
 
 - **an aggregate keyword is dropped only when something underneath it already
-  failed.** An `anyOf`, `oneOf`, `if` or `not` error reports "some combination
-  failed" at a path both engines spell differently, so it is dropped when a
-  NON-aggregate failure is already reported at the same instance path or a
-  deeper one — Ajv emits those alongside, Python flattens them out of
+  failed.** An `anyOf`, `oneOf`, `if`, `not` or `contains` error reports "some
+  combination failed" at a path both engines spell differently, so it is
+  dropped when a NON-aggregate failure is already reported at the same instance
+  path or a deeper one — Ajv emits those alongside, Python flattens them out of
   `context`. An aggregate with no such failure is KEPT at its own path.
   `{"not": {"const": "bad"}}` against `"bad"`, and a `oneOf` matched by two
   branches, are failures with nothing underneath them; dropping those would
   report an empty path list and call an invalid document valid.
+- **`contains` reports the array and never the items it searched.** Ajv says
+  why each item failed to match the `contains` subschema; Python's `jsonschema`
+  says only that the array has too few matches. Those item paths are a search
+  trace rather than a verdict on the item, so an error produced INSIDE a
+  `contains` evaluation is dropped — in Ajv its `schemaPath` passes through
+  `/contains`, and in Python it never appears. What is left is the array-path
+  error, kept under the rule above: `minContains` and `maxContains` are one
+  `contains` error in Ajv and separate keyword names in Python, and all three
+  land on the array. An item that fails a sibling keyword such as `items` is
+  reported at its own path as usual, and takes the array's `contains` verdict
+  down with it.
 - **a `required` failure keeps the containing object's path** and does not
   append the missing property. Ajv puts that name in `params`, Python only in
   the message text; appending it in one language and not the other would
   diverge.
+- **`pattern` is an ECMAScript regular expression, in both languages.** JSON
+  Schema says so, and Ajv compiles one with the `u` flag, where `\w`, `\d`,
+  `\b` and `\B` read the ASCII sets. Python's `re` reads the Unicode ones and
+  differs on four more points: `\s` excludes U+FEFF, `$` also matches before a
+  trailing newline, and `.` excludes only `\n`. Every one of those is silent —
+  the pattern compiles on both sides and accepts a different set of strings. So
+  the Python reference validator translates each pattern to an equivalent
+  Python one before compiling it, and refuses, naming the construct, anything
+  the translation cannot express (`\p{...}`, `\cX`, `\u{...}`, a negated
+  shorthand inside a character class, `(?<name>...)`). A pack is portable when
+  its patterns mean the same thing under both, which the corpus pins directly:
+  `^\w+$` rejects `"é"`, `\d` rejects the Arabic-Indic digit `٣`, and
+  `\bfoo\b` matches inside `"éfoo"`.
 
 The corpus never asserts `throws` for a `schema-invalid` failure.
 

@@ -229,12 +229,21 @@ F1 records the final wording in `conformance/README.md`; F2 mirrors it.
   by the conformance backends, never a package dependency. The corpus never
   asserts `throws` for `schema-invalid`.
 - **Aggregate keywords (post-review, 2026-09-02).** An `anyOf`/`oneOf`/`if`/
-  `not` error is dropped only when a non-aggregate failure exists at the same
-  or a deeper instance path; otherwise it is kept at its own path, so a `not`
-  or overlapping `oneOf` failure still makes the document invalid. Portable
-  schemas keep regex patterns to ASCII classes and avoid `contains`; see
-  `docs/python-port/reviews/2026-09-02-wave1-fixtures-code-review-luna.md`
-  for the recorded divergences.
+  `not`/`contains` error is dropped only when a non-aggregate failure exists at
+  the same or a deeper instance path; otherwise it is kept at its own path, so
+  a `not` or overlapping `oneOf` failure still makes the document invalid.
+  `contains` carries one extra rule: errors produced INSIDE a `contains`
+  evaluation are dropped, since Ajv reports why each item failed to match and
+  `jsonschema` reports nothing, leaving the array path as the only portable
+  verdict. `minContains`/`maxContains` land on the array in both engines.
+- **Regex dialect (post-review, 2026-09-02).** `pattern` is an ECMAScript
+  regular expression, so the Python reference validator translates each pattern
+  before compiling it: `\w \W \d \D \b \B` take the ASCII sets, `\s`
+  includes U+FEFF, `^`/`$` anchor the input rather than a line, `.` excludes
+  the four line terminators, and a construct with no Python equivalent is
+  refused by name. A caller injecting its own engine owns dialect parity. Both
+  rules and the closed divergences are recorded in
+  `docs/python-port/reviews/2026-09-02-wave1-fixtures-code-review-luna.md`.
 - **Hooks are language-local.** Function `mergeStrategy`,
   `validateReferences`, `extractReferences`, `materialize`, YAML and other
   parsers, the filesystem source, the package source and the CLI stay out of

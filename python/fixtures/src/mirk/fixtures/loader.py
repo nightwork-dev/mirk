@@ -106,6 +106,7 @@ class FixtureLoader:
     ) -> None:
         self._registry = registry
         self._layered = normalize_layers(sources)
+        _assert_distinct_source_ids(self._layered)
         self._parsers: dict[str, Parser] = {".json": parse_json_document}
         if parsers:
             self._parsers.update(parsers)
@@ -254,11 +255,16 @@ class FixtureLoader:
     # ── Reading and parsing ──────────────────────────────────────────────
 
     def _read_and_parse(self, candidate: _FileCandidate) -> Any:
+        # The matched EXTENSION is part of the key. Two types can match the
+        # same file through different extension lists, and so through
+        # different parsers; without the extension the second type would read
+        # the first one's parse.
         cache_key = "\u0000".join(
             [
                 candidate.layered.source.id,
                 candidate.entry["locator"],
                 candidate.entry["relativePath"],
+                candidate.ext,
             ]
         )
         cached = self._parsed_document_cache.get(cache_key, _MISSING)
@@ -938,6 +944,34 @@ class FixtureLoader:
                     seen_no_parser.add(key)
                     diagnostics.append(no_parser)
         return sorted(refs)
+
+
+def _assert_distinct_source_ids(layers: Sequence[Any]) -> None:
+    """Source ids must be distinct across the layer stack.
+
+    The parsed-document cache, the skipped-source set and every diagnostic key
+    a source by its id, so two layers sharing one id collapse into each other:
+    the lower layer's document is served for the higher one and a source
+    skipped for a read error takes its namesake down with it. That is a data
+    bug with no local symptom, so it is refused where it is introduced.
+    """
+    seen: set[str] = set()
+    for layered in layers:
+        source_id = layered.source.id
+        if source_id in seen:
+            raise FixtureError(
+                {
+                    "severity": "error",
+                    "code": "duplicate-source",
+                    "message": f'Duplicate fixture source id "{source_id}".',
+                    "source": source_id,
+                    "hint": (
+                        "Give every fixture source a distinct id; layer order is set "
+                        "by priority, not by id."
+                    ),
+                }
+            )
+        seen.add(source_id)
 
 
 def create_fixture_loader(
