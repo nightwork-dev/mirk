@@ -1,0 +1,70 @@
+{
+  "id": "graph/traverse-cycle-terminates",
+  "title": "a two-node cycle terminates at depth 100",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "c_pq",
+          "from": "p",
+          "to": "q",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "c_qp",
+          "from": "q",
+          "to": "p",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "c",
+        {
+          "start": "p",
+          "depth": 100
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "q"
+          ],
+          "edges": [
+            {
+              "id": "c_pq",
+              "from": "p",
+              "to": "q",
+              "type": "link",
+              "published": true
+            },
+            {
+              "id": "c_qp",
+              "from": "q",
+              "to": "p",
+              "type": "link",
+              "published": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

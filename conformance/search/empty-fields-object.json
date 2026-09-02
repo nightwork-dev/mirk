@@ -1,0 +1,23 @@
+{
+  "id": "search/empty-fields-object",
+  "title": "a document with an empty fields object is rejected",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "fields": {}
+        }
+      ],
+      "expect": {
+        "throws": "SearchDocument.fields must contain at least one field."
+      }
+    }
+  ]
+}

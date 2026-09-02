@@ -33,9 +33,7 @@ def pytest_terminal_summary(terminalreporter: Any) -> None:
     by_backend: dict[str, int] = {}
     for _, _, backend in executed:
         by_backend[backend] = by_backend.get(backend, 0) + 1
-    terminalreporter.write_line(
-        f"conformance executed by backend: {_render(by_backend)}"
-    )
+    terminalreporter.write_line(f"conformance executed by backend: {_render(by_backend)}")
     if skipped:
         terminalreporter.write_line(
             f"conformance skipped: {len(skipped)} runs by port [{_render(_tally(skipped))}]"

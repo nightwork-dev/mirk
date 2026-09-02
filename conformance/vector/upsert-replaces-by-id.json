@@ -1,0 +1,73 @@
+{
+  "id": "vector/upsert-replaces-by-id",
+  "title": "upserting the same id twice keeps the second vector and one row",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "v": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            0,
+            1,
+            0
+          ],
+          "metadata": {
+            "v": 2
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vector": [
+            0,
+            1,
+            0
+          ],
+          "metadata": {
+            "v": 2
+          }
+        }
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

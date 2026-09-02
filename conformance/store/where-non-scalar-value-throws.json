@@ -1,0 +1,71 @@
+{
+  "id": "store/where-non-scalar-value-throws",
+  "title": "an object or array where value is rejected, not treated as no match",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "v": {
+            "x": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": {
+              "x": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store filters only support JSON scalar values."
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": [
+              1,
+              2
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store filters only support JSON scalar values."
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": {
+              "x": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store filters only support JSON scalar values."
+      }
+    }
+  ]
+}

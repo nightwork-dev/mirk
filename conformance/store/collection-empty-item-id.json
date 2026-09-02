@@ -1,0 +1,52 @@
+{
+  "id": "store/collection-empty-item-id",
+  "title": "the empty string is a valid, addressable item id",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "",
+          "v": 1
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "items",
+        ""
+      ],
+      "expect": {
+        "value": {
+          "id": "",
+          "v": 1
+        }
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "items",
+        ""
+      ],
+      "expect": {
+        "value": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "store/kv-keys-empty-prefix",
+  "title": "an empty prefix behaves like no prefix at all",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "b",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "a",
+        2
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "value": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

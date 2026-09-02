@@ -28,7 +28,7 @@ from mirk.store.conformance import (
 
 # Ports whose target this checkout cannot build yet. The integrator empties this
 # set once vector, search and graph land; a skip outside it is a failure now.
-ALLOWED_SKIPPED_PORTS = {"vector", "search", "graph"}
+ALLOWED_SKIPPED_PORTS: set[str] = set()
 
 IMPLEMENTED_CAPABILITIES = {"listWhereIn"}
 

@@ -1,0 +1,208 @@
+{
+  "id": "graph/frontier-batched-same-as-traverse-edge-types",
+  "title": "both strategies agree when edgeTypes filters the walk in memory",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ab",
+          "from": "a",
+          "to": "b",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_bc",
+          "from": "b",
+          "to": "c",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ca",
+          "from": "c",
+          "to": "a",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ad",
+          "from": "a",
+          "to": "d",
+          "type": "mentions",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_de",
+          "from": "d",
+          "to": "e",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ax",
+          "from": "a",
+          "to": "x",
+          "type": "follows",
+          "published": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "noise",
+          "from": "unrelated",
+          "to": "sink",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "edges",
+        {
+          "start": "a",
+          "depth": 5,
+          "edgeTypes": [
+            "follows"
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "b",
+            "c",
+            "x"
+          ],
+          "edges": [
+            {
+              "id": "e_ab",
+              "from": "a",
+              "to": "b",
+              "type": "follows",
+              "published": true
+            },
+            {
+              "id": "e_ax",
+              "from": "a",
+              "to": "x",
+              "type": "follows",
+              "published": false
+            },
+            {
+              "id": "e_bc",
+              "from": "b",
+              "to": "c",
+              "type": "follows",
+              "published": true
+            },
+            {
+              "id": "e_ca",
+              "from": "c",
+              "to": "a",
+              "type": "follows",
+              "published": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "traverseFrontierBatched",
+      "args": [
+        "edges",
+        {
+          "start": "a",
+          "depth": 5,
+          "edgeTypes": [
+            "follows"
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "b",
+            "c",
+            "x"
+          ],
+          "edges": [
+            {
+              "id": "e_ab",
+              "from": "a",
+              "to": "b",
+              "type": "follows",
+              "published": true
+            },
+            {
+              "id": "e_ax",
+              "from": "a",
+              "to": "x",
+              "type": "follows",
+              "published": false
+            },
+            {
+              "id": "e_bc",
+              "from": "b",
+              "to": "c",
+              "type": "follows",
+              "published": true
+            },
+            {
+              "id": "e_ca",
+              "from": "c",
+              "to": "a",
+              "type": "follows",
+              "published": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

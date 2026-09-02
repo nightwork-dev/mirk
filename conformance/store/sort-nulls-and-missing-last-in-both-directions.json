@@ -1,0 +1,84 @@
+{
+  "id": "store/sort-nulls-and-missing-last-in-both-directions",
+  "title": "null and missing sort values land last ascending and descending",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "two",
+          "n": 2
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "missing"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "one",
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "null",
+          "n": null
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "n"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "one",
+          "two",
+          "missing",
+          "null"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "n",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "two",
+          "one",
+          "missing",
+          "null"
+        ]
+      }
+    }
+  ]
+}

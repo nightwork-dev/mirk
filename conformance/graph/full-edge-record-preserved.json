@@ -1,0 +1,76 @@
+{
+  "id": "graph/full-edge-record-preserved",
+  "title": "neighbors and traverse return the stored edge record untouched",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "rich",
+        {
+          "id": "e_ft",
+          "from": "a",
+          "to": "b",
+          "type": "ref",
+          "from_type": "doc",
+          "to_type": "term",
+          "weight": 3
+        }
+      ]
+    },
+    {
+      "op": "neighbors",
+      "args": [
+        "rich",
+        {
+          "from": "a"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "e_ft",
+            "from": "a",
+            "to": "b",
+            "type": "ref",
+            "from_type": "doc",
+            "to_type": "term",
+            "weight": 3
+          }
+        ]
+      }
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "rich",
+        {
+          "start": "a",
+          "depth": 1
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "b"
+          ],
+          "edges": [
+            {
+              "id": "e_ft",
+              "from": "a",
+              "to": "b",
+              "type": "ref",
+              "from_type": "doc",
+              "to_type": "term",
+              "weight": 3
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

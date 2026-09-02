@@ -1,0 +1,62 @@
+{
+  "id": "store/list-where-in-booleans",
+  "title": "boolean values match boolean fields",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "t",
+          "f": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "f",
+          "f": false
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          true
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "t"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          false
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "f"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "id": "search/document-with-both-text-and-fields",
+  "title": "a document carrying both text and fields is rejected",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "one",
+          "fields": {
+            "title": "two"
+          }
+        }
+      ],
+      "expect": {
+        "throws": "SearchDocument must provide either `text` or `fields`, not both."
+      }
+    }
+  ]
+}

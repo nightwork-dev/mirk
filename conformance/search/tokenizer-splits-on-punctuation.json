@@ -1,0 +1,102 @@
+{
+  "id": "search/tokenizer-splits-on-punctuation",
+  "title": "a dot and an apostrophe split a token rather than joining it",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "release",
+          "text": "release v1.2 shipped"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "contraction",
+          "text": "it don't matter"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "v1"
+      ],
+      "expect": {
+        "ids": [
+          "release"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "2"
+      ],
+      "expect": {
+        "ids": [
+          "release"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "v1.2"
+      ],
+      "expect": {
+        "ids": [
+          "release"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "don"
+      ],
+      "expect": {
+        "ids": [
+          "contraction"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "t"
+      ],
+      "expect": {
+        "ids": [
+          "contraction"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "don't"
+      ],
+      "expect": {
+        "ids": [
+          "contraction"
+        ]
+      }
+    }
+  ]
+}

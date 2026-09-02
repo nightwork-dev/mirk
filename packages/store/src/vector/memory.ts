@@ -11,6 +11,7 @@ import type {
   Vector,
 } from "./types.js";
 import { matchesWhere } from "./filter.js";
+import { compareCodePoints } from "../order.js";
 import { cosineSimilarity, assertDimensions, isUsableVector } from "./cosine.js";
 
 export interface InMemoryVectorStoreOptions {
@@ -93,9 +94,9 @@ export class InMemoryVectorStore implements VectorStore {
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ id: doc.id, score, metadata: doc.metadata as M | undefined });
     }
-    // `|| a.id.localeCompare(b.id)` breaks score ties deterministically by id — the
-    // same tiebreak the sqlite adapter applies, so equal-score results order alike.
-    scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    // Ties break deterministically by id in Unicode code point order — the same
+    // tiebreak the sqlite adapter applies, so equal-score results order alike.
+    scored.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
     return scored.slice(0, topK);
   }
 

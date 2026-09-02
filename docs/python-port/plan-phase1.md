@@ -94,8 +94,8 @@ section 8 items 1–11 and 23–35; `pnpm --filter @mirk/store test` replays the
 on memory and sqlite; `pnpm conformance:current` exits 0 after a clean regen
 and 1 after any hand edit to a scenario file.
 
-- [ ] framework files, generator, freshness check, replay test, README
-- [ ] output of gen, test, typecheck, current pasted in report
+- [x] framework files, generator, freshness check, replay test, README
+- [x] output of gen, test, typecheck, current pasted in report (commit 55edfb7)
 
 ### P0 · Python scaffold, KV/collection port, corpus runner
 
@@ -115,8 +115,8 @@ item.
 **Acceptance:** `uv run pytest -q`, `uv run pyright`, `uv run ruff check .`
 green; the corpus replay executes every `store/*` scenario on both backends.
 
-- [ ] package, ports, memory, sqlite, namespace, runner, tests
-- [ ] cross-language compat tests pass against `packages/store/dist`
+- [x] package, ports, memory, sqlite, namespace, runner, tests
+- [x] cross-language compat tests pass against `packages/store/dist` (commit 55edfb7)
 
 ---
 

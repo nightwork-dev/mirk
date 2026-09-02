@@ -1,0 +1,116 @@
+{
+  "id": "graph/traverse-direction-both",
+  "title": "direction both makes an edge traversable from either endpoint",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ab",
+          "from": "a",
+          "to": "b",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_bc",
+          "from": "b",
+          "to": "c",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ca",
+          "from": "c",
+          "to": "a",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ad",
+          "from": "a",
+          "to": "d",
+          "type": "mentions",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_de",
+          "from": "d",
+          "to": "e",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ax",
+          "from": "a",
+          "to": "x",
+          "type": "follows",
+          "published": false
+        }
+      ]
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "edges",
+        {
+          "start": "e",
+          "depth": 1,
+          "direction": "both"
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "d"
+          ],
+          "edges": [
+            {
+              "id": "e_de",
+              "from": "d",
+              "to": "e",
+              "type": "follows",
+              "published": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

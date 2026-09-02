@@ -1,0 +1,38 @@
+{
+  "id": "search/negative-field-weight",
+  "title": "a negative field weight is rejected",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "fields": {
+            "title": "x",
+            "body": "y"
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "x",
+        {
+          "fieldWeights": {
+            "title": -1
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Search field weight for \"title\" must be a non-negative finite number."
+      }
+    }
+  ]
+}

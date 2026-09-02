@@ -1,0 +1,54 @@
+{
+  "id": "search/tie-break-astral-id",
+  "title": "id tie-breaks compare Unicode code points, so an astral id sorts last",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "😀",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "z",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical"
+      ],
+      "expect": {
+        "ids": [
+          "z",
+          "",
+          "😀"
+        ]
+      }
+    }
+  ]
+}

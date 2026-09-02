@@ -1,0 +1,40 @@
+{
+  "id": "search/term-in-no-document",
+  "title": "a term present in no document returns nothing",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "quick",
+            "text": "the quick brown fox"
+          },
+          {
+            "id": "lazy",
+            "text": "the lazy dog sleeps"
+          },
+          {
+            "id": "another",
+            "text": "a fox in the henhouse"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "aardvark"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

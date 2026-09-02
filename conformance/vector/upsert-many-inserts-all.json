@@ -1,0 +1,83 @@
+{
+  "id": "vector/upsert-many-inserts-all",
+  "title": "upsertMany inserts every document when all vectors are valid",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsertMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "a",
+            "vector": [
+              1,
+              0,
+              0
+            ],
+            "metadata": {
+              "n": 1
+            }
+          },
+          {
+            "id": "b",
+            "vector": [
+              0,
+              1,
+              0
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "n": 1
+          }
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "b"
+      ],
+      "expect": {
+        "value": {
+          "id": "b",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

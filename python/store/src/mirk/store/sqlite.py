@@ -110,10 +110,7 @@ def build_order_by(filter: StoreFilter | None = None) -> tuple[str, list[SqlPara
         return (" ORDER BY rowid", [])
     direction = "DESC" if (filter or {}).get("sortDir") == "desc" else "ASC"
     path = json_path(sort_by)
-    clause = (
-        " ORDER BY json_extract(data, ?) IS NULL, "
-        f"json_extract(data, ?) {direction}, rowid"
-    )
+    clause = f" ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) {direction}, rowid"
     return (clause, [path, path])
 
 
@@ -214,6 +211,11 @@ class SqliteStore:
     @property
     def meta(self) -> StoreMeta:
         return self._meta
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """The live connection, shared by the vector and search facets."""
+        return self._db
 
     @property
     def busy_timeout_ms(self) -> int:
@@ -400,3 +402,13 @@ class SqliteStore:
             f"SELECT COUNT(*) FROM {table}{where_clause}", tuple(where_params)
         ).fetchone()
         return int(row[0])
+
+
+def connection_of(handle: object) -> sqlite3.Connection:
+    """The ``sqlite3`` connection behind a store handle, or the connection itself."""
+    if isinstance(handle, sqlite3.Connection):
+        return handle
+    candidate = getattr(handle, "connection", None)
+    if isinstance(candidate, sqlite3.Connection):
+        return candidate
+    raise TypeError(f"no sqlite3 connection behind {type(handle).__name__}")

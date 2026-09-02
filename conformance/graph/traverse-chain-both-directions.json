@@ -1,0 +1,72 @@
+{
+  "id": "graph/traverse-chain-both-directions",
+  "title": "direction both from the middle of a directed chain reaches both ends",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "chain",
+        {
+          "id": "e_ab",
+          "from": "a",
+          "to": "b",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "chain",
+        {
+          "id": "e_bc",
+          "from": "b",
+          "to": "c",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "chain",
+        {
+          "start": "b",
+          "depth": 2,
+          "direction": "both"
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "a",
+            "c"
+          ],
+          "edges": [
+            {
+              "id": "e_ab",
+              "from": "a",
+              "to": "b",
+              "type": "link",
+              "published": true
+            },
+            {
+              "id": "e_bc",
+              "from": "b",
+              "to": "c",
+              "type": "link",
+              "published": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

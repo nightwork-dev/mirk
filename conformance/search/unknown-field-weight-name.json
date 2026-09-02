@@ -1,0 +1,38 @@
+{
+  "id": "search/unknown-field-weight-name",
+  "title": "a weight naming a field the collection does not have is rejected",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "fields": {
+            "title": "x",
+            "body": "y"
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "x",
+        {
+          "fieldWeights": {
+            "subtitle": 2
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Unknown search field weight \"subtitle\"."
+      }
+    }
+  ]
+}

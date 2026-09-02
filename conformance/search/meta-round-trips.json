@@ -1,0 +1,73 @@
+{
+  "id": "search/meta-round-trips",
+  "title": "meta round-trips including nesting, and defaults to an empty object",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "tagged",
+          "text": "shared term",
+          "meta": {
+            "type": "cat",
+            "nested": {
+              "deep": [
+                1,
+                2
+              ]
+            },
+            "live": true,
+            "owner": null
+          }
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "bare",
+          "text": "shared term"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "shared"
+      ],
+      "expect": {
+        "values": [
+          {
+            "id": "bare",
+            "meta": {}
+          },
+          {
+            "id": "tagged",
+            "meta": {
+              "type": "cat",
+              "nested": {
+                "deep": [
+                  1,
+                  2
+                ]
+              },
+              "live": true,
+              "owner": null
+            }
+          }
+        ],
+        "ignoreFields": [
+          "score"
+        ]
+      }
+    }
+  ]
+}

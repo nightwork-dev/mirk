@@ -45,6 +45,7 @@ import type {
   Vector,
 } from "../vector/types.js";
 import { matchesWhere } from "../vector/filter.js";
+import { compareCodePoints } from "../order.js";
 import {
   cosineSimilarity,
   vectorToBuffer,
@@ -1178,13 +1179,19 @@ class SqliteVectorFacet implements VectorStore {
     minScore: number | undefined
   ): VectorSearchResult<M>[] {
     const table = this.ensureVecTable(collection);
+    // `minScore` is a filter, and every filter runs BEFORE topK on every path
+    // (the JS path filters then slices). Pushing `LIMIT topK` into the KNN query
+    // would slice first and return fewer rows than the JS path whenever one of
+    // the topK nearest falls below the floor. vec0 requires a LIMIT on a KNN
+    // query, so widen it to the whole collection and slice after filtering.
+    const sqlLimit = minScore === undefined ? topK : this.count(collection);
     const rows = this.db
       .prepare(
         `SELECT v.id AS id, v.metadata AS metadata, vv.distance AS distance
          FROM ${table} vv JOIN vectors v ON v.rowid = vv.rowid
          WHERE vv.embedding MATCH ? ORDER BY vv.distance LIMIT ?`
       )
-      .all(vectorToBuffer(query), topK) as Array<{
+      .all(vectorToBuffer(query), sqlLimit) as Array<{
       id: string;
       metadata: string | null;
       distance: number;
@@ -1202,8 +1209,8 @@ class SqliteVectorFacet implements VectorStore {
           r.metadata === null ? undefined : (JSON.parse(r.metadata) as M),
       });
     }
-    out.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-    return out;
+    out.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
+    return out.slice(0, topK);
   }
 
   private searchJs<M extends Record<string, unknown>>(
@@ -1231,7 +1238,7 @@ class SqliteVectorFacet implements VectorStore {
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ id: row.id, score, metadata: meta });
     }
-    scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    scored.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
     return scored.slice(0, topK);
   }
 }

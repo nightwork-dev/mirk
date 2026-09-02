@@ -19,6 +19,37 @@ import type {
   VersionedStoreValue,
 } from "../atomic.js";
 import { cloneJson, targetKey, validateAtomicRequest } from "../atomic.js";
+import { compareCodePoints } from "../order.js";
+import { NON_SCALAR_FILTER_MESSAGE } from "../sql.js";
+
+/** The message the SQLite adapter already raises for a non-scalar `listWhereIn`
+ *  value. The reference raises the same one so the two backends agree. */
+const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
+
+function isJsonScalar(value: unknown): boolean {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  );
+}
+
+/** There is no deep equality anywhere in the port, so a non-scalar `where` value
+ *  is a caller error. The SQLite adapter cannot bind one at all; the reference
+ *  used to return `[]` and silently mean "no match". */
+function assertScalarWhere(where: Record<string, unknown>): void {
+  for (const value of Object.values(where)) {
+    if (!isJsonScalar(value)) throw new Error(NON_SCALAR_FILTER_MESSAGE);
+  }
+}
+
+function assertScalarInValues(values: readonly unknown[]): void {
+  for (const value of values) {
+    if (!isJsonScalar(value)) throw new Error(NON_SCALAR_IN_MESSAGE);
+  }
+}
 
 let nextMemoryStoreId = 1;
 
@@ -71,13 +102,21 @@ export class InMemoryStore
 
   keys(prefix?: string): string[] {
     const allKeys = [...this.kv.keys()];
-    if (!prefix) return allKeys;
-    return allKeys.filter((k) => k.startsWith(prefix));
+    const selected = prefix
+      ? allKeys.filter((k) => k.startsWith(prefix))
+      : allKeys;
+    // Code point ascending, matching the SQLite adapter's `ORDER BY key` under
+    // the BINARY collation. Map iteration order (insertion) is not the contract.
+    return selected.sort(compareCodePoints);
   }
 
   // ── Collections ────────────────────────────────────────────────────
 
   private ensureCollection(name: string): Map<string, unknown> {
+    // The SQLite adapter cannot name a table for the empty string and rejects it;
+    // the reference used to accept it and quietly serve a collection nobody could
+    // address on a persistent backend.
+    if (name.length === 0) throw new Error("Invalid collection name");
     let col = this.collections.get(name);
     if (!col) {
       col = new Map<string, unknown>();
@@ -100,6 +139,10 @@ export class InMemoryStore
     filter?: StoreFilter
   ): T[] {
     if (values.length === 0) return [];
+    // Validation order mirrors the SQLite adapter, which builds the caller's
+    // WHERE clause before the IN clause.
+    if (filter?.where) assertScalarWhere(filter.where);
+    assertScalarInValues(values);
     const set = new Set(values);
     const col = this.ensureCollection(collection);
     const items = [...col.values()].filter((item) => {
@@ -136,8 +179,17 @@ export class InMemoryStore
   count(collection: string, filter?: StoreFilter): number {
     const col = this.ensureCollection(collection);
     if (!filter?.where) return col.size;
-    const items = [...col.values()];
-    return applyFilter(items, filter).length;
+    // `count` answers "how many match", so it reads only `where`. Routing through
+    // applyFilter would also slice, making `count(c, {where, limit: 1})` return 1
+    // while the SQLite adapter (which builds a WHERE clause and nothing else)
+    // returns the true total.
+    const where = filter.where;
+    assertScalarWhere(where);
+    let total = 0;
+    for (const item of col.values()) {
+      if (matchesWhere(item, where)) total++;
+    }
+    return total;
   }
 
   getVersioned<T>(target: StoreTarget): VersionedStoreValue<T> | null {
@@ -354,31 +406,44 @@ function applyFilter<T>(items: T[], filter?: StoreFilter): T[] {
   // Where clause — exact match
   if (filter.where) {
     const where = filter.where;
+    assertScalarWhere(where);
     result = result.filter((item) => matchesWhere(item, where));
   }
 
-  // Sort
+  // Sort — stable, so ties keep insertion order
   if (filter.sortBy) {
     const field = filter.sortBy;
     const dir = filter.sortDir === "desc" ? -1 : 1;
     result = [...result].sort((a, b) => {
       const aVal = (a as Record<string, unknown>)[field];
       const bVal = (b as Record<string, unknown>)[field];
+      const aMissing = aVal === undefined || aVal === null;
+      const bMissing = bVal === undefined || bVal === null;
+      // Null and missing sort LAST in both directions, so the direction
+      // multiplier deliberately does not apply to them.
+      if (aMissing && bMissing) return 0;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
       if (aVal === bVal) return 0;
-      if (aVal === undefined || aVal === null) return 1;
-      if (bVal === undefined || bVal === null) return -1;
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        // JS `<` on strings compares UTF-16 code units; SQLite's BINARY
+        // collation compares UTF-8 bytes. They differ above the BMP.
+        return compareCodePoints(aVal, bVal) * dir;
+      }
       return aVal < bVal ? -1 * dir : 1 * dir;
     });
   }
 
-  // Offset
+  // Offset, then limit — both after the sort
   if (filter.offset !== undefined && filter.offset > 0) {
-    result = result.slice(filter.offset);
+    result = result.slice(Math.floor(filter.offset));
   }
 
-  // Limit
-  if (filter.limit !== undefined && filter.limit >= 0) {
-    result = result.slice(0, filter.limit);
+  // A negative limit clamps to zero (no rows), matching the SQLite adapter's
+  // `LIMIT max(0, floor(limit))`. Returning everything for `limit: -1` was the
+  // reference's own reading of "no limit".
+  if (filter.limit !== undefined) {
+    result = result.slice(0, Math.max(0, Math.floor(filter.limit)));
   }
 
   return result;

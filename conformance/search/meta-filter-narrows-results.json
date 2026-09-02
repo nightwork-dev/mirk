@@ -1,0 +1,72 @@
+{
+  "id": "search/meta-filter-narrows-results",
+  "title": "filter.where keeps only documents whose meta matches every condition",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "cat-a",
+            "text": "shared term",
+            "meta": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "cat-b",
+            "text": "shared term",
+            "meta": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "dog-a",
+            "text": "shared term",
+            "meta": {
+              "type": "dog"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "shared",
+        {
+          "filter": {
+            "where": {
+              "type": "cat"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "values": [
+          {
+            "id": "cat-a",
+            "meta": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "cat-b",
+            "meta": {
+              "type": "cat"
+            }
+          }
+        ],
+        "ignoreFields": [
+          "score"
+        ]
+      }
+    }
+  ]
+}

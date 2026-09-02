@@ -1,0 +1,62 @@
+{
+  "id": "store/where-number-and-string-do-not-cross-match",
+  "title": "a numeric where value never matches the same digits stored as text",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "n",
+          "v": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "s",
+          "v": "1"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "n"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": "1"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "s"
+        ]
+      }
+    }
+  ]
+}

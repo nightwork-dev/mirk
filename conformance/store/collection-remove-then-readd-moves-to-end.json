@@ -1,0 +1,66 @@
+{
+  "id": "store/collection-remove-then-readd-moves-to-end",
+  "title": "removing an item and putting it back moves it to the end of list",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c"
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "items",
+        "a"
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "c",
+          "a"
+        ]
+      }
+    }
+  ]
+}

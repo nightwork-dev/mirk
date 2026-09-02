@@ -9,6 +9,13 @@
     {
       "op": "set",
       "args": [
+        "gamma",
+        3
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
         "alpha",
         1
       ]
@@ -18,13 +25,6 @@
       "args": [
         "beta",
         2
-      ]
-    },
-    {
-      "op": "set",
-      "args": [
-        "gamma",
-        3
       ]
     },
     {

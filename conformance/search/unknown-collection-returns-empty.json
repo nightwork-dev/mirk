@@ -1,0 +1,30 @@
+{
+  "id": "search/unknown-collection-returns-empty",
+  "title": "search on a collection that was never indexed returns nothing",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "hello"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "other",
+        "hello"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

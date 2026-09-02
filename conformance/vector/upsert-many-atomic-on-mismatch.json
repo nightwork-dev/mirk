@@ -1,0 +1,88 @@
+{
+  "id": "vector/upsert-many-atomic-on-mismatch",
+  "title": "a mid-array dimension mismatch in upsertMany persists nothing",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "keep",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsertMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "b",
+            "vector": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "id": "c",
+            "vector": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ]
+      ],
+      "expect": {
+        "throws": "Vector dimension mismatch: expected 3, got 4"
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "b"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "keep"
+      ],
+      "expect": {
+        "value": {
+          "id": "keep",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

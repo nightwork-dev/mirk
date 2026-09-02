@@ -1,0 +1,63 @@
+{
+  "id": "store/list-where-in-where-on-same-field-is-anded",
+  "title": "a where clause on the IN field narrows the IN rather than replacing it",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "1",
+          "f": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "2",
+          "f": "b"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "3",
+          "f": "c"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "a",
+          "b"
+        ],
+        {
+          "where": {
+            "f": "b"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "2"
+        ]
+      }
+    }
+  ]
+}

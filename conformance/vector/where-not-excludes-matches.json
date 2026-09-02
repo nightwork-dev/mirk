@@ -1,0 +1,99 @@
+{
+  "id": "vector/where-not-excludes-matches",
+  "title": "whereNot drops documents that satisfy every condition",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsertMany",
+      "args": [
+        "pets",
+        [
+          {
+            "id": "cat-black",
+            "vector": [
+              1,
+              0,
+              0
+            ],
+            "metadata": {
+              "type": "cat",
+              "color": "black"
+            }
+          },
+          {
+            "id": "cat-white",
+            "vector": [
+              0.9,
+              0.1,
+              0
+            ],
+            "metadata": {
+              "type": "cat",
+              "color": "white"
+            }
+          },
+          {
+            "id": "dog-a",
+            "vector": [
+              0,
+              1,
+              0
+            ],
+            "metadata": {
+              "type": "dog",
+              "color": "black"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "pets",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "whereNot": {
+            "type": "cat"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "dog-a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "pets",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "type": "cat"
+          },
+          "whereNot": {
+            "color": "black"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "cat-white"
+        ]
+      }
+    }
+  ]
+}

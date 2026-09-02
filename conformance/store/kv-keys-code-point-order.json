@@ -1,0 +1,50 @@
+{
+  "id": "store/kv-keys-code-point-order",
+  "title": "keys returns code point ascending order, not insertion order",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "B",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "a",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "Z",
+        3
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "ä",
+        4
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "B",
+          "Z",
+          "a",
+          "ä"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "id": "store/sort-strings-are-case-sensitive",
+  "title": "string sorting is by code point, so every uppercase letter precedes lowercase",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "1",
+          "s": "b"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "2",
+          "s": "A"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "3",
+          "s": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "4",
+          "s": "B"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "s"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "2",
+          "4",
+          "3",
+          "1"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "id": "vector/search-orders-by-score",
+  "title": "search returns near, mid and far in descending similarity",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "near",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "mid",
+          "vector": [
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "far",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "expect": {
+        "values": [
+          {
+            "id": "near",
+            "score": 1
+          },
+          {
+            "id": "mid",
+            "score": 0.7071067811865475
+          },
+          {
+            "id": "far",
+            "score": 0
+          }
+        ],
+        "approxFields": [
+          "score"
+        ],
+        "tol": 0.000001
+      }
+    }
+  ]
+}

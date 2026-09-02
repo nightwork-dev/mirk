@@ -1,0 +1,52 @@
+{
+  "id": "search/fields-document-matches-any-field",
+  "title": "a fielded document matches on a term in any of its fields",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "title-hit",
+            "fields": {
+              "title": "matcha",
+              "body": "unrelated words here"
+            }
+          },
+          {
+            "id": "body-hit",
+            "fields": {
+              "title": "unrelated",
+              "body": "matcha in the body"
+            }
+          },
+          {
+            "id": "neither",
+            "fields": {
+              "title": "nothing",
+              "body": "nothing at all"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha"
+      ],
+      "expect": {
+        "ids": [
+          "title-hit",
+          "body-hit"
+        ]
+      }
+    }
+  ]
+}

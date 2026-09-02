@@ -19,7 +19,7 @@ classifiers = [
 vec = ["sqlite-vec>=0.1.6"]
 
 [dependency-groups]
-dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
+dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4", "sqlite-vec>=0.1.6"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mirk"]

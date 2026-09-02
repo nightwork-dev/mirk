@@ -1,0 +1,60 @@
+{
+  "id": "store/collection-empty-name-throws",
+  "title": "an empty collection name is rejected by every collection operation",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "list",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "throws": "Invalid collection name"
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "throws": "Invalid collection name"
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "",
+        "x"
+      ],
+      "expect": {
+        "throws": "Invalid collection name"
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "",
+        {
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "throws": "Invalid collection name"
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "",
+        "x"
+      ],
+      "expect": {
+        "throws": "Invalid collection name"
+      }
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "id": "search/query-is-case-insensitive",
+  "title": "query terms are lowercased before matching",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "MiXeD Case Words"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "mixed"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "CASE"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "id": "search/ranking-term-frequency",
+  "title": "with the term kept rare, more occurrences rank higher",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "thrice",
+            "text": "matcha matcha matcha"
+          },
+          {
+            "id": "once",
+            "text": "matcha and other things entirely"
+          },
+          {
+            "id": "filler-a",
+            "text": "unrelated words about nothing"
+          },
+          {
+            "id": "filler-b",
+            "text": "more unrelated words here"
+          },
+          {
+            "id": "filler-c",
+            "text": "still nothing to do with it"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha"
+      ],
+      "expect": {
+        "ids": [
+          "thrice",
+          "once"
+        ]
+      }
+    }
+  ]
+}

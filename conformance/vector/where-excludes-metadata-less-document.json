@@ -1,0 +1,62 @@
+{
+  "id": "vector/where-excludes-metadata-less-document",
+  "title": "a document with no metadata never satisfies a where filter",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "pets",
+        {
+          "id": "tagged",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "type": "cat"
+          }
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "pets",
+        {
+          "id": "bare",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "pets",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "type": "cat"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "tagged"
+        ]
+      }
+    }
+  ]
+}

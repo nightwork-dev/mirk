@@ -1,0 +1,43 @@
+{
+  "id": "search/term-matches-containing-documents",
+  "title": "a query term returns exactly the documents containing it",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "quick",
+            "text": "the quick brown fox"
+          },
+          {
+            "id": "lazy",
+            "text": "the lazy dog sleeps"
+          },
+          {
+            "id": "another",
+            "text": "a fox in the henhouse"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "fox"
+      ],
+      "expect": {
+        "ids": [
+          "quick",
+          "another"
+        ]
+      }
+    }
+  ]
+}

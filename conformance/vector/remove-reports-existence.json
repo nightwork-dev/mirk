@@ -1,0 +1,73 @@
+{
+  "id": "vector/remove-reports-existence",
+  "title": "remove returns true once, then false, and the document is gone",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 0
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

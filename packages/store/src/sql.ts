@@ -11,8 +11,8 @@
 import type { StoreFilter } from "./types.js";
 
 /** A bound SQL parameter — the common subset both better-sqlite3 and @libsql/client
- *  accept. Booleans are pre-converted to 0/1 by the builders (better-sqlite3 rejects
- *  a raw boolean), so they never appear here. */
+ *  accept. Booleans never appear here: `where` compares them by json_type alone, and
+ *  the IN builder converts them to 0/1 (better-sqlite3 rejects a raw boolean). */
 export type SqlParam = string | number | bigint | null;
 
 /** A field name is ONE top-level JSON key, never a nested path. Build the JSON path
@@ -25,6 +25,11 @@ export function jsonPath(field: string): string {
   return `$."${field.replace(/"/g, '""')}"`;
 }
 
+/** The message BOTH backends raise for a `where` value that is not a JSON scalar.
+ *  There is no deep equality anywhere in the port, so an object or array value is
+ *  a caller error rather than a filter that matches nothing. */
+export const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
+
 export function buildWhereClause(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
   if (!filter?.where || Object.keys(filter.where).length === 0) {
     return { clause: "", params: [] };
@@ -33,30 +38,46 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
   const params: SqlParam[] = [];
   for (const [key, value] of Object.entries(filter.where)) {
     const path = jsonPath(key);
+    // Every comparison is guarded by json_type. json_extract collapses a JSON
+    // boolean to SQL 1/0, so an unguarded `= ?` makes `where {v: true}` match a
+    // stored 1 and `where {v: 1}` match a stored true. The in-memory reference's
+    // `record[key] !== value` keeps them apart; the type guard keeps SQLite in step.
     if (value === null) {
-      // The in-memory reference matches a field whose value IS null, not a missing
-      // field (`record[key] !== null` is false only for an explicit null). `= NULL`
-      // never matches in SQL, so test the JSON type: json_type is `'null'` ONLY for
-      // an explicit JSON null, and SQL NULL (not 'null') for a missing path.
+      // json_type is `'null'` ONLY for an explicit JSON null, and SQL NULL (not
+      // the string 'null') for a missing path, so this matches an explicit null
+      // and not a missing field. `= NULL` would never match at all.
       conditions.push(`json_type(data, ?) = 'null'`);
       params.push(path);
+    } else if (typeof value === "boolean") {
+      conditions.push(`json_type(data, ?) = '${value ? "true" : "false"}'`);
+      params.push(path);
+    } else if (typeof value === "string") {
+      conditions.push(`json_type(data, ?) = 'text' AND json_extract(data, ?) = ?`);
+      params.push(path, path, value);
+    } else if (typeof value === "number" || typeof value === "bigint") {
+      conditions.push(
+        `json_type(data, ?) IN ('integer', 'real') AND json_extract(data, ?) = ?`,
+      );
+      params.push(path, path, value);
     } else {
-      const bound = typeof value === "boolean" ? (value ? 1 : 0) : value;
-      conditions.push(`json_extract(data, ?) = ?`);
-      params.push(path, bound as string | number);
+      throw new Error(NON_SCALAR_FILTER_MESSAGE);
     }
   }
   return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
 }
 
 export function buildOrderBy(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
-  if (!filter?.sortBy) return { clause: "", params: [] };
+  // `rowid` is the FINAL key so ties resolve to insertion order, matching the
+  // in-memory reference's stable sort. With no `sortBy` it is the only key, which
+  // pins the default `list()` order to insertion order instead of leaving it to
+  // whatever the query planner happens to scan.
+  if (!filter?.sortBy) return { clause: " ORDER BY rowid", params: [] };
   const dir = filter.sortDir === "desc" ? "DESC" : "ASC";
   const path = jsonPath(filter.sortBy);
   // `... IS NULL` first puts null/missing fields LAST in BOTH directions, matching
   // the in-memory reference (which pushes undefined/null after defined values).
   return {
-    clause: ` ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ${dir}`,
+    clause: ` ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ${dir}, rowid`,
     params: [path, path],
   };
 }
