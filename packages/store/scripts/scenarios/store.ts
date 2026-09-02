@@ -23,6 +23,11 @@ const seedProjects = PROJECTS.map((item) => ({
   args: ["projects", item] as unknown[],
 }));
 
+/** `"%$;**@"` and `"~,~$(*"` both sanitize to `______` and both hash to
+ *  `jqoxun` under the 32-bit FNV-1a in `sql.ts`. */
+const COLLIDING_A = "%$;**@";
+const COLLIDING_B = "~,~$(*";
+
 const BULK = Array.from({ length: 10 }, (_, i) => ({
   id: `item-${i}`,
   index: i,
@@ -802,6 +807,26 @@ export const scenarios = [
       { op: "put", args: ["items", { id: "a", f: "x" }] },
       { op: "listWhereIn", args: ["items", "f", [{ a: 1 }]], expect: { throws: true } },
       { op: "listWhereIn", args: ["items", "f", ["x", [1]]], expect: { throws: true } },
+    ],
+  }),
+
+  // ── physical table naming ───────────────────────────────────────────────
+  // Both names sanitize to `______` and share the 32-bit FNV hash `jqoxun`, so
+  // a hash-derived table name aliases them onto one physical table. The
+  // registry (`_mirk_tables`) is what keeps them apart.
+  defineScenario({
+    id: "store/collection-names-collide-on-hash",
+    title: "two collection names that sanitize and hash identically stay independent",
+    ports: ["collection"],
+    steps: [
+      { op: "put", args: [COLLIDING_A, { id: "a1", tag: "first" }] },
+      { op: "put", args: [COLLIDING_B, { id: "b1", tag: "second" }] },
+      { op: "getById", args: [COLLIDING_A, "a1"], expect: { value: true } },
+      { op: "getById", args: [COLLIDING_B, "b1"], expect: { value: true } },
+      { op: "getById", args: [COLLIDING_A, "b1"], expect: { value: true } },
+      { op: "getById", args: [COLLIDING_B, "a1"], expect: { value: true } },
+      { op: "count", args: [COLLIDING_A], expect: { value: true } },
+      { op: "count", args: [COLLIDING_B], expect: { value: true } },
     ],
   }),
 ];

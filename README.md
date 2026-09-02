@@ -32,7 +32,7 @@ it. `SqliteAdapter` is a single `better-sqlite3` database exposing `.kv` (`SyncS
 and three transaction scopes.
 
 <p align="center">
-  <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one better-sqlite3 connection; a .kv facet (SyncStore: key-value + collections) and a .vector facet (VectorStore: cosine, vec0-accelerated) both ride that single connection. The same ports are implemented zero-native by the in-memory backends." width="820" />
+  <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one better-sqlite3 connection; a .kv facet (SyncStore: key-value + collections) and a .vector facet (VectorStore: exact cosine) both ride that single connection. The same ports are implemented zero-native by the in-memory backends." width="820" />
 </p>
 
 The facets implement the same `SyncStore` / `VectorStore` / `SearchStore` ports that the
@@ -46,7 +46,7 @@ native bindings appear in exactly one place — the SQLite adapter — as **opti
 dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your bundle.
 
 <p align="center">
-  <img src="docs/diagrams/code-split.svg" alt="Three subpaths: @mirk/store/kv and @mirk/store/vector are zero native deps; @mirk/store/sqlite is the source adapter and the only one pulling native optional peers (better-sqlite3, sqlite-vec). Import a port subpath and no native binding enters your bundle." width="900" />
+  <img src="docs/diagrams/code-split.svg" alt="Three subpaths: @mirk/store/kv and @mirk/store/vector are zero native deps; @mirk/store/sqlite is the source adapter and the only one pulling a native optional peer (better-sqlite3). Import a port subpath and no native binding enters your bundle." width="900" />
 </p>
 
 | Import                   | What you get                                                                                                                                                      | Native deps                                                                       |
@@ -58,7 +58,7 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store/search`     | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search                                                                                            | none                                                                              |
 | `@mirk/store/graph`      | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal)                                                                      | none                                                                              |
 | `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
-| `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer) · `sqlite-vec` (optional peer)                            |
+| `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer)                                                           |
 | `@mirk/store-libsql`     | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets                                                                                          | none                                                                              |
 | `@mirk/store-postgres`   | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters                                                                                  | `pg`                                                                              |
 | `@mirk/store-markdown`   | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history                                                                | none                                                                              |
@@ -93,8 +93,6 @@ where a remote backend genuinely requires it.
 npm install @mirk/store
 # Using @mirk/store/sqlite? Add its peer:
 npm install better-sqlite3
-# Optional: vec0 KNN acceleration (graceful exact-JS fallback without it)
-npm install sqlite-vec
 ```
 
 ESM-only. Node ≥ 20.
@@ -151,8 +149,8 @@ db.vector.search("docs", query, { topK: 10 }); // ranked by cosine
 db.close();
 ```
 
-Vectors rank by **exact cosine**; install the optional `sqlite-vec` peer and the same search is
-transparently vec0-accelerated, with identical rankings. Full API in
+Vectors rank by **exact cosine**, accumulated in float64 — the adapter's only search path. Full
+API in
 [`packages/store/README.md`](packages/store/README.md).
 
 ## Design

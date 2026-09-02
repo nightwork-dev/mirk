@@ -142,9 +142,9 @@ corpus exists to prevent.
   declares, per backend, which capabilities that backend has **right now**,
   detected for real rather than assumed:
   - `listWhereIn` — the method both store backends implement, in both languages.
-  - `vec0` is not a capability yet. The adapter's `accelerated` flag reports true
-    while the vec0 branch never executes, so there is no honest detector; see
-    roadmap MR-22 and `docs/evidence/python-port/2026-09-02-vec0-branch-dead.md`.
+  - There is no `vec0` capability. The sqlite-vec path was removed under
+    roadmap MR-22 after it was shown never to have executed; the SQLite vector
+    facet is the exact float64 cosine path in both languages.
 - A scenario declaring a capability a backend lacks is a failure naming the
   backend and the capability: `<id>: <backend> lacks capability(ies) <names>`.
   The one exception is the empty case: if no scenario in the corpus declares a

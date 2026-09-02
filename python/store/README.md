@@ -14,8 +14,8 @@ bookkeeping rows on every write.
 uv add mirk-store
 ```
 
-Zero runtime dependencies. The `vec` extra pulls `sqlite-vec` for the vector
-port; the KV and collection port needs nothing beyond the standard library.
+Zero runtime dependencies. Every port, the vector one included, needs nothing
+beyond the standard library.
 
 ## Namespace package
 
@@ -54,6 +54,28 @@ transaction you left pending on it.
 connection = sqlite3.connect("data.db")
 store = SqliteStore("data.db", connection=connection)  # takes over autocommit
 ```
+
+## File layout and schema version
+
+A SQLite file carries a table registry, `_mirk_tables(kind, name, table_name)`,
+that maps a logical name to its physical table. `kind` is `collection` or
+`search`. The physical name is still derived from the logical one, sanitized and
+hashed, but that derived name is only the first candidate: when a different
+logical name already holds it, the next candidate appends `_2`, `_3`, and so on,
+past every candidate another name holds or an unregistered table already sits on.
+Two collections whose names sanitize and hash alike therefore get two tables
+instead of silently sharing one, and a stray table is never absorbed by a
+suffixed candidate. The FTS index for a search collection is named
+after its docs table, so one registry row governs both.
+
+A file written before the registry existed keeps working. The first open records
+the table it already has under its logical name, in place, with no rewrite.
+
+`_mirk_meta` holds `schema_version`, currently `2`. Opening a file whose version
+is higher than this adapter understands raises rather than reading it by rules
+that no longer apply. The TypeScript adapter uses the same registry, the same
+candidate sequence, and the same version, so both languages resolve a shared file
+to the same tables.
 
 ## The contract
 

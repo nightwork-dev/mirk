@@ -1,27 +1,27 @@
 """SQLite vector facet: the ``vectors`` table the TypeScript adapter writes.
 
 The facet shares one connection with :class:`~mirk.store.sqlite.SqliteStore`
-rather than opening a second handle on the same file, so a write and its vec0
-mirror commit together.
+rather than opening a second handle on the same file, so a write and its
+metadata commit together.
 
-Two search paths, one result. When ``sqlite-vec`` loads, a per-collection vec0
-table answers the k-nearest query; otherwise the base table is scanned and
-scored in Python. Both paths exclude directionless vectors, apply ``minScore``
-before cutting to ``topK``, and sort by score then id, so which one ran is not
-observable in the results.
+One search path: the base table is scanned and scored in float64 Python cosine.
+``meta["accelerated"]`` is therefore always False. A ``sqlite-vec`` (vec0) path
+used to sit beside this one and never executed once; it was deleted under
+roadmap MR-22, with the reasoning in
+``docs/evidence/python-port/2026-09-02-vec0-branch-dead.md``. Legacy
+``vectors_vec_*`` shadow tables in older files are left in place; they are inert.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, cast
 
 from .filter import dumps_json
-from .sqlite import connection_of, hash_name
+from .sqlite import connection_of
 from .vector import (
     VectorDocument,
     VectorSearchOptions,
@@ -31,12 +31,10 @@ from .vector import (
     assert_dimensions,
     bytes_to_vector,
     finish_search,
-    is_usable_vector,
     keeps_metadata,
     min_score_of,
     score_of,
     to_float32,
-    top_k_of,
     vector_to_bytes,
 )
 
@@ -46,10 +44,7 @@ __all__ = [
     "connection_of",
     "dimensions_conflict_message",
     "positive_dimensions_message",
-    "try_load_sqlite_vec",
 ]
-
-_UNSAFE_TABLE_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 
 NO_DIMENSIONS_MESSAGE = (
     "SqliteAdapter.vector has no dimensions yet"
@@ -65,29 +60,6 @@ def dimensions_conflict_message(path: str, stored: int, opened: object) -> str:
     return f"Vector store at {path} was created with {stored} dimensions, opened with {opened}."
 
 
-def try_load_sqlite_vec(db: sqlite3.Connection) -> bool:
-    """Load the optional ``sqlite-vec`` extension. False on any failure.
-
-    Not installed, no extension support in this Python build, or a loader error
-    all mean the same thing to the caller: take the exact path instead.
-    """
-    try:
-        from importlib import import_module
-
-        module: Any = import_module("sqlite_vec")
-        loader: Any = getattr(module, "load", None)
-        if not callable(loader):
-            return False
-        db.enable_load_extension(True)
-        try:
-            loader(db)
-        finally:
-            db.enable_load_extension(False)
-        return True
-    except Exception:
-        return False
-
-
 class SqliteVectorFacet:
     """The ``VectorStore`` port over one SQLite connection."""
 
@@ -97,14 +69,10 @@ class SqliteVectorFacet:
         *,
         path: str = "",
         dimensions: int | None = None,
-        force_js_cosine: bool = False,
     ) -> None:
         self._db = db
         self._path = path
         self._dimensions = -1
-        self._accelerated = False
-        self._force_js_cosine = force_js_cosine
-        self._vec_tables: set[str] = set()
         db.executescript(
             """
             CREATE TABLE IF NOT EXISTS vectors (
@@ -123,7 +91,6 @@ class SqliteVectorFacet:
             self._dimensions = int(row[0])
             if dimensions is not None and dimensions != self._dimensions:
                 raise ValueError(dimensions_conflict_message(path, self._dimensions, dimensions))
-            self._refresh_meta()
         elif dimensions is not None:
             self.configure_dimensions(dimensions)
 
@@ -144,19 +111,13 @@ class SqliteVectorFacet:
             " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (str(dimensions),),
         )
-        self._refresh_meta()
-
-    def _refresh_meta(self) -> None:
-        self._accelerated = (
-            not self._force_js_cosine and self._dimensions >= 0 and try_load_sqlite_vec(self._db)
-        )
 
     @property
     def meta(self) -> VectorStoreMeta:
         return {
             "backend": "sqlite",
             "dimensions": max(self._dimensions, 0),
-            "accelerated": self._accelerated,
+            "accelerated": False,
         }
 
     @property
@@ -190,54 +151,6 @@ class SqliteVectorFacet:
         else:
             self._db.execute("COMMIT")
 
-    # ── vec0 mirror ──────────────────────────────────────────────────────
-    def _vec_table_name(self, collection: str) -> str:
-        sanitized = _UNSAFE_TABLE_CHARS.sub("_", collection)
-        return f"vectors_vec_{sanitized}_{hash_name(collection)}"
-
-    def _ensure_vec_table(self, collection: str) -> str:
-        table = self._vec_table_name(collection)
-        if table in self._vec_tables:
-            return table
-        # cosine, not vec0's L2 default, or the rankings would not match the
-        # exact path.
-        self._db.execute(
-            f"CREATE VIRTUAL TABLE IF NOT EXISTS {table}"
-            f" USING vec0(embedding float[{self._dimensions}] distance_metric=cosine)"
-        )
-        self._vec_tables.add(table)
-        # Backfill rows written while the extension was unavailable, so an
-        # accelerated search over an older file is still complete.
-        existing = self._db.execute(
-            "SELECT rowid, vec FROM vectors WHERE collection = ?", (collection,)
-        ).fetchall()
-        if existing:
-            with self._write():
-                for rowid, blob in existing:
-                    self._db.execute(f"DELETE FROM {table} WHERE rowid = ?", (rowid,))
-                    if is_usable_vector(bytes_to_vector(bytes(blob))):
-                        self._db.execute(
-                            f"INSERT INTO {table}(rowid, embedding) VALUES (?, ?)",
-                            (rowid, bytes(blob)),
-                        )
-        return table
-
-    def _sync_vec(self, collection: str, id: str, vector: list[float]) -> None:
-        table = self._ensure_vec_table(collection)
-        row = self._db.execute(
-            "SELECT rowid FROM vectors WHERE collection = ? AND id = ?", (collection, id)
-        ).fetchone()
-        if row is None:
-            return
-        rowid = int(row[0])
-        self._db.execute(f"DELETE FROM {table} WHERE rowid = ?", (rowid,))
-        # A directionless vector stays out of vec0, so both paths exclude it.
-        if is_usable_vector(vector):
-            self._db.execute(
-                f"INSERT INTO {table}(rowid, embedding) VALUES (?, ?)",
-                (rowid, vector_to_bytes(vector)),
-            )
-
     # ── Writes ───────────────────────────────────────────────────────────
     def upsert(self, collection: str, doc: VectorDocument) -> None:
         self._ensure_dims_for_write(doc["vector"])
@@ -255,8 +168,6 @@ class SqliteVectorFacet:
                     None if metadata is None else dumps_json(metadata),
                 ),
             )
-            if self._accelerated:
-                self._sync_vec(collection, doc["id"], rounded)
 
     def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None:
         if not docs:
@@ -276,14 +187,6 @@ class SqliteVectorFacet:
 
     def remove(self, collection: str, id: str) -> bool:
         with self._write():
-            if self._accelerated:
-                row = self._db.execute(
-                    "SELECT rowid FROM vectors WHERE collection = ? AND id = ?",
-                    (collection, id),
-                ).fetchone()
-                if row is not None:
-                    table = self._ensure_vec_table(collection)
-                    self._db.execute(f"DELETE FROM {table} WHERE rowid = ?", (int(row[0]),))
             cursor = self._db.execute(
                 "DELETE FROM vectors WHERE collection = ? AND id = ?", (collection, id)
             )
@@ -319,49 +222,7 @@ class SqliteVectorFacet:
     ) -> VectorSearchResultList:
         self._require_known_dims(query)
         rounded = to_float32(query)
-        where = opts.get("where") if opts else None
-        where_not = opts.get("whereNot") if opts else None
-        has_filters = where is not None or where_not is not None
-        # Metadata lives on the base table, not in vec0, so a pre-KNN filter has
-        # to scan. A directionless query has no vec0 answer worth trusting.
-        if self._accelerated and is_usable_vector(rounded) and not has_filters:
-            try:
-                return self._search_vec(collection, rounded, opts)
-            except Exception:
-                pass
         return self._search_js(collection, rounded, opts)
-
-    def _search_vec(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None
-    ) -> VectorSearchResultList:
-        table = self._ensure_vec_table(collection)
-        minimum = min_score_of(opts)
-        top_k = top_k_of(opts)
-        # ``top_k`` is the whole bound. ``minScore`` deliberately does not widen
-        # it: the floor is monotone in distance (score = 1 - distance), so the k
-        # nearest are exactly the k highest scores and the floor removes the same
-        # rows before or after the slice. Nor can a row be dropped for any other
-        # reason and let a lower-ranked one take its place -- ``_sync_vec`` keeps
-        # directionless vectors out of vec0, so no NULL-distance row takes a slot.
-        k = top_k
-        rows = self._db.execute(
-            f"SELECT v.id, v.metadata, vv.distance FROM {table} vv"
-            " JOIN vectors v ON v.rowid = vv.rowid"
-            " WHERE vv.embedding MATCH ? ORDER BY vv.distance LIMIT ?",
-            (vector_to_bytes(query), k),
-        ).fetchall()
-        scored: VectorSearchResultList = []
-        for row in rows:
-            if row[2] is None:
-                continue
-            score = 1 - float(row[2])
-            if minimum is not None and score < minimum:
-                continue
-            hit: VectorSearchResult = {"id": str(row[0]), "score": score}
-            if row[1] is not None:
-                hit["metadata"] = cast(dict[str, Any], json.loads(row[1]))
-            scored.append(hit)
-        return finish_search(scored, opts)
 
     def _search_js(
         self, collection: str, query: list[float], opts: VectorSearchOptions | None

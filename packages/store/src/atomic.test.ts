@@ -39,7 +39,6 @@ function stores(): Array<
       () => {
         const adapter = new SqliteAdapter({
           path: ":memory:",
-          forceJsCosine: true,
         });
         return { store: atomic(adapter.kv), close: () => adapter.close() };
       },

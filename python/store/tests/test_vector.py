@@ -2,14 +2,13 @@
 
 The corpus is JSON, so it can express neither a NaN component nor the bytes of a
 stored blob nor a reopened file. Those live here, next to the two properties the
-whole port rests on: components are rounded to float32 on write, and the vec0
-path and the exact path return the same thing.
+whole port rests on: components are rounded to float32 on write, and a stored
+vector survives a close and reopen unchanged.
 """
 
 from __future__ import annotations
 
 import math
-import random
 import sqlite3
 import struct
 from collections.abc import Iterator
@@ -27,7 +26,6 @@ from mirk.store.sqlite_vector import (
 )
 from mirk.store.vector import (
     InMemoryVectorStore,
-    VectorDocument,
     VectorSearchOptions,
     VectorSearchResultList,
     bytes_to_vector,
@@ -38,11 +36,6 @@ from mirk.store.vector import (
     to_float32,
     vector_to_bytes,
 )
-
-# sqlite-vec is a dev dependency, so a load failure in the suite is a failure,
-# not an environment the tests get to skip. The library's runtime fallback to
-# exact cosine is a separate, deliberately exercised path.
-VEC0_REQUIRED = "sqlite-vec did not load; it is a dev dependency, so this is a failure"
 
 RAW = [0.1, 0.2, 0.3]
 ROUNDED = list(struct.unpack("<3f", struct.pack("<3f", *RAW)))
@@ -191,59 +184,10 @@ def test_min_score_is_applied_before_top_k(memory_facet: SqliteVectorFacet) -> N
     assert ids_of(memory_facet.search("c", [1.0, 0.0, 0.0], opts)) == ["near"]
 
 
-# ── the two SQLite paths ─────────────────────────────────────────────────────
+# ── the SQLite path ──────────────────────────────────────────────────────────
 
 
-def test_the_facet_reports_whether_vec0_loaded(memory_facet: SqliteVectorFacet) -> None:
-    forced, connection = open_facet(":memory:", dimensions=3, force_js_cosine=True)
-    try:
-        assert forced.meta["accelerated"] is False
-    finally:
-        connection.close()
-    # Not an assertion about the environment: only that the flag tracks the load.
-    assert isinstance(memory_facet.meta["accelerated"], bool)
-
-
-def _random_corpus(seed: int, dimensions: int, size: int) -> list[VectorDocument]:
-    rng = random.Random(seed)
-    docs: list[VectorDocument] = []
-    for index in range(size):
-        scale = rng.choice([0.01, 1.0, 40.0])
-        vector = [rng.uniform(-1.0, 1.0) * scale for _ in range(dimensions)]
-        docs.append({"id": f"doc-{index:03d}", "vector": vector})
-    return docs
-
-
-def test_vec0_and_exact_paths_agree_on_random_data(tmp_path: Path) -> None:
-    db = str(tmp_path / "agree.db")
-    docs = _random_corpus(seed=7, dimensions=8, size=60)
-
-    accelerated, accelerated_connection = open_facet(db, dimensions=8)
-    assert accelerated.meta["accelerated"], VEC0_REQUIRED
-    exact, exact_connection = open_facet(db, force_js_cosine=True)
-    try:
-        accelerated.upsertMany("c", docs)
-        rng = random.Random(11)
-        options: list[VectorSearchOptions] = [
-            {},
-            {"topK": 3},
-            {"topK": 5, "minScore": 0.3},
-            {"minScore": -0.2, "topK": 50},
-        ]
-        for trial in range(6):
-            query = [rng.uniform(-1.0, 1.0) for _ in range(8)]
-            for opts in options:
-                fast = accelerated.search("c", query, opts)
-                slow = exact.search("c", query, opts)
-                assert ids_of(fast) == ids_of(slow), f"trial {trial} opts {opts}"
-                for left, right in zip(fast, slow, strict=True):
-                    assert left["score"] == pytest.approx(right["score"], abs=1e-6)
-    finally:
-        exact_connection.close()
-        accelerated_connection.close()
-
-
-def test_removal_and_replacement_keep_the_vec0_mirror_in_step(tmp_path: Path) -> None:
+def test_removal_and_replacement_are_reflected_by_the_next_search(tmp_path: Path) -> None:
     db = str(tmp_path / "mirror.db")
     facet, connection = open_facet(db, dimensions=3)
     try:
@@ -257,21 +201,6 @@ def test_removal_and_replacement_keep_the_vec0_mirror_in_step(tmp_path: Path) ->
         assert facet.count("c") == 1
     finally:
         connection.close()
-
-
-def test_a_fallback_written_file_is_backfilled_into_vec0(tmp_path: Path) -> None:
-    db = str(tmp_path / "backfill.db")
-    written, write_connection = open_facet(db, dimensions=3, force_js_cosine=True)
-    written.upsert("c", {"id": "a", "vector": [1.0, 0.0, 0.0]})
-    written.upsert("c", {"id": "zero", "vector": [0.0, 0.0, 0.0]})
-    write_connection.close()
-
-    reopened, read_connection = open_facet(db)
-    try:
-        assert reopened.meta["accelerated"], VEC0_REQUIRED
-        assert ids_of(reopened.search("c", [1.0, 0.0, 0.0], {"minScore": -1})) == ["a"]
-    finally:
-        read_connection.close()
 
 
 # ── dimensions ───────────────────────────────────────────────────────────────

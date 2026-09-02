@@ -30,9 +30,23 @@ from .search import (
     normalize_search_document,
     sanitize_fts_query,
 )
-from .sqlite import connection_of, hash_name
+from .sqlite import (
+    claimed_by_other,
+    connection_of,
+    ensure_registry,
+    hash_name,
+    lookup_table,
+    resolve_table,
+    table_exists,
+)
 
-__all__ = ["SCHEMA_TABLE", "SqliteSearchFacet", "search_column_name"]
+__all__ = [
+    "SCHEMA_TABLE",
+    "SqliteSearchFacet",
+    "legacy_search_docs_table",
+    "search_column_name",
+    "search_fts_table",
+]
 
 SCHEMA_TABLE = "_mirk_search_schema"
 _UNSAFE_TABLE_CHARS = re.compile(r"[^a-zA-Z0-9_]")
@@ -47,6 +61,18 @@ def search_column_name(field: str, index: int) -> str:
     if field == DEFAULT_SEARCH_FIELD:
         return DEFAULT_SEARCH_FIELD
     return f"f{index}_{hash_name(field)}"
+
+
+def legacy_search_docs_table(collection: str) -> str:
+    """The pre-registry docs-table name: sanitized collection, then hashed."""
+    return f"search_docs_{_UNSAFE_TABLE_CHARS.sub('_', collection)}_{hash_name(collection)}"
+
+
+def search_fts_table(docs_table: str) -> str:
+    """The FTS index paired with a docs table: the same name under the fts prefix."""
+    if docs_table.startswith("search_docs_"):
+        return "search_fts_" + docs_table[len("search_docs_") :]
+    return f"search_fts_{docs_table}"
 
 
 def _quote(identifier: str) -> str:
@@ -75,6 +101,8 @@ class SqliteSearchFacet:
     def __init__(self, handle: object) -> None:
         self._db = connection_of(handle)
         self._ensured: set[str] = set()
+        self._resolved: dict[str, str] = {}
+        ensure_registry(self._db)
         self._db.execute(
             f"CREATE TABLE IF NOT EXISTS {SCHEMA_TABLE} ("
             " collection TEXT PRIMARY KEY,"
@@ -82,18 +110,34 @@ class SqliteSearchFacet:
         )
 
     # ── Physical names ───────────────────────────────────────────────────
-    def _base_table(self, collection: str) -> str:
-        return f"search_docs_{_UNSAFE_TABLE_CHARS.sub('_', collection)}_{hash_name(collection)}"
+    def _docs_table(self, collection: str) -> str:
+        """Resolve and claim this collection's docs table through the registry."""
+        cached = self._resolved.get(collection)
+        if cached is not None:
+            return cached
+        table = resolve_table(self._db, "search", collection, legacy_search_docs_table(collection))
+        self._resolved[collection] = table
+        return table
 
-    def _fts_table(self, collection: str) -> str:
-        return f"search_fts_{_UNSAFE_TABLE_CHARS.sub('_', collection)}_{hash_name(collection)}"
+    def _peek_docs_table(self, collection: str) -> str | None:
+        """The docs table this collection would use, without claiming one.
 
-    def _table_exists(self, table: str) -> bool:
-        row = self._db.execute(
-            "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
-            (table,),
-        ).fetchone()
-        return row is not None
+        Read paths must not mint a registry row for a collection that was never
+        indexed, so adoption of a pre-registry file is decided here and only
+        committed once the schema row is written.
+        """
+        cached = self._resolved.get(collection)
+        if cached is not None:
+            return cached
+        hit = lookup_table(self._db, "search", collection)
+        if hit is not None:
+            return hit
+        legacy = legacy_search_docs_table(collection)
+        if table_exists(self._db, legacy) and not claimed_by_other(
+            self._db, legacy, "search", collection
+        ):
+            return legacy
+        return None
 
     # ── Schema registry ──────────────────────────────────────────────────
     def _load_schema(self, collection: str) -> _Schema | None:
@@ -107,13 +151,14 @@ class SqliteSearchFacet:
         # A database written by the earlier single-column facet has the tables
         # but no registry row. Adopt it as the default {text} schema and record
         # that, rather than failing to read a file the TypeScript side can read.
-        docs = self._base_table(collection)
-        if not self._table_exists(docs):
+        docs = self._peek_docs_table(collection)
+        if docs is None or not table_exists(self._db, docs):
             return None
         columns = [str(info[1]) for info in self._db.execute(f"PRAGMA table_info({_quote(docs)})")]
         if DEFAULT_SEARCH_FIELD not in columns:
             return None
         fields = [DEFAULT_SEARCH_FIELD]
+        self._docs_table(collection)
         self._db.execute(
             f"INSERT OR IGNORE INTO {SCHEMA_TABLE}(collection, fields_json) VALUES (?, ?)",
             (collection, dumps_json(fields)),
@@ -133,8 +178,8 @@ class SqliteSearchFacet:
 
     # ── Physical tables ──────────────────────────────────────────────────
     def _ensure(self, collection: str, schema: _Schema) -> tuple[str, str]:
-        docs = self._base_table(collection)
-        fts = self._fts_table(collection)
+        docs = self._docs_table(collection)
+        fts = search_fts_table(docs)
         key = f"{docs}:{chr(0).join(schema.fields)}"
         if key in self._ensured:
             return (docs, fts)

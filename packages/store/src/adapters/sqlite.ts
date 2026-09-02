@@ -10,9 +10,12 @@
 // graph) serves many capabilities over one connection.
 //
 // better-sqlite3 is the ONLY native reference in @mirk/store, reachable solely
-// through this subpath. Vector search uses sqlite-vec (vec0, cosine metric) when
-// the optional sqlite-vec peer is installed (meta.accelerated=true), else an exact
-// JS-cosine fallback with identical rankings (meta.accelerated=false).
+// through this subpath. Vector search is exact float64 JS cosine, and only that:
+// `meta.accelerated` is always false here. A sqlite-vec (vec0) branch used to
+// sit alongside it and never once executed; it is deleted, and the reasoning is
+// in docs/evidence/python-port/2026-09-02-vec0-branch-dead.md (roadmap MR-22).
+// Legacy `vectors_vec_*` shadow tables in older files are left in place; they are
+// inert.
 
 import Database from "better-sqlite3";
 
@@ -75,36 +78,27 @@ import {
   hashName,
   jsonPath,
   type SqlParam,
+  COLLECTION_TABLE_KIND,
+  COLLECTION_TABLE_PREFIX,
+  ftsTableFor,
+  INSERT_REGISTERED_TABLE_SQL,
+  INSERT_SCHEMA_VERSION_SQL,
+  isSchemaVersionTooNew,
+  isTableRegistryConflict,
+  MIRK_REGISTRY_DDL,
+  MIRK_SCHEMA_VERSION,
+  schemaVersionTooNewMessage,
+  SEARCH_DOCS_TABLE_PREFIX,
+  SEARCH_TABLE_KIND,
+  SELECT_REGISTERED_TABLE_SQL,
+  SELECT_SCHEMA_VERSION_SQL,
+  SELECT_TABLE_CLAIM_SQL,
+  SELECT_TABLE_EXISTS_SQL,
+  tableResolution,
+  type TableRegistryAnswer,
 } from "../sql.js";
-import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
-
-const nodeRequire = createRequire(import.meta.url);
-
-/** Try to load the sqlite-vec extension into a connection. Optional + graceful:
- *  returns false (no acceleration) on any failure — not installed, ABI mismatch,
- *  or loadExtension disabled. Synchronous via createRequire (the adapter ctor is
- *  sync); sqlite-vec is a string require, so the bundler leaves it external. */
-function tryLoadSqliteVec(db: Database.Database): boolean {
-  try {
-    const vec = nodeRequire("sqlite-vec") as {
-      load?: (db: Database.Database) => void;
-      getLoadablePath?: () => string;
-    };
-    if (typeof vec.load === "function") {
-      vec.load(db);
-      return true;
-    }
-    if (typeof vec.getLoadablePath === "function") {
-      db.loadExtension(vec.getLoadablePath());
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
 
 function assertPositiveDimensions(dimensions: number): void {
   if (!Number.isInteger(dimensions) || dimensions <= 0) {
@@ -112,6 +106,93 @@ function assertPositiveDimensions(dimensions: number): void {
       `Vector dimensions must be a positive integer; got ${dimensions}.`
     );
   }
+}
+
+/** Create `_mirk_tables` / `_mirk_meta` and pin `schema_version`. Runs once per
+ *  open, BEFORE any facet, so a file written by a newer adapter is refused
+ *  rather than half-read. */
+function ensureMirkRegistry(db: Database.Database): void {
+  const hasMeta =
+    db
+      .prepare(
+        "SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = '_mirk_meta'"
+      )
+      .get() !== undefined;
+  if (hasMeta) {
+    const row = db.prepare(SELECT_SCHEMA_VERSION_SQL).get() as
+      | { value: string }
+      | undefined;
+    if (row !== undefined && isSchemaVersionTooNew(row.value)) {
+      throw new Error(
+        schemaVersionTooNewMessage(row.value, MIRK_SCHEMA_VERSION)
+      );
+    }
+  }
+  db.exec(MIRK_REGISTRY_DDL);
+  db.prepare(INSERT_SCHEMA_VERSION_SQL).run(String(MIRK_SCHEMA_VERSION));
+}
+
+/** Synchronous driver for the shared `tableResolution` procedure in ../sql.ts.
+ *  The procedure itself lives there because @mirk/store-libsql runs the exact
+ *  same steps against an async client. */
+function runTableResolution(
+  db: Database.Database,
+  kind: string,
+  name: string,
+  prefix: string,
+  register: boolean
+): string {
+  // A concurrent opener can claim the candidate between this resolution's
+  // lookup and its INSERT. Restarting reads the winner's row as a registry hit.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return resolveTableOnce(db, kind, name, prefix, register);
+    } catch (err) {
+      if (attempt >= TABLE_RESOLUTION_ATTEMPTS || !isTableRegistryConflict(err)) {
+        throw err;
+      }
+    }
+  }
+}
+
+const TABLE_RESOLUTION_ATTEMPTS = 5;
+
+function resolveTableOnce(
+  db: Database.Database,
+  kind: string,
+  name: string,
+  prefix: string,
+  register: boolean
+): string {
+  const resolution = tableResolution(kind, name, prefix, register);
+  let step = resolution.next();
+  while (!step.done) {
+    const query = step.value;
+    let answer: TableRegistryAnswer;
+    if (query.q === "registered") {
+      answer = (
+        db.prepare(SELECT_REGISTERED_TABLE_SQL).get(query.kind, query.name) as
+          | { table_name: string }
+          | undefined
+      )?.table_name;
+    } else if (query.q === "claimant") {
+      answer = (
+        db.prepare(SELECT_TABLE_CLAIM_SQL).get(query.table) as
+          | { name: string }
+          | undefined
+      )?.name;
+    } else if (query.q === "tableExists") {
+      answer = db.prepare(SELECT_TABLE_EXISTS_SQL).get(query.table) !== undefined;
+    } else {
+      db.prepare(INSERT_REGISTERED_TABLE_SQL).run(
+        query.kind,
+        query.name,
+        query.table
+      );
+    }
+    step = resolution.next(answer);
+  }
+  return step.value;
 }
 
 const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
@@ -164,9 +245,6 @@ export interface SqliteAdapterOptions {
   /** Embedding dimensions. Optional: when omitted, `.vector` persists the
    *  dimensions from the first upsert/upsertMany call. KV/search work without it. */
   dimensions?: number;
-  /** Force the exact JS-cosine search path even when sqlite-vec is installed.
-   *  Mainly for parity testing; production should leave this off. */
-  forceJsCosine?: boolean;
   /** Maximum time SQLite waits for another process's writer before returning SQLITE_BUSY. */
   busyTimeoutMs?: number;
 }
@@ -239,13 +317,9 @@ export class SqliteAdapter {
       let search: SqliteSearchFacet | undefined;
       runSqliteBusyRetry(() => {
         this.db.pragma("journal_mode = WAL");
+        ensureMirkRegistry(this.db);
         kv = new SqliteKvFacet(this.db);
-        vector = new SqliteVectorFacet(
-          this.db,
-          opts.path,
-          opts.dimensions,
-          opts.forceJsCosine
-        );
+        vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
         search = new SqliteSearchFacet(this.db);
       }, busyTimeoutMs);
       this.kv = kv!;
@@ -386,6 +460,7 @@ class SqliteKvFacet
 {
   readonly meta: StoreMeta = { backend: "sqlite" };
   private readonly initializedTables = new Set<string>();
+  private readonly resolvedTables = new Map<string, string>();
   private readonly versionPrefix: string;
 
   constructor(private readonly db: Database.Database) {
@@ -433,12 +508,25 @@ class SqliteKvFacet
     ).value;
   }
 
+  /** Physical table for a collection, via the `_mirk_tables` registry. The
+   *  hash-derived name is only the first CANDIDATE: a name whose candidate is
+   *  already claimed by a different collection gets `_2`, `_3`, … so two names
+   *  that sanitize and hash alike never share one table. */
   private tableName(collection: string): string {
     if (collection.length === 0) throw new Error("Invalid collection name");
-    const sanitized = collection.replace(/[^a-zA-Z0-9_]/g, "_");
-    // Suffix a hash of the ORIGINAL name so two distinct collections that sanitize
-    // to the same string (e.g. "foo-bar" vs "foo_bar") never alias to one table.
-    return `c_${sanitized}_${hashName(collection)}`;
+    const cached = this.resolvedTables.get(collection);
+    if (cached !== undefined) return cached;
+    const table = runTableResolution(
+      this.db,
+      COLLECTION_TABLE_KIND,
+      collection,
+      COLLECTION_TABLE_PREFIX,
+      true
+    );
+    // Same rollback discipline as `initializedTables` below: a registry row
+    // written inside a caller's transaction can be undone by an outer rollback.
+    if (!this.db.inTransaction) this.resolvedTables.set(collection, table);
+    return table;
   }
 
   private ensureTable(collection: string): string {
@@ -905,15 +993,11 @@ class SqliteVectorFacet implements VectorStore {
     accelerated: false,
   };
   private dimensions = -1;
-  /** True when sqlite-vec loaded and the vec0 acceleration path is live. */
-  private accelerated = false;
-  private readonly vecTablesEnsured = new Set<string>();
 
   constructor(
     private readonly db: Database.Database,
     private readonly path: string,
-    dimensions?: number,
-    private readonly forceJsCosine = false
+    dimensions?: number
   ) {
     this.db.exec(
       `CREATE TABLE IF NOT EXISTS vectors (
@@ -965,12 +1049,7 @@ class SqliteVectorFacet implements VectorStore {
   }
 
   private refreshVectorMeta(): void {
-    // Optional vec0 acceleration: load sqlite-vec unless forced off and dims are set.
-    // Any failure leaves the exact JS-cosine path (results are identical — see search).
-    this.accelerated =
-      !this.forceJsCosine && this.dimensions >= 0 && tryLoadSqliteVec(this.db);
     this.meta.dimensions = Math.max(this.dimensions, 0);
-    this.meta.accelerated = this.accelerated;
   }
 
   private requireKnownDims(v: Vector): void {
@@ -987,84 +1066,22 @@ class SqliteVectorFacet implements VectorStore {
     assertDimensions(v, this.dimensions);
   }
 
-  // ── vec0 acceleration helpers ───────────────────────────────────────────
-  private vecTableName(collection: string): string {
-    return `vectors_vec_${collection.replace(/[^a-zA-Z0-9_]/g, "_")}_${hashName(
-      collection
-    )}`;
-  }
-
-  private ensureVecTable(collection: string): string {
-    const table = this.vecTableName(collection);
-    if (this.vecTablesEnsured.has(table)) return table;
-    // cosine metric (NOT vec0's L2 default) so rankings match the exact JS cosine path.
-    this.db.exec(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS ${table} USING vec0(embedding float[${this.dimensions}] distance_metric=cosine)`
-    );
-    this.vecTablesEnsured.add(table);
-    // Backfill any vectors written while sqlite-vec was unavailable (a prior fallback
-    // session, or before the peer was installed) so accelerated search is complete.
-    const existing = this.db
-      .prepare(`SELECT rowid, vec FROM vectors WHERE collection = ?`)
-      .all(collection) as Array<{ rowid: number; vec: Buffer }>;
-    if (existing.length > 0) {
-      const del = this.db.prepare(`DELETE FROM ${table} WHERE rowid = ?`);
-      const ins = this.db.prepare(
-        `INSERT INTO ${table}(rowid, embedding) VALUES (?, ?)`
-      );
-      const backfill = this.db.transaction(() => {
-        for (const r of existing) {
-          const rid = BigInt(r.rowid);
-          del.run(rid);
-          if (isUsableVector(bufferToVector(r.vec))) ins.run(rid, r.vec);
-        }
-      });
-      backfill();
-    }
-    return table;
-  }
-
-  /** Keep a (collection,id)'s vec0 row in sync. vec0 is keyed by the vectors row's
-   *  rowid (stable under ON CONFLICT DO UPDATE); the rowid binds as BigInt. */
-  private syncVec(collection: string, id: string, vector: Vector): void {
-    const table = this.ensureVecTable(collection);
-    const row = this.db
-      .prepare(`SELECT rowid FROM vectors WHERE collection = ? AND id = ?`)
-      .get(collection, id) as { rowid: number } | undefined;
-    if (!row) return;
-    const rid = BigInt(row.rowid);
-    this.db.prepare(`DELETE FROM ${table} WHERE rowid = ?`).run(rid);
-    // Zero / non-finite vectors have no cosine direction — keep them OUT of vec0
-    // (the JS path excludes them too) so the two paths stay in parity.
-    if (isUsableVector(vector)) {
-      this.db
-        .prepare(`INSERT INTO ${table}(rowid, embedding) VALUES (?, ?)`)
-        .run(rid, vectorToBuffer(vector));
-    }
-  }
-
   upsert<M extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
     doc: VectorDocument<M>
   ): void {
     this.ensureDimsForWrite(doc.vector);
-    // Atomic: the base-table write and the vec0 sync must not desync on a crash.
-    // (Nested inside upsertMany's transaction → savepoint, which is fine.)
-    const write = this.db.transaction(() => {
-      this.db
-        .prepare(
-          `INSERT INTO vectors(collection, id, vec, metadata) VALUES (?, ?, ?, ?)
-           ON CONFLICT(collection, id) DO UPDATE SET vec = excluded.vec, metadata = excluded.metadata`
-        )
-        .run(
-          collection,
-          doc.id,
-          vectorToBuffer(doc.vector),
-          doc.metadata === undefined ? null : JSON.stringify(doc.metadata)
-        );
-      if (this.accelerated) this.syncVec(collection, doc.id, doc.vector);
-    });
-    write();
+    this.db
+      .prepare(
+        `INSERT INTO vectors(collection, id, vec, metadata) VALUES (?, ?, ?, ?)
+         ON CONFLICT(collection, id) DO UPDATE SET vec = excluded.vec, metadata = excluded.metadata`
+      )
+      .run(
+        collection,
+        doc.id,
+        vectorToBuffer(doc.vector),
+        doc.metadata === undefined ? null : JSON.stringify(doc.metadata)
+      );
   }
 
   upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -1115,18 +1132,6 @@ class SqliteVectorFacet implements VectorStore {
   }
 
   remove(collection: string, id: string): boolean {
-    if (this.accelerated) {
-      const row = this.db
-        .prepare(`SELECT rowid FROM vectors WHERE collection = ? AND id = ?`)
-        .get(collection, id) as { rowid: number } | undefined;
-      if (row) {
-        this.db
-          .prepare(
-            `DELETE FROM ${this.ensureVecTable(collection)} WHERE rowid = ?`
-          )
-          .run(BigInt(row.rowid));
-      }
-    }
     return (
       this.db
         .prepare(`DELETE FROM vectors WHERE collection = ? AND id = ?`)
@@ -1147,71 +1152,14 @@ class SqliteVectorFacet implements VectorStore {
     opts?: VectorSearchOptions
   ): VectorSearchResult<M>[] {
     this.requireKnownDims(query);
-    const topK = opts?.topK ?? 10;
-    const minScore = opts?.minScore;
-    const hasFilters = !!(opts?.where || opts?.whereNot);
-    // When pre-KNN filters are present, use the JS path: metadata lives on the main
-    // `vectors` table (not in vec0), so the accelerated path can't apply them before
-    // scoring. The JS path fetches all rows and filters first — correct semantics,
-    // identical results to the in-memory backend.
-    // A zero / non-finite query has no cosine direction (vec0's behavior there is
-    // backend-defined) — also use the deterministic JS path in that case.
-    if (this.accelerated && isUsableVector(query) && !hasFilters) {
-      try {
-        return this.searchVec<M>(collection, query, topK, minScore);
-      } catch {
-        // Any vec runtime error → fall through to the exact JS path (same result).
-      }
-    }
     return this.searchJs<M>(
       collection,
       query,
-      topK,
-      minScore,
+      opts?.topK ?? 10,
+      opts?.minScore,
       opts?.where,
       opts?.whereNot
     );
-  }
-
-  private searchVec<M extends Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    topK: number,
-    minScore: number | undefined
-  ): VectorSearchResult<M>[] {
-    const table = this.ensureVecTable(collection);
-    // `topK` is the whole bound. `minScore` deliberately does not widen it: the
-    // floor is monotone in distance (score = 1 - distance), so the k nearest are
-    // exactly the k highest scores and the floor removes the same rows before or
-    // after the slice. Nor can a row be dropped for any other reason and let a
-    // lower-ranked one take its place — `syncVec` keeps directionless vectors
-    // out of vec0 entirely, so no NULL-distance row ever consumes a slot.
-    const rows = this.db
-      .prepare(
-        `SELECT v.id AS id, v.metadata AS metadata, vv.distance AS distance
-         FROM ${table} vv JOIN vectors v ON v.rowid = vv.rowid
-         WHERE vv.embedding MATCH ? ORDER BY vv.distance LIMIT ?`
-      )
-      .all(vectorToBuffer(query), topK) as Array<{
-      id: string;
-      metadata: string | null;
-      distance: number;
-    }>;
-    const out: VectorSearchResult<M>[] = [];
-    for (const r of rows) {
-      if (r.distance === null) continue; // a directionless (zero) vector — excluded
-      const score = 1 - r.distance; // cosine distance → similarity; matches the JS path
-      if (!Number.isFinite(score)) continue;
-      if (minScore !== undefined && score < minScore) continue;
-      out.push({
-        id: r.id,
-        score,
-        metadata:
-          r.metadata === null ? undefined : (JSON.parse(r.metadata) as M),
-      });
-    }
-    out.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
-    return out.slice(0, topK);
   }
 
   private searchJs<M extends Record<string, unknown>>(
@@ -1233,7 +1181,7 @@ class SqliteVectorFacet implements VectorStore {
       if (where && !matchesWhere(meta, where)) continue;
       if (whereNot && matchesWhere(meta, whereNot)) continue;
       const vec = bufferToVector(row.vec);
-      if (!isUsableVector(vec)) continue; // directionless — excluded (matches the vec0 path)
+      if (!isUsableVector(vec)) continue; // directionless — no cosine direction
       const score = cosineSimilarity(query, vec);
       if (!Number.isFinite(score)) continue;
       if (minScore !== undefined && score < minScore) continue;
@@ -1292,6 +1240,7 @@ function rowColumnRefs(prefix: "new" | "old", schema: SearchSchema): string {
 
 class SqliteSearchFacet implements SearchStore {
   private readonly ensured = new Set<string>();
+  private readonly resolvedTables = new Map<string, string>();
   private readonly schemaTable = "_mirk_search_schema";
 
   constructor(private readonly db: Database.Database) {
@@ -1303,16 +1252,29 @@ class SqliteSearchFacet implements SearchStore {
     `);
   }
 
-  private baseTable(collection: string): string {
-    return `search_docs_${collection.replace(/[^a-zA-Z0-9_]/g, "_")}_${hashName(
-      collection
-    )}`;
+  /** Physical docs table for a collection, via the `_mirk_tables` registry
+   *  under kind `search`. `register` false is for read paths: they answer the
+   *  same question without writing a registry row for a collection that may
+   *  never have been indexed. */
+  private baseTable(collection: string, register: boolean): string {
+    const cached = this.resolvedTables.get(collection);
+    if (cached !== undefined) return cached;
+    const table = runTableResolution(
+      this.db,
+      SEARCH_TABLE_KIND,
+      collection,
+      SEARCH_DOCS_TABLE_PREFIX,
+      register
+    );
+    if (register && !this.db.inTransaction)
+      this.resolvedTables.set(collection, table);
+    return table;
   }
 
-  private ftsTable(collection: string): string {
-    return `search_fts_${collection.replace(/[^a-zA-Z0-9_]/g, "_")}_${hashName(
-      collection
-    )}`;
+  /** One registry row governs both tables: the FTS name is derived from the
+   *  resolved docs name, and the triggers are named from the docs name below. */
+  private ftsTable(docsTable: string): string {
+    return ftsTableFor(docsTable);
   }
 
   private tableExists(table: string): boolean {
@@ -1339,7 +1301,7 @@ class SqliteSearchFacet implements SearchStore {
     // Upgrade path for databases created by the earlier single-column search
     // facet: the collection tables already exist, but there is no schema row.
     // Treat them as the default `{ text }` schema and persist that fact.
-    const docs = this.baseTable(collection);
+    const docs = this.baseTable(collection, false);
     if (!this.tableExists(docs)) return undefined;
     const pragma = this.db
       .prepare(`PRAGMA table_info(${quoteSqlIdent(docs)})`)
@@ -1377,8 +1339,8 @@ class SqliteSearchFacet implements SearchStore {
     collection: string,
     schema: SearchSchema
   ): { docs: string; fts: string } {
-    const docs = this.baseTable(collection);
-    const fts = this.ftsTable(collection);
+    const docs = this.baseTable(collection, true);
+    const fts = this.ftsTable(docs);
     const key = `${docs}:${schema.fields.join("\u0000")}`;
     if (this.ensured.has(key)) return { docs, fts };
 
@@ -1519,5 +1481,6 @@ class SqliteSearchFacet implements SearchStore {
 }
 
 // SQL building (jsonPath / buildWhereClause / buildOrderBy / buildLimitOffset /
-// hashName) lives in ../sql.ts — shared verbatim with @mirk/store-libsql so the
-// two SQLite-dialect adapters can't drift in filter semantics. See that module.
+// hashName) and the `_mirk_tables` physical-name resolution procedure live in
+// ../sql.ts — shared verbatim with @mirk/store-libsql so the two SQLite-dialect
+// adapters can't drift in filter semantics or in table naming. See that module.

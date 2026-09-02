@@ -58,8 +58,8 @@ def run_node_script(script: str, tmp_path: Path, *args: str) -> Any:
     """Run ESM source under Node and parse the JSON its last stdout line printed.
 
     Import the built bundle by absolute path, as the scripts below do: Node then
-    resolves ``better-sqlite3`` and ``sqlite-vec`` relative to the bundle, so the
-    script itself can live in a temporary directory.
+    resolves ``better-sqlite3`` relative to the bundle, so the script itself can
+    live in a temporary directory.
     """
     path = tmp_path / "script.mjs"
     path.write_text(script, encoding="utf-8")
@@ -277,7 +277,6 @@ const adapter = new SqliteAdapter({{ path: process.argv[2] }});
 const doc = adapter.vector.get("vecs", "p1");
 const out = {{
   dimensions: adapter.vector.meta.dimensions,
-  accelerated: adapter.vector.meta.accelerated,
   count: adapter.vector.count("vecs"),
   vector: doc ? Array.from(doc.vector) : null,
   metadata: doc ? (doc.metadata ?? null) : null,
@@ -459,3 +458,363 @@ def test_typescript_searches_what_python_indexed(tmp_path: Path) -> None:
     assert result["fieldsError"] == (
         'Search collection "py-fielded" was initialized with fields [body, title], got [text].'
     )
+
+
+# ── Physical table registry (MR-21) ──────────────────────────────────────────
+# Both names sanitize to six underscores and hash to "jqoxun", so before the
+# registry the two languages agreed only in aliasing them onto one table.
+COLLIDE_A = "%$;**@"
+COLLIDE_B = "~,~$(*"
+COLLIDE_TABLE = "c________jqoxun"
+COLLIDE_SEARCH_TABLE = "search_docs________jqoxun"
+
+
+COLLISION_WRITE_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+adapter.kv.put(process.argv[3], {{ id: "x", which: "a" }});
+adapter.kv.put(process.argv[4], {{ id: "x", which: "b" }});
+adapter.search.index(process.argv[3], {{ id: "sa", text: "the quick brown fox" }});
+adapter.search.index(process.argv[4], {{ id: "sb", text: "a slow grey badger" }});
+adapter.close();
+console.log(JSON.stringify({{ ok: true }}));
+"""
+
+
+COLLISION_READBACK_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+const out = {{
+  a: adapter.kv.getById(process.argv[3], "x"),
+  b: adapter.kv.getById(process.argv[4], "x"),
+  countA: adapter.kv.count(process.argv[3]),
+  countB: adapter.kv.count(process.argv[4]),
+  searchA: adapter.search.search(process.argv[3], "fox").map((hit) => hit.id),
+  searchB: adapter.search.search(process.argv[4], "badger").map((hit) => hit.id),
+  crossA: adapter.search.search(process.argv[3], "badger").map((hit) => hit.id),
+  crossB: adapter.search.search(process.argv[4], "fox").map((hit) => hit.id),
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+LEGACY_READ_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+const things = adapter.kv.list("things", {{ sortBy: "n" }});
+adapter.close();
+console.log(JSON.stringify({{ things }}));
+"""
+
+
+def _registry_rows(path: Path) -> list[tuple[str, str, str]]:
+    connection = sqlite3.connect(str(path))
+    try:
+        return [
+            (str(kind), str(name), str(table))
+            for kind, name, table in connection.execute(
+                "SELECT kind, name, table_name FROM _mirk_tables ORDER BY kind, name"
+            )
+        ]
+    finally:
+        connection.close()
+
+
+def _collection_tables(path: Path) -> list[str]:
+    connection = sqlite3.connect(str(path))
+    try:
+        return [
+            str(name)
+            for (name,) in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'c_things%'"
+                " ORDER BY name"
+            )
+        ]
+    finally:
+        connection.close()
+
+
+def _require_typescript_registry(path: Path) -> None:
+    connection = sqlite3.connect(str(path))
+    try:
+        present = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_mirk_tables'"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert present is not None, "TypeScript registry not built yet"
+
+
+def test_python_reads_the_colliding_collections_typescript_wrote(tmp_path: Path) -> None:
+    """Two names that share a sanitized form and a hash stay two tables across languages."""
+    db = tmp_path / "ts-collide.db"
+    run_node_script(COLLISION_WRITE_SCRIPT, tmp_path, str(db), COLLIDE_A, COLLIDE_B)
+    _require_typescript_registry(db)
+    assert _registry_rows(db) == [
+        ("collection", COLLIDE_A, COLLIDE_TABLE),
+        ("collection", COLLIDE_B, f"{COLLIDE_TABLE}_2"),
+        ("search", COLLIDE_A, COLLIDE_SEARCH_TABLE),
+        ("search", COLLIDE_B, f"{COLLIDE_SEARCH_TABLE}_2"),
+    ]
+
+    store = SqliteStore(str(db))
+    try:
+        assert store.getById(COLLIDE_A, "x") == {"id": "x", "which": "a"}
+        assert store.getById(COLLIDE_B, "x") == {"id": "x", "which": "b"}
+        assert store.count(COLLIDE_A) == 1
+        assert store.count(COLLIDE_B) == 1
+        facet = SqliteSearchFacet(store)
+        assert [hit["id"] for hit in facet.search(COLLIDE_A, "fox")] == ["sa"]
+        assert [hit["id"] for hit in facet.search(COLLIDE_B, "badger")] == ["sb"]
+        assert facet.search(COLLIDE_A, "badger") == []
+        assert facet.search(COLLIDE_B, "fox") == []
+    finally:
+        store.close()
+
+
+def test_typescript_reads_the_colliding_collections_python_wrote(tmp_path: Path) -> None:
+    db = tmp_path / "py-collide.db"
+    store = SqliteStore(str(db))
+    try:
+        store.put(COLLIDE_A, {"id": "x", "which": "a"})
+        store.put(COLLIDE_B, {"id": "x", "which": "b"})
+        facet = SqliteSearchFacet(store)
+        facet.index(COLLIDE_A, {"id": "sa", "text": "the quick brown fox"})
+        facet.index(COLLIDE_B, {"id": "sb", "text": "a slow grey badger"})
+    finally:
+        store.close()
+
+    result: dict[str, Any] = run_node_script(
+        COLLISION_READBACK_SCRIPT, tmp_path, str(db), COLLIDE_A, COLLIDE_B
+    )
+    assert result["a"] == {"id": "x", "which": "a"}
+    assert result["b"] == {"id": "x", "which": "b"}
+    assert result["countA"] == result["countB"] == 1
+    assert result["searchA"] == ["sa"]
+    assert result["searchB"] == ["sb"]
+    assert result["crossA"] == []
+    assert result["crossB"] == []
+
+
+LEGACY_SQL = """
+CREATE TABLE _kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE _mirk_atomic_versions (
+  kind TEXT NOT NULL, collection TEXT NOT NULL, target_key TEXT NOT NULL,
+  version TEXT NOT NULL, PRIMARY KEY (kind, collection, target_key)
+);
+CREATE TABLE _mirk_atomic_sequence (
+  id INTEGER PRIMARY KEY CHECK (id = 1), value INTEGER NOT NULL
+);
+CREATE TABLE _mirk_atomic_receipts (
+  idempotency_key TEXT PRIMARY KEY, request_digest TEXT NOT NULL, result_json TEXT NOT NULL
+);
+CREATE TABLE _mirk_atomic_identity (
+  id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL
+);
+CREATE TABLE c_things_17yznec (
+  id TEXT PRIMARY KEY,
+  data JSON NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+INSERT INTO _mirk_atomic_sequence (id, value) VALUES (1, 1);
+INSERT INTO _mirk_atomic_identity (id, value) VALUES (1, 'legacy-identity');
+INSERT INTO c_things_17yznec (id, data)
+  VALUES ('t1', '{"id":"t1","n":1}'), ('t2', '{"id":"t2","n":2}');
+"""
+
+
+def _write_legacy_file(path: Path) -> None:
+    """A pre-MR-21 file written with raw SQL: hashed table names, no registry."""
+    connection = sqlite3.connect(str(path), isolation_level=None)
+    try:
+        connection.executescript(LEGACY_SQL)
+    finally:
+        connection.close()
+
+
+def test_both_languages_adopt_the_same_legacy_table(tmp_path: Path) -> None:
+    """A file written before the registry keeps its table, whichever language opens it."""
+    expected_rows = [("collection", "things", "c_things_17yznec")]
+    expected_things = [{"id": "t1", "n": 1}, {"id": "t2", "n": 2}]
+
+    ts_first = tmp_path / "legacy-ts.db"
+    _write_legacy_file(ts_first)
+    result: dict[str, Any] = run_node_script(LEGACY_READ_SCRIPT, tmp_path, str(ts_first))
+    assert result["things"] == expected_things
+    _require_typescript_registry(ts_first)
+    assert _registry_rows(ts_first) == expected_rows
+    # Adoption is in place: TypeScript did not create a second physical table.
+    assert _collection_tables(ts_first) == ["c_things_17yznec"]
+
+    py_first = tmp_path / "legacy-py.db"
+    _write_legacy_file(py_first)
+    store = SqliteStore(str(py_first))
+    try:
+        assert store.list("things", {"sortBy": "n"}) == expected_things
+    finally:
+        store.close()
+    assert _registry_rows(py_first) == expected_rows
+
+    # The language that opened second sees the row the first one wrote.
+    second: dict[str, Any] = run_node_script(LEGACY_READ_SCRIPT, tmp_path, str(py_first))
+    assert second["things"] == expected_things
+    assert _registry_rows(py_first) == expected_rows
+    store = SqliteStore(str(ts_first))
+    try:
+        assert store.list("things", {"sortBy": "n"}) == expected_things
+    finally:
+        store.close()
+    assert _registry_rows(ts_first) == [("collection", "things", "c_things_17yznec")]
+
+
+SQUATTER_WRITE_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+adapter.kv.put(process.argv[4], {{ id: "x", which: "b" }});
+const out = {{
+  a: adapter.kv.getById(process.argv[3], "x"),
+  b: adapter.kv.getById(process.argv[4], "x"),
+  countA: adapter.kv.count(process.argv[3]),
+  countB: adapter.kv.count(process.argv[4]),
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+SQUATTER_SQL = f"""
+CREATE TABLE _kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE _mirk_atomic_versions (
+  kind TEXT NOT NULL, collection TEXT NOT NULL, target_key TEXT NOT NULL,
+  version TEXT NOT NULL, PRIMARY KEY (kind, collection, target_key)
+);
+CREATE TABLE _mirk_atomic_sequence (
+  id INTEGER PRIMARY KEY CHECK (id = 1), value INTEGER NOT NULL
+);
+CREATE TABLE _mirk_atomic_receipts (
+  idempotency_key TEXT PRIMARY KEY, request_digest TEXT NOT NULL, result_json TEXT NOT NULL
+);
+CREATE TABLE _mirk_atomic_identity (
+  id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL
+);
+CREATE TABLE _mirk_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE _mirk_tables (
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  table_name TEXT NOT NULL UNIQUE,
+  PRIMARY KEY (kind, name)
+);
+CREATE TABLE {COLLIDE_TABLE} (
+  id TEXT PRIMARY KEY,
+  data JSON NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+-- An unregistered table already sitting on the second candidate. Same shape as a
+-- collection table, so a wrong resolution reads it as data rather than erroring.
+CREATE TABLE {COLLIDE_TABLE}_2 (
+  id TEXT PRIMARY KEY,
+  data JSON NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+INSERT INTO _mirk_atomic_sequence (id, value) VALUES (1, 1);
+INSERT INTO _mirk_atomic_identity (id, value) VALUES (1, 'squatter-identity');
+INSERT INTO _mirk_meta (key, value) VALUES ('schema_version', '2');
+INSERT INTO _mirk_tables (kind, name, table_name)
+  VALUES ('collection', '{COLLIDE_A}', '{COLLIDE_TABLE}');
+INSERT INTO {COLLIDE_TABLE} (id, data) VALUES ('x', '{{"id":"x","which":"a"}}');
+INSERT INTO {COLLIDE_TABLE}_2 (id, data) VALUES ('foreign', '{{"id":"foreign"}}');
+"""
+
+
+def _write_squatter_file(path: Path) -> None:
+    """The first colliding name registered, and an unclaimed table on ``_2``."""
+    connection = sqlite3.connect(str(path), isolation_level=None)
+    try:
+        connection.executescript(SQUATTER_SQL)
+    finally:
+        connection.close()
+
+
+def _squatter_rows(path: Path) -> list[tuple[str, str]]:
+    connection = sqlite3.connect(str(path))
+    try:
+        return [
+            (str(id), str(data))
+            for id, data in connection.execute(f"SELECT id, data FROM {COLLIDE_TABLE}_2")
+        ]
+    finally:
+        connection.close()
+
+
+def test_both_languages_skip_an_occupied_suffixed_candidate(tmp_path: Path) -> None:
+    """An unregistered table on ``_2`` is stepped over by both languages alike.
+
+    Only the exact legacy name is ever adopted. A stray table on a suffixed
+    candidate would otherwise be picked up by ``CREATE TABLE IF NOT EXISTS`` and
+    read back as the second collection's rows.
+    """
+    expected_a = {"id": "x", "which": "a"}
+    expected_b = {"id": "x", "which": "b"}
+    expected_squatter = [("foreign", '{"id":"foreign"}')]
+
+    py_first = tmp_path / "squatter-py.db"
+    _write_squatter_file(py_first)
+    store = SqliteStore(str(py_first))
+    try:
+        store.put(COLLIDE_B, {"id": "x", "which": "b"})
+        assert store.getById(COLLIDE_A, "x") == expected_a
+        assert store.getById(COLLIDE_B, "x") == expected_b
+        assert store.count(COLLIDE_B) == 1
+    finally:
+        store.close()
+    assert _registry_rows(py_first) == [
+        ("collection", COLLIDE_A, COLLIDE_TABLE),
+        ("collection", COLLIDE_B, f"{COLLIDE_TABLE}_3"),
+    ]
+    assert _squatter_rows(py_first) == expected_squatter
+
+    ts_first = tmp_path / "squatter-ts.db"
+    _write_squatter_file(ts_first)
+    result: dict[str, Any] = run_node_script(
+        SQUATTER_WRITE_SCRIPT, tmp_path, str(ts_first), COLLIDE_A, COLLIDE_B
+    )
+    assert result["a"] == expected_a
+    assert result["b"] == expected_b
+    assert result["countA"] == result["countB"] == 1
+    assert _registry_rows(ts_first) == [
+        ("collection", COLLIDE_A, COLLIDE_TABLE),
+        ("collection", COLLIDE_B, f"{COLLIDE_TABLE}_3"),
+    ]
+    assert _squatter_rows(ts_first) == expected_squatter
+
+    # Each language then reads the file the other resolved, off the same rows.
+    crossed: dict[str, Any] = run_node_script(
+        COLLISION_READBACK_SCRIPT, tmp_path, str(py_first), COLLIDE_A, COLLIDE_B
+    )
+    assert crossed["a"] == expected_a
+    assert crossed["b"] == expected_b
+    store = SqliteStore(str(ts_first))
+    try:
+        assert store.getById(COLLIDE_A, "x") == expected_a
+        assert store.getById(COLLIDE_B, "x") == expected_b
+    finally:
+        store.close()
+    assert _squatter_rows(ts_first) == expected_squatter

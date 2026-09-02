@@ -16,8 +16,6 @@ are implemented locally. Publication and consumer adoption need separate evidenc
 npm install @mirk/store
 # Using the SQLite adapter (@mirk/store/sqlite)? Add its peer:
 npm install better-sqlite3
-# Optional: vec0 KNN acceleration (graceful exact-JS fallback without it)
-npm install sqlite-vec
 ```
 
 ## Subpaths
@@ -32,7 +30,7 @@ npm install sqlite-vec
 | `@mirk/store/graph`        | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none                                                  |
 | `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                                                  |
 | `@mirk/store/coordination` | SQLite-backed async keyed coordinator with leases, renewal, fencing generations, and ownership-loss checks                                       | `better-sqlite3` (peer)                               |
-| `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
+| `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer)                               |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
 port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
@@ -195,7 +193,6 @@ db.close();
 | `path`          | `string`   | DB file path, or `":memory:"`.                                                                                                                                 |
 | `db`            | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one.                                                                                          |
 | `dimensions`    | `number`   | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
-| `forceJsCosine` | `boolean`  | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests).                                                                           |
 | `busyTimeoutMs` | `number`   | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections.                                            |
 
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
@@ -223,10 +220,10 @@ OS processes, crash injection, reconciliation, reopen checks, and path-free oper
 recovery metrics. It does not start or require a writer daemon.
 
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by
-**exact cosine**. When the optional `sqlite-vec` peer is installed, search is transparently
-accelerated by vec0 using the `cosine` distance metric, so rankings are identical to the JS path;
-without it, the exact JS-cosine fallback runs. `db.vector.meta.accelerated` reports which path is
-live.
+**exact cosine**, accumulated in float64. That is the only search path this adapter has, so
+`db.vector.meta.accelerated` is always `false`. A sqlite-vec (vec0) branch used to sit beside it
+and never executed once; it was deleted under roadmap MR-22, and `sqlite-vec` is no longer a peer
+dependency. Files written by an older version still open and read normally.
 
 ## Async coordination
 

@@ -27,8 +27,9 @@ Mirk is a shared, language-neutral conformance corpus that both run.
 4. **Sync by design carries over.** Python ports are synchronous; an
    `asyncio` wrapper is the `toAsync` equivalent. Embedded SQLite uses the
    stdlib `sqlite3` module. No native install for the base package.
-5. **Optional extras, not dependencies.** `sqlite-vec` is an optional extra
-   for vec0 acceleration. The core package has zero runtime dependencies.
+5. **Zero runtime dependencies.** The core package depends only on the
+   standard library. (An optional `sqlite-vec` extra was planned and removed
+   under MR-22: the vec0 path never executed.)
 6. **Fixtures carry a JSON Schema document (phase 2).** Standard Schema and
    Python validators do not interconvert; every existing consumer hand-rolls
    a validate-only object with no emitter. A fixture type will declare its
@@ -129,9 +130,11 @@ Rules:
   a code point comparison as part of this work, and the SQLite adapter's
   `BINARY` collation already matches.
 - Known TypeScript backend divergences fixed as part of this work, each
-  pinned by a scenario: vec0 path applies `topK` before `minScore`; a search
-  field weight of zero unmatches a document in memory but not in FTS5;
-  duplicate query tokens double a score in memory but not in FTS5.
+  pinned by a scenario: a search field weight of zero unmatched a document in
+  memory but not in FTS5; the in-memory bm25 dropped terms whose idf was
+  non-positive where FTS5 floors idf at 1e-6. Two suspected divergences were
+  disproven by probing (see "Known divergence deliberately outside the
+  corpus").
 
 ## Rulings on KV and collection divergences (2026-09-01)
 
@@ -228,7 +231,7 @@ ports once over the Protocol. `atomic.ts` is portable but phase 2;
   `vector`, `search`, `graph` (`kv` and `collection` are served by one store
   target); a runner skips a scenario whose ports it does not implement and
   reports the skip. `capabilities` gates on
-  optional capabilities (`listWhereIn`, `vec0`) the same way.
+  optional capabilities (`listWhereIn`) the same way.
 - Records are JSON. `null` is a value. There is no `undefined`; a TypeScript
   runner strips `undefined` before comparison. Numbers compare as IEEE
   doubles; integers and floats with the same value are equal.
@@ -253,7 +256,7 @@ ports once over the Protocol. `atomic.ts` is portable but phase 2;
   name `mirk.store` as a PEP 420 namespace package, so later distributions
   `mirk-fixtures` and `mirk-artifact` mirror the npm scope one for one.
   `requires-python >= 3.12`, build backend `hatchling`, managed with `uv`.
-  Zero runtime dependencies. Extras: `vec` (sqlite-vec).
+  Zero runtime dependencies and no extras.
 - The SQLite adapter's write path maintains the atomic bookkeeping rows the
   TypeScript adapter writes (`_mirk_atomic_versions`, `_mirk_atomic_sequence`,
   `_mirk_atomic_identity`) so a shared file stays consistent for the
@@ -297,3 +300,57 @@ we have shipped.
 - `@mirk/artifact`: pure identity, integrity, and lineage logic ports
   directly; hashing must be byte-identical across languages and gets its own
   corpus directory.
+
+## Rulings for the follow-ups (2026-09-02)
+
+### MR-22 · vec0 path: delete
+
+The sqlite-vec branch of the better-sqlite3 vector facet has never executed
+(`docs/evidence/python-port/2026-09-02-vec0-branch-dead.md`). Ruling: delete
+it in both languages. `SqliteAdapter.vector` keeps the exact float64 cosine
+path only, `meta.accelerated` reports `false`, the `forceJsCosine` option is
+removed, `sqlite-vec` leaves `@mirk/store`'s peer dependencies and the Python
+`vec` extra is removed. The `vectors` base table and `_vec_meta` are unchanged,
+so existing files keep working; any `vectors_vec_*` shadow tables in existing
+files are inert and left in place (dropping a vec0 virtual table needs the
+module loaded, which nothing does any more; a sweep behind a catch would be
+the same shape of dead code MR-22 removes). The `accelerated`
+field stays in `VectorStoreMeta` because `@mirk/store-libsql` reports its own
+native vector path through it; whether that path executes is a separate probe
+(`MR-22b`, proposed). The three unit tests that compared the accelerated
+adapter against the fallback are deleted, not rewritten: they certified
+nothing.
+
+### MR-21 · Collision-safe physical table naming: registry, not hash
+
+Injectivity cannot come from a hash. Ruling: a registry table
+`_mirk_tables(kind TEXT, name TEXT, table_name TEXT UNIQUE, PRIMARY KEY
+(kind, name))` maps a logical name (`kind` in `collection`, `search`) to its
+physical table. Resolution on first use of a logical name in a connection:
+
+1. Registry hit: use the recorded `table_name`.
+2. Miss, and the legacy table `<prefix>_<sanitized>_<fnv32>` exists and is not
+   claimed by another name in the registry: adopt it, insert the registry row.
+   Existing files keep working without a rewrite.
+3. Miss otherwise: candidate is the legacy form; while the candidate is claimed
+   in the registry by a different name, OR a physical table with that name
+   exists unclaimed (a suffixed table is never adopted; only the exact legacy
+   name is, in step 2), append `_2`, `_3`, ... Insert the row, create the
+   table.
+
+A file gains `_mirk_meta(key TEXT PRIMARY KEY, value TEXT)` with
+`schema_version = "2"` when the registry is first created; a reader that finds
+a newer version than it understands refuses to open with a clear message.
+Search's per-collection docs and FTS tables register under `kind = "search"`
+with one row per logical collection; the FTS table name derives from the docs
+table name. Both languages implement the same procedure and the corpus gains
+scenarios using the reviewed colliding pair (`"%$;**@"` and `"~,~$(*"`, both
+`jqoxun`) for collections and for search. The cross-language compat test opens
+a legacy file (no registry) from each language and confirms adoption.
+
+### Phase 2 scope
+
+`@mirk/fixtures` and `@mirk/artifact` ports, each with its own digest,
+corpus directory, and plan section. Fixture types carry a JSON Schema
+document (decision 6 above). Artifact hashing must be byte-identical across
+languages and gets a hashing corpus before anything else.

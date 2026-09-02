@@ -28,6 +28,11 @@ const FIELDED = [
   { id: "neither", fields: { title: "nothing", body: "nothing at all" } },
 ];
 
+/** The colliding pair from `sql.ts`'s hash: both sanitize to `______` and
+ *  both hash to `jqoxun`. */
+const COLLIDING_A = "%$;**@";
+const COLLIDING_B = "~,~$(*";
+
 const TWELVE = Array.from({ length: 12 }, (_, i) => ({
   id: `doc-${String(i).padStart(2, "0")}`,
   text: "identical text everywhere",
@@ -632,6 +637,26 @@ export const scenarios = [
       { op: "remove", args: ["docs", "a"], expect: { value: true } },
       { op: "search", args: ["docs", "removable"], expect: { value: true } },
       { op: "remove", args: ["never-written", "a"], expect: { value: true } },
+    ],
+  }),
+
+  // ── physical table naming ───────────────────────────────────────────────
+  // The same colliding pair as `store/collection-names-collide-on-hash`: both
+  // names sanitize to `______` and hash to `jqoxun`, so the docs/FTS tables
+  // alias without the `_mirk_tables` registry.
+  defineScenario({
+    id: "search/collection-names-collide-on-hash",
+    title: "two search collections that sanitize and hash identically stay independent",
+    ports: ["search"],
+    steps: [
+      { op: "index", args: [COLLIDING_A, { id: "a", text: "aardvark burrow" }] },
+      { op: "index", args: [COLLIDING_B, { id: "b", text: "basilisk burrow" }] },
+      { op: "search", args: [COLLIDING_A, "aardvark"], expect: { ids: true } },
+      { op: "search", args: [COLLIDING_B, "basilisk"], expect: { ids: true } },
+      { op: "search", args: [COLLIDING_A, "basilisk"], expect: { value: true } },
+      { op: "search", args: [COLLIDING_B, "aardvark"], expect: { value: true } },
+      { op: "search", args: [COLLIDING_A, "burrow"], expect: { ids: true } },
+      { op: "search", args: [COLLIDING_B, "burrow"], expect: { ids: true } },
     ],
   }),
 ];

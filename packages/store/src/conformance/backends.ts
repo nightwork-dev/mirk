@@ -74,10 +74,10 @@ function graphApi(store: Parameters<typeof toAsync>[0]): Record<string, unknown>
  *  scenario's `capabilities` is a corpus typo, and every runner must fail on it
  *  rather than pass a scenario whose gate nobody understands.
  *
- *  `vec0` is deliberately absent: the adapter's `accelerated` flag reports true
- *  while the vec0 branch never executes (docs/evidence/python-port/
- *  2026-09-02-vec0-branch-dead.md), so no honest detector exists until roadmap
- *  MR-22 is ruled. */
+ *  `vec0` is not a capability and never will be: roadmap MR-22 deleted the vec0
+ *  path from the SQLite adapter after it was shown never to execute
+ *  (docs/evidence/python-port/2026-09-02-vec0-branch-dead.md). There is no
+ *  accelerated path left to gate a scenario on. */
 export const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
 
 /** Optional capabilities a backend has right now. `listWhereIn` is a method both

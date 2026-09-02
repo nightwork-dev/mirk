@@ -17,9 +17,10 @@ export interface VectorStoreMeta {
   backend: string;
   /** Embedding dimensions this store is configured for. */
   dimensions: number;
-  /** True when a native acceleration path (sqlite-vec) is active; false when the
-   *  store does exact JS-side cosine search. Informational — results are the same
-   *  ranking either way, only the speed differs. */
+  /** True when the backend answers from a native vector index; false when it
+   *  does exact JS-side cosine search. `@mirk/store-libsql` reports its own
+   *  `vector_top_k` path here; the SQLite adapter is always false, having no
+   *  accelerated path (roadmap MR-22). Informational only. */
   accelerated: boolean;
 }
 

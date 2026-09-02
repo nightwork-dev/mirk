@@ -20,6 +20,7 @@ bug in either one.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,12 @@ from mirk.store.search import (
     search_field_order,
     tokenize,
 )
-from mirk.store.sqlite_search import SqliteSearchFacet, search_column_name
+from mirk.store.sqlite_search import (
+    SqliteSearchFacet,
+    legacy_search_docs_table,
+    search_column_name,
+    search_fts_table,
+)
 
 # ── Parity harness ───────────────────────────────────────────────────────────
 
@@ -562,3 +568,128 @@ def test_collections_do_not_alias() -> None:
             assert [hit["id"] for hit in target.search("b", "fox")] == ["y"]
     finally:
         store.close()
+
+
+# ── Physical table registry (MR-21) ──────────────────────────────────────────
+# The same colliding pair as the collection tests: identical sanitized name,
+# identical FNV hash, so the pre-registry docs table aliased the two.
+SEARCH_COLLIDING_A = "%$;**@"
+SEARCH_COLLIDING_B = "~,~$(*"
+SEARCH_COLLIDING_TABLE = "search_docs________jqoxun"
+
+
+def test_hash_colliding_search_collections_stay_independent(tmp_path: Path) -> None:
+    path = str(tmp_path / "collide-search.db")
+    facet, store = _sqlite_facet(path)
+    try:
+        assert legacy_search_docs_table(SEARCH_COLLIDING_A) == SEARCH_COLLIDING_TABLE
+        assert legacy_search_docs_table(SEARCH_COLLIDING_B) == SEARCH_COLLIDING_TABLE
+        facet.index(SEARCH_COLLIDING_A, {"id": "a1", "text": "the quick brown fox"})
+        facet.index(SEARCH_COLLIDING_B, {"id": "b1", "text": "a slow grey badger"})
+
+        assert [hit["id"] for hit in facet.search(SEARCH_COLLIDING_A, "fox")] == ["a1"]
+        assert facet.search(SEARCH_COLLIDING_A, "badger") == []
+        assert [hit["id"] for hit in facet.search(SEARCH_COLLIDING_B, "badger")] == ["b1"]
+        assert facet.search(SEARCH_COLLIDING_B, "fox") == []
+
+        recorded = dict(
+            store.connection.execute(
+                "SELECT name, table_name FROM _mirk_tables WHERE kind = 'search'"
+            ).fetchall()
+        )
+        assert recorded == {
+            SEARCH_COLLIDING_A: SEARCH_COLLIDING_TABLE,
+            SEARCH_COLLIDING_B: f"{SEARCH_COLLIDING_TABLE}_2",
+        }
+        # The FTS index of the suffixed docs table follows its name.
+        assert search_fts_table(f"{SEARCH_COLLIDING_TABLE}_2") == "search_fts________jqoxun_2"
+        assert store.connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = 'search_fts________jqoxun_2'"
+        ).fetchone() == (1,)
+    finally:
+        store.close()
+
+
+def test_the_search_registry_survives_a_reopen(tmp_path: Path) -> None:
+    path = str(tmp_path / "collide-search.db")
+    facet, store = _sqlite_facet(path)
+    facet.index(SEARCH_COLLIDING_A, {"id": "a1", "text": "the quick brown fox"})
+    facet.index(SEARCH_COLLIDING_B, {"id": "b1", "text": "a slow grey badger"})
+    store.close()
+
+    reopened_facet, reopened = _sqlite_facet(path)
+    try:
+        # Reversed order on the new connection: the recorded mapping decides, not
+        # the order of first use.
+        assert [hit["id"] for hit in reopened_facet.search(SEARCH_COLLIDING_B, "badger")] == ["b1"]
+        assert reopened_facet.search(SEARCH_COLLIDING_B, "fox") == []
+        assert [hit["id"] for hit in reopened_facet.search(SEARCH_COLLIDING_A, "fox")] == ["a1"]
+        recorded = dict(
+            reopened.connection.execute(
+                "SELECT name, table_name FROM _mirk_tables WHERE kind = 'search'"
+            ).fetchall()
+        )
+        assert recorded == {
+            SEARCH_COLLIDING_A: SEARCH_COLLIDING_TABLE,
+            SEARCH_COLLIDING_B: f"{SEARCH_COLLIDING_TABLE}_2",
+        }
+    finally:
+        reopened.close()
+
+
+def test_a_legacy_search_file_has_its_tables_adopted(tmp_path: Path) -> None:
+    """A file written before the registry keeps its docs table and gains a row for it."""
+    path = str(tmp_path / "legacy-search.db")
+    facet, store = _sqlite_facet(path)
+    facet.index("notes", {"id": "n1", "text": "a badger writes python"})
+    store.close()
+
+    stripped = sqlite3.connect(path, isolation_level=None)
+    stripped.execute("DELETE FROM _mirk_tables")
+    stripped.execute("DELETE FROM _mirk_meta")
+    stripped.close()
+
+    reopened_facet, reopened = _sqlite_facet(path)
+    try:
+        assert [hit["id"] for hit in reopened_facet.search("notes", "badger")] == ["n1"]
+        row = reopened.connection.execute(
+            "SELECT table_name FROM _mirk_tables WHERE kind = 'search' AND name = 'notes'"
+        ).fetchone()
+        assert row is not None and row[0] == legacy_search_docs_table("notes")
+    finally:
+        reopened.close()
+
+
+def test_an_unclaimed_search_table_on_a_suffixed_candidate_is_skipped(tmp_path: Path) -> None:
+    """The docs table and its FTS index move to ``_3`` together."""
+    path = str(tmp_path / "occupied-search.db")
+    facet, store = _sqlite_facet(path)
+    facet.index(SEARCH_COLLIDING_A, {"id": "a1", "text": "the quick brown fox"})
+    store.close()
+
+    squatter = f"{SEARCH_COLLIDING_TABLE}_2"
+    connection = sqlite3.connect(path, isolation_level=None)
+    connection.execute(
+        f'CREATE TABLE "{squatter}" (id TEXT PRIMARY KEY, text TEXT, meta_json TEXT)'
+    )
+    connection.execute(f"INSERT INTO \"{squatter}\" (id, text) VALUES ('foreign', 'badger')")
+    connection.close()
+
+    reopened_facet, reopened = _sqlite_facet(path)
+    try:
+        reopened_facet.index(SEARCH_COLLIDING_B, {"id": "b1", "text": "a slow grey badger"})
+        assert [hit["id"] for hit in reopened_facet.search(SEARCH_COLLIDING_B, "badger")] == ["b1"]
+        assert [hit["id"] for hit in reopened_facet.search(SEARCH_COLLIDING_A, "fox")] == ["a1"]
+        row = reopened.connection.execute(
+            "SELECT table_name FROM _mirk_tables WHERE kind = 'search' AND name = ?",
+            (SEARCH_COLLIDING_B,),
+        ).fetchone()
+        assert row is not None and row[0] == f"{SEARCH_COLLIDING_TABLE}_3"
+        assert reopened.connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE name = ?", ("search_fts________jqoxun_3",)
+        ).fetchone() == (1,)
+        assert reopened.connection.execute(f'SELECT id FROM "{squatter}"').fetchall() == [
+            ("foreign",)
+        ]
+    finally:
+        reopened.close()

@@ -46,8 +46,9 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-18 | Bitemporal statements persistence                         | `@mirk/statements`            | near    | implemented; receipt-green; Verdaccio-published |
 | MR-19 | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`      | near    | implemented; receipt-green; Verdaccio-published |
 | MR-20 | Python port of `@mirk/store` (phase 1)                    | `python/store` (mirk-store)   | near    | implemented; receipt-green                  |
-| MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | proposed; layout migration                  |
-| MR-22 | Decide the vec0 acceleration path                         | `@mirk/store/sqlite`          | near    | decision needed; branch is dead             |
+| MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | implemented; receipt-green                  |
+| MR-22 | vec0 path: delete                                         | `@mirk/store/sqlite`, `python/store` | near | implemented; receipt-green                  |
+| MR-22b | Does the libSQL native vector path execute?              | `@mirk/store-libsql`          | near    | proposed; probe needed                      |
 
 ## Current closure
 
@@ -217,8 +218,8 @@ Two probes back the parts of the contract that could not be settled by reading:
 pins FTS5 tokenizer and bm25 semantics against the real extension, promoted to
 `python/store/tests/test_fts5_semantics.py`; and
 [`2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md)
-records that the vec0 acceleration branch never executes in either language, so no
-SQLite vector result in the corpus came from it. Publication is separate evidence:
+records that the vec0 acceleration branch never executed in either language, so no
+SQLite vector result in the corpus ever came from it; MR-22 deleted the branch. Publication is separate evidence:
 there is no Python registry alongside Verdaccio yet, so the package is unpublished
 by decision rather than by omission.
 
@@ -230,22 +231,30 @@ collide on the 32-bit hash alias one table (`"%$;**@"` and `"~,~$(*"` both hash
 to `jqoxun`). Both languages must share the layout for file compatibility, so
 the fix is a layout migration with a schema-version marker (`_mirk_meta`), not a
 patch. See `python-port/reviews/2026-09-01-code-review-luna.md`, finding P1-3.
+Implemented: a `_mirk_tables(kind, name, table_name UNIQUE)` registry records the
+physical table for each logical name, with the hash-derived name kept as the
+first candidate so an existing file is adopted in place. Only that first
+candidate is adoptable: a `_2`, `_3`, … candidate is skipped when it is claimed
+by another name or when a stray table already sits there without a registry row.
 
-### MR-22 · Decide the vec0 acceleration path
+### MR-22 · vec0 path: delete
 
-The sqlite-vec branch of the SQLite vector facet has never executed in either
-language: the KNN bound is expressed as `LIMIT`, SQLite does not push it through
-the join into the virtual table, vec0 throws, a bare `catch` swallows it, and the
-exact-cosine path answers while `meta.accelerated` reports `true`. Reviving it
-(`k = ?`) surfaces two contract conflicts: vec0 returns an arbitrary member of a
-tie at the topK boundary, and it computes in float32 where the contract is
-float64. Three exits are laid out in
-[`evidence/python-port/2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md):
-delete the path and the peer dependency; keep vec0 for candidate retrieval and
-rescore in float64; or loosen the cross-backend contract. Recommendation on
-record: delete. Until ruled, shipped code is unchanged and results are correct;
-what is wrong is the `accelerated` flag and three unit tests that certify a branch
-that does not run.
+The sqlite-vec branch of the SQLite vector facet never executed in either
+language, and reviving it would break the corpus's exact-agreement contract, so
+the ruling was to delete it:
+[`evidence/python-port/2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md).
+Both languages now keep the exact float64 cosine path only, `meta.accelerated`
+is `false`, `forceJsCosine` and the Python `vec` extra are gone, `sqlite-vec` is
+no longer a peer dependency, and the three unit tests that compared the
+accelerated adapter against the fallback are deleted rather than rewritten.
+Legacy `vectors_vec_*` shadow tables in existing files are left in place; they
+are inert.
+
+### MR-22b · Does the libSQL native vector path execute?
+
+`@mirk/store-libsql` reports `accelerated` for its own `vector_top_k` path, and
+nothing has yet proven that path runs rather than falling through to JS cosine,
+which is exactly the failure MR-22 found next door.
 
 ## Medium term
 
