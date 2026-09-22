@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/float-sum-artifact",
+  "title": "the shortest round-trip digits of 0.1 + 0.2 are preserved in full",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        0.30000000000000004
+      ],
+      "expect": {
+        "value": "0.30000000000000004"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        0.30000000000000004
+      ],
+      "expect": {
+        "value": "06bad31060c1212ae832de4c031f7b31e3b48aed57858294478cb19450cf34ca"
+      }
+    }
+  ]
+}

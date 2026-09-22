@@ -1,0 +1,44 @@
+{
+  "id": "artifact/hashing/canonical-json/nested-nulls",
+  "title": "nulls are values and are never dropped",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "a": [
+            null,
+            {
+              "b": null
+            }
+          ],
+          "c": null
+        }
+      ],
+      "expect": {
+        "value": "{\"a\":[null,{\"b\":null}],\"c\":null}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "a": [
+            null,
+            {
+              "b": null
+            }
+          ],
+          "c": null
+        }
+      ],
+      "expect": {
+        "value": "2a7f1a3c029c0e48f68eaeb0215f2f862a39cafd9d9ed84fc7b6a7d1d3a384ce"
+      }
+    }
+  ]
+}

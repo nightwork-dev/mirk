@@ -1,0 +1,56 @@
+{
+  "id": "store/list-where-in-explicit-null",
+  "title": "null among the values matches a stored null and never a missing field",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "explicit",
+          "f": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "missing"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "valued",
+          "f": 1
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          null
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "explicit"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "id": "fixtures/map/provenance-carries-the-key-suffix",
+  "title": "provenance paths for a map fixture are <file>#<key>, in layer order (item 6)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              },
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"name\":\"Dark\"}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/overrides.json": "{\"dark\":{\"$patch\":\"theme:dark\",\"accent\":\"red\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/core.json#dark",
+              "kind": "base"
+            },
+            {
+              "sourceId": "overrides",
+              "layer": "overrides",
+              "priority": 1,
+              "path": "themes/overrides.json#dark",
+              "kind": "patch"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

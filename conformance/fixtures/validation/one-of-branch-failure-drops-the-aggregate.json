@@ -1,0 +1,65 @@
+{
+  "id": "fixtures/validation/one-of-branch-failure-drops-the-aggregate",
+  "title": "a oneOf whose branch failed deeper reports only the leaf path, never the aggregate's",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "v"
+                ],
+                "properties": {
+                  "v": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": [
+                          "a"
+                        ],
+                        "properties": {
+                          "a": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"v\":{\"a\":1}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#v.a"
+        ]
+      }
+    }
+  ]
+}

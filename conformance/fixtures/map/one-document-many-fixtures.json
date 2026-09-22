@@ -1,0 +1,73 @@
+{
+  "id": "fixtures/map/one-document-many-fixtures",
+  "title": "a map document yields one independently addressable fixture per top-level key (item 3)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"name\":\"Dark\"},\"light\":{\"id\":\"light\",\"name\":\"Light\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "theme"
+      ],
+      "expect": {
+        "value": [
+          "theme:dark",
+          "theme:light"
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "id": "dark",
+          "name": "Dark"
+        }
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:light"
+      ],
+      "expect": {
+        "value": {
+          "id": "light",
+          "name": "Light"
+        }
+      }
+    }
+  ]
+}

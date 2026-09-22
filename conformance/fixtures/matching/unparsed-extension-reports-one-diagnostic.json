@@ -1,0 +1,55 @@
+{
+  "id": "fixtures/matching/unparsed-extension-reports-one-diagnostic",
+  "title": "a file under the directory with no registered parser yields exactly one no-parser diagnostic (item 17)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.yaml": "name: Dark",
+                "themes/nested/ignored.yaml": "name: Ignored",
+                "other/dark.yaml": "name: Other",
+                "themes/ok.json": "{\"name\":\"Ok\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "value": {
+          "ok": false,
+          "diagnostics": [
+            {
+              "severity": "error",
+              "code": "no-parser",
+              "message": "No parser registered for \".yaml\".",
+              "source": "pack",
+              "path": "themes/dark.yaml",
+              "hint": "Pass a parser for \".yaml\" to createFixtureLoader()."
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/ref-grammar/empty-type-is-rejected",
+  "title": "a leading colon is not a ref",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        ":dark"
+      ],
+      "expect": {
+        "throws": "Invalid fixture ref \":dark\". Expected \"type:id\"."
+      }
+    }
+  ]
+}

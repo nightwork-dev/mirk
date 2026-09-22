@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/large-integral",
+  "title": "a large integral value below the exponent boundary prints in full",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        123456789012345680000
+      ],
+      "expect": {
+        "value": "123456789012345680000"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        123456789012345680000
+      ],
+      "expect": {
+        "value": "725abf175290195635e55a971cf88e02a46d6d56e964ec2d8bc47614b9559062"
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "fixtures/store/entry-order-is-code-point-not-collation",
+  "title": "a store source visits Z before a, so the first defect raised is the one in Z",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "upper",
+                  "relativePath": "themes/Z.json",
+                  "content": "[1]"
+                },
+                {
+                  "id": "lower",
+                  "relativePath": "themes/a.json",
+                  "content": "{\"one\":{\"id\":\"other\"}}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "throws": "Fixture map documents must parse to an object keyed by fixture id."
+      }
+    }
+  ]
+}

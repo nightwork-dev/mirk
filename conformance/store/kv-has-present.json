@@ -1,0 +1,26 @@
+{
+  "id": "store/kv-has-present",
+  "title": "has is true for a key that was set",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "present",
+        1
+      ]
+    },
+    {
+      "op": "has",
+      "args": [
+        "present"
+      ],
+      "expect": {
+        "value": true
+      }
+    }
+  ]
+}

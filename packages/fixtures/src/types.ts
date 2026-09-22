@@ -1,5 +1,7 @@
 // ─── @mirk/fixtures — public types ───────────────────────────────────────
 
+import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
+
 export type FixtureRef = string;
 
 export interface ExplicitRef {
@@ -10,23 +12,31 @@ export type RefOrInline<T> = FixtureRef | ExplicitRef | T;
 
 export type MaybePromise<T> = T | Promise<T>;
 
-export interface StandardSchemaV1<Input = unknown, Output = Input> {
-  readonly "~standard": {
-    readonly version: 1;
-    readonly vendor: string;
-    readonly validate: (value: unknown) => MaybePromise<StandardSchemaV1Result<Output>>;
-    readonly types?: { readonly input: Input; readonly output: Output };
-  };
-}
+export type StandardSchemaV1<Input = unknown, Output = Input> =
+  StandardSchema<Input, Output>;
+export type StandardSchemaV1Result<Output> = StandardSchema.Result<Output>;
+export type StandardSchemaV1Issue = StandardSchema.Issue;
 
-export type StandardSchemaV1Result<Output> =
-  | { readonly value: Output; readonly issues?: undefined }
-  | { readonly issues: ReadonlyArray<StandardSchemaV1Issue> };
+/**
+ * A JSON Schema (draft 2020-12) document. `true` accepts every value and
+ * `false` rejects every value, exactly as the specification says.
+ *
+ * This is the authored-shape contract that crosses languages: it is DATA, so
+ * the TypeScript loader and the Python loader can validate the same fixtures
+ * against the same declaration. The engine that reads it is injected — this
+ * package never depends on one.
+ */
+export type JsonSchemaDocument = Record<string, unknown> | boolean;
 
-export interface StandardSchemaV1Issue {
-  readonly message: string;
-  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
-}
+/** Validate one value, returning an issue per failure and an empty list on
+ *  success. Issue `path`s are LEAF instance paths, as `formatIssuePath`
+ *  renders them. */
+export type JsonSchemaValidator = (value: unknown) => readonly StandardSchemaV1Issue[];
+
+/** Compiles a JSON Schema document into a validator. Supplied by the caller
+ *  (Ajv 2020 in this repo's tests), so neither the browser entry nor the
+ *  published dependency list gains a schema engine. */
+export type JsonSchemaValidatorFactory = (document: JsonSchemaDocument) => JsonSchemaValidator;
 
 export type DiagnosticSeverity = "info" | "warning" | "error";
 
@@ -106,11 +116,25 @@ export interface ValidationContext {
 
 export type ReferenceMode = "explicit-only" | "explicit-and-bare";
 
+export interface FixtureMapDocument {
+  kind: "map";
+  /**
+   * Inject the map key into this field when a base fixture omits it.
+   * An explicitly different value is rejected.
+   */
+  idField?: string;
+}
+
 export interface FixtureTypeDefinition {
   type: string;
   directory: string;
   extensions?: string[];
-  schema: StandardSchemaV1<unknown, unknown>;
+  /** Authored-shape contract, validated in every language. */
+  jsonSchema?: JsonSchemaDocument;
+  /** Optional typed output. When both are present, `jsonSchema` runs first and
+   *  this schema's output becomes the fixture value. */
+  schema?: StandardSchemaV1<unknown, unknown>;
+  document?: FixtureMapDocument;
   purpose?: FixturePurpose;
   mergeStrategy?: MergeStrategy;
   referenceMode?: ReferenceMode;
@@ -123,7 +147,12 @@ export interface TypedFixtureTypeDefinition<T, M = T> {
   type: string;
   directory: string;
   extensions?: string[];
-  schema: StandardSchemaV1<unknown, T>;
+  /** Authored-shape contract, validated in every language. */
+  jsonSchema?: JsonSchemaDocument;
+  /** Optional typed output. When both are present, `jsonSchema` runs first and
+   *  this schema's output becomes the fixture value. */
+  schema?: StandardSchemaV1<unknown, T>;
+  document?: FixtureMapDocument;
   purpose?: FixturePurpose;
   mergeStrategy?: MergeStrategy;
   referenceMode?: ReferenceMode;
@@ -210,6 +239,9 @@ export interface FixtureLoaderOptions {
   sources: ReadonlyArray<FixtureSource | LayeredSource>;
   parsers?: Record<string, Parser | AsyncParser | PositionedParser | AsyncPositionedParser | ParserEntry>;
   referenceMode?: ReferenceMode;
+  /** Compiles a type's `jsonSchema` into a validator. A type declaring
+   *  `jsonSchema` without this option is a loud failure, never a silent skip. */
+  jsonSchemaValidator?: JsonSchemaValidatorFactory;
 }
 
 export interface FixtureRegistryLike {

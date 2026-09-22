@@ -1,0 +1,94 @@
+{
+  "id": "fixtures/references/missing-target-is-one-diagnostic",
+  "title": "a $ref to a fixture nothing carries yields one missing-reference diagnostic (items 24, 26)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"theme:missing\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "value": {
+          "ok": false,
+          "diagnostics": [
+            {
+              "severity": "error",
+              "code": "missing-reference",
+              "message": "Missing referenced fixture \"theme:missing\".",
+              "fixture": "page:home",
+              "fieldPath": "theme"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            },
+            {
+              "ref": "theme:missing",
+              "type": "theme",
+              "id": "missing",
+              "resolved": false
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:home",
+              "to": "theme:missing",
+              "fieldPath": [
+                "theme"
+              ]
+            }
+          ],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

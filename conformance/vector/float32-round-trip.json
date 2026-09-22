@@ -1,0 +1,41 @@
+{
+  "id": "vector/float32-round-trip",
+  "title": "components are rounded to float32 on store and read back rounded",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            0.1,
+            0.2,
+            0.3
+          ]
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vector": [
+            0.10000000149011612,
+            0.20000000298023224,
+            0.30000001192092896
+          ]
+        }
+      }
+    }
+  ]
+}

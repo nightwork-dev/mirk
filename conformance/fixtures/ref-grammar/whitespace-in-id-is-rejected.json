@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/ref-grammar/whitespace-in-id-is-rejected",
+  "title": "an id containing whitespace anywhere is not a valid ref",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:a b"
+      ],
+      "expect": {
+        "throws": "Invalid fixture ref \"theme:a b\". Expected \"type:id\"."
+      }
+    }
+  ]
+}

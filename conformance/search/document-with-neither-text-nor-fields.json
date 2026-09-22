@@ -1,0 +1,22 @@
+{
+  "id": "search/document-with-neither-text-nor-fields",
+  "title": "a document carrying neither text nor fields is rejected",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a"
+        }
+      ],
+      "expect": {
+        "throws": "SearchDocument must provide `text` or `fields`."
+      }
+    }
+  ]
+}

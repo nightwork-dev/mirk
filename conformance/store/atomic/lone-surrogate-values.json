@@ -1,0 +1,173 @@
+{
+  "id": "store/atomic/lone-surrogate-values",
+  "title": "a lone surrogate in a set value, a put field and an outcome is applied, digested and replayed",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lone"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "lone",
+              "value": "x\udc00y"
+            },
+            {
+              "op": "put",
+              "collection": "s",
+              "item": {
+                "id": "r",
+                "text": "\ud800",
+                "pair": "😀"
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "k1",
+            "outcome": {
+              "echo": "\udfff"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "0507f82f0c00420f7f0cbe48787ab34349b4bed02a99998d8561c4146ecb4641",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lone"
+              },
+              "version": "conformance-v1"
+            },
+            {
+              "target": {
+                "kind": "record",
+                "collection": "s",
+                "id": "r"
+              },
+              "version": "conformance-v2"
+            }
+          ],
+          "outcome": {
+            "echo": "\udfff"
+          }
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "lone"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": "x\udc00y",
+          "version": "conformance-v1"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "s",
+          "id": "r"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "id": "r",
+            "pair": "😀",
+            "text": "\ud800"
+          },
+          "version": "conformance-v2"
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lone"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "lone",
+              "value": "x\udc00y"
+            },
+            {
+              "op": "put",
+              "collection": "s",
+              "item": {
+                "id": "r",
+                "text": "\ud800",
+                "pair": "😀"
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "k1",
+            "outcome": {
+              "echo": "\udfff"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "0507f82f0c00420f7f0cbe48787ab34349b4bed02a99998d8561c4146ecb4641",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lone"
+              },
+              "version": "conformance-v1"
+            },
+            {
+              "target": {
+                "kind": "record",
+                "collection": "s",
+                "id": "r"
+              },
+              "version": "conformance-v2"
+            }
+          ],
+          "outcome": {
+            "echo": "\udfff"
+          }
+        }
+      }
+    }
+  ]
+}

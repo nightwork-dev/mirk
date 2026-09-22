@@ -1,0 +1,39 @@
+{
+  "id": "store/atomic/request-digest-stable-across-stores-first",
+  "title": "the digest of the pinned request in a fresh store; its sibling scenario must carry the same string",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "pin",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "18fff4dbaea33edd7412b4e090e4bcd1b876f49fd1634ee70341526576225bcc",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "pin"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

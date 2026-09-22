@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/matching/missing-fixture-is-not-found",
+  "title": "loading a fixture no source carries throws not-found",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:light"
+      ],
+      "expect": {
+        "throws": "Fixture \"theme:light\" not found in any registered source."
+      }
+    }
+  ]
+}

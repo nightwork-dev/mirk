@@ -1,0 +1,27 @@
+{
+  "id": "store/atomic/reject-remove-with-an-empty-collection",
+  "title": "remove needs a non-empty collection",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "remove",
+              "collection": "",
+              "id": "x"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "remove requires string collection and id"
+      }
+    }
+  ]
+}

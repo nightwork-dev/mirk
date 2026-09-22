@@ -1,0 +1,70 @@
+{
+  "id": "vector/search-is-per-collection",
+  "title": "identical vectors in two collections do not leak across a search",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "one",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "two",
+        {
+          "id": "b",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "one",
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "two",
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    }
+  ]
+}

@@ -150,6 +150,10 @@ Required fields:
 Optional fields:
 
 - `extensions`: accepted extensions; defaults to extensions with registered parsers.
+- `document`: optional authored-document shape. `{ kind: "map", idField?: string }`
+  treats each top-level map entry as an independently addressable fixture. When
+  `idField` is set, the map key is injected into missing base-record fields and
+  explicit mismatches are rejected.
 - `purpose`: tooling hint (`archetype`, `component`, `lookup`, `factory`, `raw`).
 - `mergeStrategy`: built-in or custom merge function.
 - `validateReferences`: cross-document validation after schema validation.
@@ -404,10 +408,12 @@ For `loadRaw("type:id")`:
 
 1. Parse the ref and find the registered fixture type.
 2. List all sources and match entries under the type directory with an accepted extension.
-3. V1 matches only files directly under the type directory. Nested paths are ignored unless a later
-   version explicitly enables nested ids.
-4. Read and parse matching candidates.
-5. Classify each parsed document as either a base document or a patch document.
+3. Files directly under the type directory are matched. Nested paths remain
+   ignored unless a later version explicitly enables nested ids.
+4. Read and parse matching candidates. A single document produces the fixture
+   named by its filename. A registered map document produces one fixture per
+   top-level key.
+5. Classify each expanded fixture value as either a base document or a patch document.
 6. Select the highest-priority base document. If none exists, raise `patch-without-base`.
 7. Validate the base document against the type schema.
 8. Apply higher-priority patches in priority order.
@@ -425,7 +431,8 @@ A patch document has this shape:
 }
 ```
 
-The declared `$patch` target must exactly match the ref being loaded. Mismatches are errors.
+The declared `$patch` target must exactly match the ref being loaded. Mismatches
+are errors, including patches expanded from keyed map documents.
 
 ## Provenance
 

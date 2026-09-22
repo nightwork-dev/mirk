@@ -1,0 +1,60 @@
+{
+  "id": "search/remove-reports-existence",
+  "title": "remove returns true once, then false, and the document stops matching",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "removable text"
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "removable"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "never-written",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

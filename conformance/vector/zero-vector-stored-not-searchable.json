@@ -1,0 +1,93 @@
+{
+  "id": "vector/zero-vector-stored-not-searchable",
+  "title": "an all-zero stored vector is stored and counted but never scored",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "zero",
+          "vector": [
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "unit",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "docs",
+        "zero"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "zero"
+      ],
+      "expect": {
+        "value": {
+          "id": "zero",
+          "vector": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "minScore": -1
+        }
+      ],
+      "expect": {
+        "ids": [
+          "unit"
+        ]
+      }
+    }
+  ]
+}

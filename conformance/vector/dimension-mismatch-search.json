@@ -1,0 +1,39 @@
+{
+  "id": "vector/dimension-mismatch-search",
+  "title": "searching with a query of the wrong length throws the shared mismatch message",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0,
+          0
+        ]
+      ],
+      "expect": {
+        "throws": "Vector dimension mismatch: expected 3, got 4"
+      }
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+{
+  "id": "vector/search-topk-limits-results",
+  "title": "topK caps the result count at the nearest documents",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "near",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "mid",
+          "vector": [
+            1,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "far",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "near",
+          "mid"
+        ]
+      }
+    }
+  ]
+}

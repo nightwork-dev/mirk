@@ -17,32 +17,56 @@ describe("buildWhereClause", () => {
     expect(buildWhereClause(undefined)).toEqual({ clause: "", params: [] });
     expect(buildWhereClause({ where: {} })).toEqual({ clause: "", params: [] });
   });
-  it("binds a scalar via json_extract = ?", () => {
+  it("binds a string via a json_type text guard plus json_extract = ?", () => {
     const { clause, params } = buildWhereClause({ where: { group: "a" } });
-    expect(clause).toBe(" WHERE json_extract(data, ?) = ?");
-    expect(params).toEqual(['$."group"', "a"]);
+    expect(clause).toBe(" WHERE json_type(data, ?) = 'text' AND json_extract(data, ?) = ?");
+    expect(params).toEqual(['$."group"', '$."group"', "a"]);
+  });
+  it("binds a number under an integer/real guard, so a stored true cannot match", () => {
+    const { clause, params } = buildWhereClause({ where: { n: 1 } });
+    expect(clause).toBe(
+      " WHERE json_type(data, ?) IN ('integer', 'real') AND json_extract(data, ?) = ?",
+    );
+    expect(params).toEqual(['$."n"', '$."n"', 1]);
   });
   it("matches an explicit null via json_type = 'null' (not = NULL)", () => {
     const { clause, params } = buildWhereClause({ where: { tag: null } });
     expect(clause).toBe(" WHERE json_type(data, ?) = 'null'");
     expect(params).toEqual(['$."tag"']);
   });
-  it("converts booleans to 0/1 (better-sqlite3 rejects raw booleans)", () => {
-    expect(buildWhereClause({ where: { ok: true } }).params).toEqual(['$."ok"', 1]);
-    expect(buildWhereClause({ where: { ok: false } }).params).toEqual(['$."ok"', 0]);
+  it("compares booleans by json_type alone, so a stored 1 is not a match", () => {
+    expect(buildWhereClause({ where: { ok: true } })).toEqual({
+      clause: " WHERE json_type(data, ?) = 'true'",
+      params: ['$."ok"'],
+    });
+    expect(buildWhereClause({ where: { ok: false } })).toEqual({
+      clause: " WHERE json_type(data, ?) = 'false'",
+      params: ['$."ok"'],
+    });
+  });
+  it("rejects a non-scalar value instead of binding it", () => {
+    expect(() => buildWhereClause({ where: { v: { a: 1 } } })).toThrow(
+      "Store filters only support JSON scalar values.",
+    );
+    expect(() => buildWhereClause({ where: { v: [1, 2] } })).toThrow(
+      "Store filters only support JSON scalar values.",
+    );
   });
 });
 
 describe("buildOrderBy", () => {
-  it("is empty without sortBy", () => {
-    expect(buildOrderBy({ where: { a: 1 } })).toEqual({ clause: "", params: [] });
+  it("orders by rowid alone without sortBy, pinning insertion order", () => {
+    expect(buildOrderBy({ where: { a: 1 } })).toEqual({
+      clause: " ORDER BY rowid",
+      params: [],
+    });
   });
-  it("orders nulls last in both directions", () => {
+  it("orders nulls last in both directions, with rowid as the tie-break", () => {
     expect(buildOrderBy({ sortBy: "rank" }).clause).toBe(
-      " ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ASC",
+      " ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ASC, rowid",
     );
     expect(buildOrderBy({ sortBy: "rank", sortDir: "desc" }).clause).toBe(
-      " ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) DESC",
+      " ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) DESC, rowid",
     );
   });
 });

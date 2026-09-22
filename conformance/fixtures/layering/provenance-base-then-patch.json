@@ -1,0 +1,69 @@
+{
+  "id": "fixtures/layering/provenance-base-then-patch",
+  "title": "provenance kinds are [base, patch] with the file path on both (item 11)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"accent\":\"red\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "base"
+            },
+            {
+              "sourceId": "overrides",
+              "layer": "overrides",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "patch"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

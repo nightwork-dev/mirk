@@ -1,0 +1,77 @@
+{
+  "id": "search/zero-weight-field-still-matches",
+  "title": "a zero-weighted field still matches the document, scoring it last",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "title-only",
+            "fields": {
+              "title": "quantum",
+              "body": "nothing here"
+            }
+          },
+          {
+            "id": "body-only",
+            "fields": {
+              "title": "other",
+              "body": "quantum"
+            }
+          },
+          {
+            "id": "filler",
+            "fields": {
+              "title": "filler",
+              "body": "filler words"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "quantum",
+        {
+          "fieldWeights": {
+            "title": 0,
+            "body": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "body-only",
+          "title-only"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "quantum",
+        {
+          "fieldWeights": {
+            "title": 1,
+            "body": 0
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "title-only",
+          "body-only"
+        ]
+      }
+    }
+  ]
+}

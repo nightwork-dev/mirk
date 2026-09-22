@@ -1,0 +1,54 @@
+{
+  "id": "vector/has-is-per-collection",
+  "title": "has is true only for an id present in that collection",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "one",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "has",
+      "args": [
+        "one",
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "one",
+        "b"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "two",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

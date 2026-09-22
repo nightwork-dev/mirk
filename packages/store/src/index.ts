@@ -23,7 +23,13 @@ export type {
 } from "./types.js";
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
+export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";
 export { namespaceStore } from "./namespace.js";
+// The ordering primitive every port's tie-break is defined in terms of. It was
+// only reachable as the deprecated `compareCodePoint` alias on
+// `@mirk/store/atomic`; consumers that sort ids alongside the store need it
+// under its real name.
+export { compareCodePoints } from "./order.js";
 
 // Optional declarative atomic mutation capability. This module is dependency-free
 // and remains safe for root/browser imports; native implementations live in
@@ -45,6 +51,7 @@ export type {
   AtomicMutationRejectionCode,
   SyncAtomicMutationStore,
   AsyncAtomicMutationStore,
+  AtomicMutationLimits,
 } from "./atomic.js";
 export {
   AtomicMutationRejectedError,
@@ -53,6 +60,9 @@ export {
   supportsAtomicMutation,
   supportsAsyncAtomicMutation,
   canonicalJson,
+  DEFAULT_ATOMIC_LIMITS,
+  IN_PROCESS_ATOMIC_LIMITS,
+  resolveAtomicLimits,
 } from "./atomic.js";
 
 // Vector port + in-memory reference + shared helpers

@@ -1,0 +1,45 @@
+{
+  "id": "store/collection-put-returns-item",
+  "title": "put returns the item it was given and getById reads it back",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p6",
+          "name": "foxtrot",
+          "category": "ai",
+          "priority": 6
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "p6",
+          "name": "foxtrot",
+          "category": "ai",
+          "priority": 6
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "projects",
+        "p6"
+      ],
+      "expect": {
+        "value": {
+          "id": "p6",
+          "name": "foxtrot",
+          "category": "ai",
+          "priority": 6
+        }
+      }
+    }
+  ]
+}

@@ -39,6 +39,7 @@ import {
 export interface StoreArtifactRepositoryOptions {
   namespace?: string;
   now?: () => number;
+  leaseIdFactory?: () => string;
 }
 
 type LeaseState = {
@@ -58,6 +59,7 @@ export class StoreArtifactRepository
   readonly #leaseStatePrefix: string;
   readonly #leases: string;
   readonly #now: () => number;
+  readonly #leaseIdFactory: () => string;
 
   constructor(
     readonly store: AsyncStore,
@@ -70,6 +72,12 @@ export class StoreArtifactRepository
     this.#leaseStatePrefix = `${prefix}:lease-state:`;
     this.#leases = `${prefix}:leases`;
     this.#now = options.now ?? Date.now;
+    this.#leaseIdFactory =
+      options.leaseIdFactory ??
+      (() =>
+        `lease-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2)}`);
     this.atomicAvailable = supportsAsyncAtomicMutation(store);
   }
 
@@ -330,9 +338,7 @@ export class StoreArtifactRepository
           return { status: "conflict", reason: "reference-created" };
       }
       const lease: ArtifactObjectLease = {
-        leaseId: `lease-${Date.now().toString(36)}-${Math.random()
-          .toString(36)
-          .slice(2)}`,
+        leaseId: this.#leaseIdFactory(),
         ownerId: input.ownerId,
         objectKey: input.objectKey,
         mode: input.mode,

@@ -1,0 +1,37 @@
+{
+  "id": "store/atomic/get-versioned-after-set",
+  "title": "a plain set mints the first version token of the store",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        {
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "n": 1
+          },
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

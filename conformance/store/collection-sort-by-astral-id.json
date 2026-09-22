@@ -1,0 +1,43 @@
+{
+  "id": "store/collection-sort-by-astral-id",
+  "title": "sorting by id puts U+FFFD before an astral character",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "🔥"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "�"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "id"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "�",
+          "🔥"
+        ]
+      }
+    }
+  ]
+}

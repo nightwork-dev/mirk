@@ -1,0 +1,32 @@
+{
+  "id": "artifact/hashing/canonical-json/reject-positive-infinity",
+  "title": "positive infinity is not JSON-safe",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$num": "Infinity"
+        }
+      ],
+      "expect": {
+        "throws": "non-finite numbers are not JSON-safe"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$num": "Infinity"
+        }
+      ],
+      "expect": {
+        "throws": "non-finite numbers are not JSON-safe"
+      }
+    }
+  ]
+}

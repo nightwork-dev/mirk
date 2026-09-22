@@ -9,6 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rmSync, mkdtempSync } from "node:fs";
 
+import { createClient } from "@libsql/client";
+
 import { InMemoryVectorStore, type Vector } from "@mirk/store";
 import { LibsqlAdapter } from "../libsql-adapter.js";
 
@@ -336,5 +338,88 @@ describe("parity with InMemoryVectorStore", () => {
 
   it("matches InMemory ordering + scores on the forced-JS path", async () => {
     await compare(true);
+  });
+});
+
+// ─── Physical table registry ─────────────────────────────────────────────────
+// The libSQL adapter derives collection table names exactly as @mirk/store's
+// sqlite adapter does and reads the same files, so it runs the same
+// `_mirk_tables` resolution. `"%$;**@"` and `"~,~$(*"` sanitize to the same
+// string and collide on the 32-bit hash.
+
+describe("collision-safe collection tables", () => {
+  const A = "%$;**@";
+  const B = "~,~$(*";
+  const LEGACY_TABLE = "c________jqoxun";
+
+  it("keeps two collections that sanitize and hash identically apart", async () => {
+    const adapter = await LibsqlAdapter.open({ url: ":memory:" });
+    try {
+      await adapter.kv.put(A, { id: "a1", tag: "first" });
+      await adapter.kv.put(B, { id: "b1", tag: "second" });
+
+      expect(await adapter.kv.getById(A, "a1")).toEqual({ id: "a1", tag: "first" });
+      expect(await adapter.kv.getById(B, "b1")).toEqual({ id: "b1", tag: "second" });
+      expect(await adapter.kv.getById(A, "b1")).toBeNull();
+      expect(await adapter.kv.count(A)).toBe(1);
+      expect(await adapter.kv.count(B)).toBe(1);
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("adopts a legacy table with no registry and suffixes the colliding name", async () => {
+    const { url } = fileUrl();
+    // The pre-registry layout, written with raw SQL: a collection table named
+    // `<prefix><sanitized>_<fnv32>` and nothing else.
+    const seed = createClient({ url });
+    await seed.execute(
+      `CREATE TABLE ${LEGACY_TABLE} (
+         id TEXT PRIMARY KEY,
+         data TEXT NOT NULL,
+         created_at TEXT DEFAULT (datetime('now')),
+         updated_at TEXT DEFAULT (datetime('now')))`,
+    );
+    await seed.execute({
+      sql: `INSERT INTO ${LEGACY_TABLE} (id, data) VALUES (?, ?)`,
+      args: ["p1", JSON.stringify({ id: "p1", tag: "legacy-a" })],
+    });
+    seed.close();
+
+    const adapter = await LibsqlAdapter.open({ url });
+    try {
+      expect(await adapter.kv.getById(A, "p1")).toEqual({ id: "p1", tag: "legacy-a" });
+      await adapter.kv.put(B, { id: "b1", tag: "second" });
+      expect(await adapter.kv.count(A)).toBe(1);
+      expect(await adapter.kv.count(B)).toBe(1);
+    } finally {
+      adapter.close();
+    }
+
+    const check = createClient({ url });
+    const rows = await check.execute(
+      "SELECT kind, name, table_name FROM _mirk_tables ORDER BY name",
+    );
+    const version = await check.execute(
+      "SELECT value FROM _mirk_meta WHERE key = 'schema_version'",
+    );
+    check.close();
+    expect(rows.rows.map((r) => [r.kind, r.name, r.table_name])).toEqual([
+      ["collection", A, LEGACY_TABLE],
+      ["collection", B, `${LEGACY_TABLE}_2`],
+    ]);
+    expect(version.rows[0]?.value).toBe("2");
+  });
+
+  it("refuses to open a file written by a newer adapter", async () => {
+    const { url } = fileUrl();
+    (await LibsqlAdapter.open({ url })).close();
+    const bump = createClient({ url });
+    await bump.execute("UPDATE _mirk_meta SET value = '3' WHERE key = 'schema_version'");
+    bump.close();
+
+    await expect(LibsqlAdapter.open({ url })).rejects.toThrow(
+      "Mirk SQLite file schema version 3 is newer than this adapter understands (2).",
+    );
   });
 });

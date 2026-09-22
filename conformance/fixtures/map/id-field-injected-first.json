@@ -1,0 +1,49 @@
+{
+  "id": "fixtures/map/id-field-injected-first",
+  "title": "the map key is injected into idField when absent, and prepended (item 4)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"name\":\"Dark\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "id": "dark",
+          "name": "Dark"
+        }
+      }
+    }
+  ]
+}

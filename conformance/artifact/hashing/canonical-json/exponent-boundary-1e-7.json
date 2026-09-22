@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-boundary-1e-7",
+  "title": "a decimal exponent of -7 switches to exponential form with no zero padding",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        1e-7
+      ],
+      "expect": {
+        "value": "1e-7"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        1e-7
+      ],
+      "expect": {
+        "value": "5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"
+      }
+    }
+  ]
+}

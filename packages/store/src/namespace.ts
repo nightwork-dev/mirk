@@ -72,7 +72,12 @@ export function namespaceStore(store: SyncStore, namespace: string): SyncStore {
   };
 
   if (supportsAtomicMutation(store)) {
-    const atomic = result as SyncStore & SyncAtomicMutationStore;
+    const atomic = result as SyncStore & {
+      -readonly [K in keyof SyncAtomicMutationStore]: SyncAtomicMutationStore[K];
+    };
+    // A namespaced handle is a binding, not a backend: it enforces exactly what
+    // the store underneath it enforces.
+    atomic.atomicLimits = store.atomicLimits;
     atomic.getVersioned = <T>(
       target: StoreTarget
     ): VersionedStoreValue<T> | null => {
@@ -86,7 +91,7 @@ export function namespaceStore(store: SyncStore, namespace: string): SyncStore {
       // Validate before touching the request. Besides preserving typed
       // rejections for malformed input, this prevents sparse arrays or an empty
       // collection name from being transformed into a valid physical target.
-      const validated = validateAtomicRequest(request);
+      const validated = validateAtomicRequest(request, store.atomicLimits);
       const bound = {
         conditions: validated.conditions.map(bindCondition),
         operations: validated.operations.map(bindOperation),

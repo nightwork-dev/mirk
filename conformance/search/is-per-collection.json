@@ -1,0 +1,54 @@
+{
+  "id": "search/is-per-collection",
+  "title": "identical text in two collections does not leak across a search",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "one",
+        {
+          "id": "a",
+          "text": "shared vocabulary"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "two",
+        {
+          "id": "b",
+          "text": "shared vocabulary"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "one",
+        "shared"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "two",
+        "shared"
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "id": "store/collection-names-collide-on-hash",
+  "title": "two collection names that sanitize and hash identically stay independent",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "%$;**@",
+        {
+          "id": "a1",
+          "tag": "first"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "~,~$(*",
+        {
+          "id": "b1",
+          "tag": "second"
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "%$;**@",
+        "a1"
+      ],
+      "expect": {
+        "value": {
+          "id": "a1",
+          "tag": "first"
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "~,~$(*",
+        "b1"
+      ],
+      "expect": {
+        "value": {
+          "id": "b1",
+          "tag": "second"
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "%$;**@",
+        "b1"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "~,~$(*",
+        "a1"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "%$;**@"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "~,~$(*"
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

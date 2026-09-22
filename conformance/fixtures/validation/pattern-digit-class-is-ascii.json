@@ -1,0 +1,55 @@
+{
+  "id": "fixtures/validation/pattern-digit-class-is-ascii",
+  "title": "\\d in a pattern is 0-9, so an Arabic-Indic digit is not a digit",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "\\d"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/arabic-indic.json": "{\"code\":\"٣\"}",
+                "themes/ascii.json": "{\"code\":\"3\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:arabic-indic#code"
+        ]
+      }
+    }
+  ]
+}

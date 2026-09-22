@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/resolve/bare-string-returned-unchanged",
+  "title": "resolveRef returns a canonical string unchanged under the default mode (item 27)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": "theme:dark"
+      }
+    }
+  ]
+}

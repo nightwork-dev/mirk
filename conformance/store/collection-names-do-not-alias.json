@@ -1,0 +1,74 @@
+{
+  "id": "store/collection-names-do-not-alias",
+  "title": "collection names that sanitize alike stay physically distinct",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "foo-bar",
+        {
+          "id": "x",
+          "v": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "foo_bar",
+        {
+          "id": "x",
+          "v": 2
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "foo-bar",
+        "x"
+      ],
+      "expect": {
+        "value": {
+          "id": "x",
+          "v": 1
+        }
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "foo_bar",
+        "x"
+      ],
+      "expect": {
+        "value": {
+          "id": "x",
+          "v": 2
+        }
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "foo-bar"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "foo_bar"
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

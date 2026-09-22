@@ -1,0 +1,72 @@
+{
+  "id": "store/collection-reput-keeps-position",
+  "title": "putting an existing id again updates it in place without moving it",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "v": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "v": 2
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "v": 3
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "v": 99
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a",
+            "v": 99
+          },
+          {
+            "id": "b",
+            "v": 2
+          },
+          {
+            "id": "c",
+            "v": 3
+          }
+        ]
+      }
+    }
+  ]
+}

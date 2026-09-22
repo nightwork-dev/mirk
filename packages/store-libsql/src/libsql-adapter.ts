@@ -32,7 +32,116 @@ import {
 } from "@mirk/store";
 // Pure SQL-string builders shared with @mirk/store/sqlite — one definition so the
 // two SQLite-dialect adapters can't drift in filter semantics.
-import { buildWhereClause, buildOrderBy, buildLimitOffset, hashName } from "@mirk/store/sql";
+import {
+  buildWhereClause,
+  buildOrderBy,
+  buildLimitOffset,
+  COLLECTION_TABLE_KIND,
+  COLLECTION_TABLE_PREFIX,
+  INSERT_REGISTERED_TABLE_SQL,
+  INSERT_SCHEMA_VERSION_SQL,
+  isSchemaVersionTooNew,
+  isTableRegistryConflict,
+  MIRK_REGISTRY_DDL,
+  MIRK_SCHEMA_VERSION,
+  schemaVersionTooNewMessage,
+  SELECT_REGISTERED_TABLE_SQL,
+  SELECT_SCHEMA_VERSION_SQL,
+  SELECT_TABLE_CLAIM_SQL,
+  SELECT_TABLE_EXISTS_SQL,
+  tableResolution,
+  type TableRegistryAnswer,
+} from "@mirk/store/sql";
+
+/** Create `_mirk_tables` / `_mirk_meta` and pin `schema_version`, refusing a
+ *  file written by a newer adapter. Same procedure as @mirk/store/sqlite: the
+ *  two adapters read and write each other's files. */
+async function ensureMirkRegistry(client: Client): Promise<void> {
+  const meta = await client.execute({
+    sql: "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_mirk_meta'",
+    args: [],
+  });
+  if (meta.rows.length > 0) {
+    const rs = await client.execute(SELECT_SCHEMA_VERSION_SQL);
+    const found = rs.rows[0]?.value as string | undefined;
+    if (found !== undefined && isSchemaVersionTooNew(found)) {
+      throw new Error(schemaVersionTooNewMessage(found, MIRK_SCHEMA_VERSION));
+    }
+  }
+  // `execute` is one statement per call; the shared DDL holds two.
+  for (const statement of MIRK_REGISTRY_DDL.split(";")) {
+    if (statement.trim().length > 0) await client.execute(statement);
+  }
+  await client.execute({
+    sql: INSERT_SCHEMA_VERSION_SQL,
+    args: [String(MIRK_SCHEMA_VERSION)],
+  });
+}
+
+/** Async driver for the shared `tableResolution` procedure in @mirk/store/sql —
+ *  the same three steps @mirk/store/sqlite runs synchronously. */
+async function runTableResolution(
+  client: Client,
+  kind: string,
+  name: string,
+  prefix: string,
+  register: boolean,
+): Promise<string> {
+  // A concurrent opener can claim the candidate between this resolution's
+  // lookup and its INSERT. Restarting reads the winner's row as a registry hit.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await resolveTableOnce(client, kind, name, prefix, register);
+    } catch (err) {
+      if (attempt >= TABLE_RESOLUTION_ATTEMPTS || !isTableRegistryConflict(err)) {
+        throw err;
+      }
+    }
+  }
+}
+
+const TABLE_RESOLUTION_ATTEMPTS = 5;
+
+async function resolveTableOnce(
+  client: Client,
+  kind: string,
+  name: string,
+  prefix: string,
+  register: boolean,
+): Promise<string> {
+  const resolution = tableResolution(kind, name, prefix, register);
+  let step = resolution.next();
+  while (!step.done) {
+    const query = step.value;
+    let answer: TableRegistryAnswer;
+    if (query.q === "registered") {
+      const rs = await client.execute({
+        sql: SELECT_REGISTERED_TABLE_SQL,
+        args: [query.kind, query.name],
+      });
+      answer = rs.rows[0]?.table_name as string | undefined;
+    } else if (query.q === "claimant") {
+      const rs = await client.execute({
+        sql: SELECT_TABLE_CLAIM_SQL,
+        args: [query.table],
+      });
+      answer = rs.rows[0]?.name as string | undefined;
+    } else if (query.q === "tableExists") {
+      const rs = await client.execute({
+        sql: SELECT_TABLE_EXISTS_SQL,
+        args: [query.table],
+      });
+      answer = rs.rows.length > 0;
+    } else {
+      await client.execute({
+        sql: INSERT_REGISTERED_TABLE_SQL,
+        args: [query.kind, query.name, query.table],
+      });
+    }
+    step = resolution.next(answer);
+  }
+  return step.value;
+}
 
 export interface LibsqlAdapterOptions {
   /** libSQL connection URL: `libsql://…` (remote/Turso), `file:./db.sqlite`, or `:memory:`. */
@@ -106,6 +215,7 @@ export class LibsqlAdapter {
 class LibsqlKvFacet implements AsyncStore {
   readonly meta: StoreMeta = { backend: "libsql" };
   private readonly initializedTables = new Set<string>();
+  private readonly resolvedTables = new Map<string, string>();
   private initialized = false;
 
   constructor(private readonly client: Client) {}
@@ -113,6 +223,7 @@ class LibsqlKvFacet implements AsyncStore {
   /** Memoized schema init. Awaited once from LibsqlAdapter.open. */
   async init(): Promise<void> {
     if (this.initialized) return;
+    await ensureMirkRegistry(this.client);
     await this.client.execute(`
       CREATE TABLE IF NOT EXISTS _kv (
         key TEXT PRIMARY KEY,
@@ -124,16 +235,27 @@ class LibsqlKvFacet implements AsyncStore {
     this.initialized = true;
   }
 
-  private tableName(collection: string): string {
+  /** Physical table for a collection, via the `_mirk_tables` registry. The
+   *  hash-derived name is only the first CANDIDATE: a name whose candidate is
+   *  already claimed by a different collection gets `_2`, `_3`, … so two names
+   *  that sanitize and hash alike never share one table. */
+  private async tableName(collection: string): Promise<string> {
     if (collection.length === 0) throw new Error("Invalid collection name");
-    const sanitized = collection.replace(/[^a-zA-Z0-9_]/g, "_");
-    // Suffix a hash of the ORIGINAL name so two distinct collections that sanitize
-    // to the same string (e.g. "foo-bar" vs "foo_bar") never alias to one table.
-    return `c_${sanitized}_${hashName(collection)}`;
+    const cached = this.resolvedTables.get(collection);
+    if (cached !== undefined) return cached;
+    const table = await runTableResolution(
+      this.client,
+      COLLECTION_TABLE_KIND,
+      collection,
+      COLLECTION_TABLE_PREFIX,
+      true,
+    );
+    this.resolvedTables.set(collection, table);
+    return table;
   }
 
   private async ensureTable(collection: string): Promise<string> {
-    const table = this.tableName(collection);
+    const table = await this.tableName(collection);
     if (this.initializedTables.has(table)) return table;
     await this.client.execute(
       `CREATE TABLE IF NOT EXISTS ${table} (

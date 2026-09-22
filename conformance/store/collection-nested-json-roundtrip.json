@@ -1,0 +1,61 @@
+{
+  "id": "store/collection-nested-json-roundtrip",
+  "title": "a deeply nested item body round-trips exactly",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "docs",
+        {
+          "id": "d1",
+          "nested": {
+            "deep": {
+              "value": [
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          "tags": [
+            "a",
+            "b"
+          ],
+          "flag": false,
+          "empty": null
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "docs",
+        "d1"
+      ],
+      "expect": {
+        "value": {
+          "id": "d1",
+          "nested": {
+            "deep": {
+              "value": [
+                1,
+                2,
+                3
+              ]
+            }
+          },
+          "tags": [
+            "a",
+            "b"
+          ],
+          "flag": false,
+          "empty": null
+        }
+      }
+    }
+  ]
+}

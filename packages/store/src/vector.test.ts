@@ -257,7 +257,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
   it("infers and persists dimensions from the first upsert", () => {
     const path = join(tmpdir(), `mirk-vec-lazy-${process.pid}-${Date.now()}.db`);
     try {
-      const a = new SqliteAdapter({ path, forceJsCosine: true });
+      const a = new SqliteAdapter({ path });
       expect(a.vector.meta.dimensions).toBe(0);
       expect(a.vector.meta.accelerated).toBe(false);
       a.vector.upsert("docs", { id: "x", vector: v(1, 0, 0, 0), metadata: { k: 1 } });
@@ -265,7 +265,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
       expect(a.vector.search("docs", v(1, 0, 0, 0))[0]!.id).toBe("x");
       a.close();
 
-      const b = new SqliteAdapter({ path, forceJsCosine: true });
+      const b = new SqliteAdapter({ path });
       expect(b.vector.meta.dimensions).toBe(DIMS);
       expect(b.vector.get("docs", "x")?.metadata).toEqual({ k: 1 });
       expect(() => b.vector.upsert("docs", { id: "bad", vector: Float32Array.from([1, 0, 0]) })).toThrow(/dimension/);
@@ -290,7 +290,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
   it("does not persist lazy dimensions when upsertMany rejects before writing", () => {
     const path = join(tmpdir(), `mirk-vec-lazy-atomic-${process.pid}-${Date.now()}.db`);
     try {
-      const a = new SqliteAdapter({ path, forceJsCosine: true });
+      const a = new SqliteAdapter({ path });
       expect(() =>
         a.vector.upsertMany("docs", [
           { id: "a", vector: v(1, 0, 0, 0) },
@@ -300,7 +300,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
       expect(a.vector.count("docs")).toBe(0);
       a.close();
 
-      const b = new SqliteAdapter({ path, forceJsCosine: true });
+      const b = new SqliteAdapter({ path });
       expect(b.vector.meta.dimensions).toBe(0);
       b.vector.upsert("docs", { id: "three", vector: Float32Array.from([1, 0, 0]) });
       expect(b.vector.meta.dimensions).toBe(3);
@@ -368,96 +368,9 @@ describe("cosine helpers", () => {
   });
 });
 
-// ── vec0 acceleration parity (Phase 2) ───────────────────────────────────────
+// ── SQLite cosine search ─────────────────────────────────────────────────────
 
-// Run the FULL shared suite ALSO against the forced-JS-cosine adapter, so the suite
-// proves parity (both paths pass identical assertions), not merely "the accel path runs".
-suite("SqliteAdapter.vector (forced JS cosine)", async () => {
-  const adapter = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
-  return { store: adapter.vector, cleanup: () => adapter.close() };
-});
-
-// Whether the optional sqlite-vec peer actually loaded in this environment. The
-// forced-JS-cosine parity tests run regardless; only the assertion that the accel
-// PATH is live is environment-dependent, so it guards on this.
-const ACCELERATED = (() => {
-  const probe = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-  try {
-    return probe.vector.meta.accelerated;
-  } finally {
-    probe.close();
-  }
-})();
-
-describe("vec0 acceleration", () => {
-  // Non-normalized vectors (varied magnitudes) — where L2 ranking != cosine ranking,
-  // so this catches any regression to vec0's default L2 metric instead of cosine.
-  const corpus: Array<{ id: string; nums: number[] }> = [
-    { id: "a", nums: [3, 0, 0, 0] },
-    { id: "b", nums: [0, 5, 0, 0] },
-    { id: "c", nums: [1, 1, 0, 0] },
-    { id: "d", nums: [0.1, 0, 0, 0] },
-    { id: "e", nums: [2, 2, 2, 0] },
-    { id: "f", nums: [0, 0.3, 0.9, 0] },
-  ];
-  const queries = [v(1, 0.2, 0, 0), v(0, 1, 0.1, 0), v(1, 1, 1, 0)];
-
-  function seed(adapter: SqliteAdapter): void {
-    for (const d of corpus) {
-      adapter.vector.upsert("docs", { id: d.id, vector: Float32Array.from(d.nums) });
-    }
-  }
-
-  it("meta.accelerated reflects the loaded peer, and is always false when forced off", () => {
-    const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-    const forced = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
-    try {
-      // sqlite-vec is an OPTIONAL peer — accel is true only when it actually loaded
-      // in this environment. Forcing JS cosine is environment-independent: always false.
-      expect(accel.vector.meta.accelerated).toBe(ACCELERATED);
-      expect(forced.vector.meta.accelerated).toBe(false);
-    } finally {
-      accel.close();
-      forced.close();
-    }
-  });
-
-  it("accelerated vec0 ranking == exact JS cosine ranking (non-normalized vectors)", () => {
-    const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-    const fallback = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
-    try {
-      seed(accel);
-      seed(fallback);
-      for (const q of queries) {
-        const accelIds = accel.vector.search("docs", q, { topK: corpus.length }).map((r) => r.id);
-        const jsIds = fallback.vector.search("docs", q, { topK: corpus.length }).map((r) => r.id);
-        expect(accelIds).toEqual(jsIds);
-      }
-    } finally {
-      accel.close();
-      fallback.close();
-    }
-  });
-
-  it("accelerated topK + minScore match the fallback", () => {
-    const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-    const fallback = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
-    try {
-      seed(accel);
-      seed(fallback);
-      const q = queries[0]!;
-      expect(accel.vector.search("docs", q, { topK: 3 }).map((r) => r.id)).toEqual(
-        fallback.vector.search("docs", q, { topK: 3 }).map((r) => r.id),
-      );
-      expect(accel.vector.search("docs", q, { minScore: 0.5 }).map((r) => r.id)).toEqual(
-        fallback.vector.search("docs", q, { minScore: 0.5 }).map((r) => r.id),
-      );
-    } finally {
-      accel.close();
-      fallback.close();
-    }
-  });
-
+describe("SqliteAdapter.vector — exact cosine search", () => {
   it("per-collection isolation — a query in A never returns B's docs", () => {
     const a = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     try {
@@ -469,11 +382,11 @@ describe("vec0 acceleration", () => {
     }
   });
 
-  it("vec0 stays in sync across upsert-replace and remove", () => {
+  it("upsert-replace and remove are reflected by the next search", () => {
     const a = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     try {
       a.vector.upsert("docs", { id: "x", vector: v(1, 0, 0, 0) });
-      a.vector.upsert("docs", { id: "x", vector: v(0, 1, 0, 0) }); // replace — vec0 must re-sync
+      a.vector.upsert("docs", { id: "x", vector: v(0, 1, 0, 0) }); // replace
       expect(a.vector.search("docs", v(0, 1, 0, 0), { topK: 1 })[0]!.id).toBe("x");
       a.vector.remove("docs", "x");
       expect(a.vector.search("docs", v(0, 1, 0, 0), { topK: 1 })).toEqual([]);
@@ -482,27 +395,20 @@ describe("vec0 acceleration", () => {
     }
   });
 
-  it("excludes zero / non-finite stored vectors on BOTH paths (parity)", () => {
-    const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-    const fb = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
+  it("excludes zero / non-finite stored vectors", () => {
+    const a = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     try {
-      for (const a of [accel, fb]) {
-        a.vector.upsert("docs", { id: "good", vector: v(1, 0, 0, 0) });
-        a.vector.upsert("docs", { id: "zero", vector: v(0, 0, 0, 0) });
-        a.vector.upsert("docs", { id: "nan", vector: v(NaN, 0, 0, 0) });
-      }
-      const q = v(1, 0, 0, 0);
-      const accelIds = accel.vector.search("docs", q, { topK: 10 }).map((r) => r.id);
-      const fbIds = fb.vector.search("docs", q, { topK: 10 }).map((r) => r.id);
-      expect(accelIds).toEqual(["good"]); // zero + nan are directionless → excluded
-      expect(accelIds).toEqual(fbIds); // parity
+      a.vector.upsert("docs", { id: "good", vector: v(1, 0, 0, 0) });
+      a.vector.upsert("docs", { id: "zero", vector: v(0, 0, 0, 0) });
+      a.vector.upsert("docs", { id: "nan", vector: v(NaN, 0, 0, 0) });
+      const ids = a.vector.search("docs", v(1, 0, 0, 0), { topK: 10 }).map((r) => r.id);
+      expect(ids).toEqual(["good"]); // zero + nan are directionless → excluded
     } finally {
-      accel.close();
-      fb.close();
+      a.close();
     }
   });
 
-  it("handles a zero / non-finite query deterministically (forced JS path)", () => {
+  it("handles a zero / non-finite query deterministically", () => {
     const a = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     try {
       a.vector.upsert("docs", { id: "x", vector: v(1, 0, 0, 0) });
@@ -515,47 +421,16 @@ describe("vec0 acceleration", () => {
     }
   });
 
-  it("backfills vec0 from rows written in a fallback session (reopen accelerated)", () => {
-    const path = join(tmpdir(), `mirk-vec-backfill-${process.pid}-${Date.now()}.db`);
+  it("breaks ties deterministically by id", () => {
+    const a = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
     try {
-      // Session 1: forced fallback → writes to `vectors`, NO vec0 tables.
-      const fb = new SqliteAdapter({ path, dimensions: DIMS, forceJsCosine: true });
-      fb.vector.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
-      fb.vector.upsert("docs", { id: "b", vector: v(0, 1, 0, 0) });
-      expect(fb.vector.meta.accelerated).toBe(false);
-      fb.close();
-      // Session 2: accelerated → ensureVecTable must backfill the existing rows.
-      const accel = new SqliteAdapter({ path, dimensions: DIMS });
-      expect(accel.vector.meta.accelerated).toBe(true);
-      expect(accel.vector.search("docs", v(1, 0.1, 0, 0), { topK: 2 }).map((r) => r.id)).toEqual([
-        "a",
-        "b",
-      ]); // backfilled, not empty
-      accel.close();
-    } finally {
-      rmSync(path, { force: true });
-      rmSync(`${path}-wal`, { force: true });
-      rmSync(`${path}-shm`, { force: true });
-    }
-  });
-
-  it("breaks ties deterministically and identically on both paths", () => {
-    const accel = new SqliteAdapter({ path: ":memory:", dimensions: DIMS });
-    const fb = new SqliteAdapter({ path: ":memory:", dimensions: DIMS, forceJsCosine: true });
-    try {
-      for (const a of [accel, fb]) {
-        a.vector.upsert("docs", { id: "c", vector: v(1, 1, 0, 0) });
-        a.vector.upsert("docs", { id: "a", vector: v(1, 1, 0, 0) });
-        a.vector.upsert("docs", { id: "b", vector: v(1, 1, 0, 0) });
-      }
+      a.vector.upsert("docs", { id: "c", vector: v(1, 1, 0, 0) });
+      a.vector.upsert("docs", { id: "a", vector: v(1, 1, 0, 0) });
+      a.vector.upsert("docs", { id: "b", vector: v(1, 1, 0, 0) });
       const q = v(1, 1, 0, 0); // identical cosine to all three → tie
-      const accelIds = accel.vector.search("docs", q, { topK: 3 }).map((r) => r.id);
-      const fbIds = fb.vector.search("docs", q, { topK: 3 }).map((r) => r.id);
-      expect(accelIds).toEqual(["a", "b", "c"]); // id tiebreak
-      expect(accelIds).toEqual(fbIds);
+      expect(a.vector.search("docs", q, { topK: 3 }).map((r) => r.id)).toEqual(["a", "b", "c"]);
     } finally {
-      accel.close();
-      fb.close();
+      a.close();
     }
   });
 });

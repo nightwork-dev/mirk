@@ -1,0 +1,23 @@
+{
+  "id": "store/atomic/get-versioned-missing-record",
+  "title": "getVersioned on a record in a collection that does not exist is null",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "c",
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

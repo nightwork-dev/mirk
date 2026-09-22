@@ -1,0 +1,52 @@
+{
+  "id": "store/kv-mixed-array-roundtrip",
+  "title": "an array of mixed scalars, objects, nulls and arrays round-trips exactly",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "mixed",
+        [
+          1,
+          "two",
+          null,
+          true,
+          {
+            "a": [
+              false,
+              null
+            ]
+          },
+          [],
+          {}
+        ]
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "mixed"
+      ],
+      "expect": {
+        "value": [
+          1,
+          "two",
+          null,
+          true,
+          {
+            "a": [
+              false,
+              null
+            ]
+          },
+          [],
+          {}
+        ]
+      }
+    }
+  ]
+}

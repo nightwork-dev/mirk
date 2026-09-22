@@ -1,0 +1,34 @@
+{
+  "id": "store/kv-keys-astral-code-point-order",
+  "title": "an astral key sorts after U+FFFD, which UTF-16 code unit order reverses",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "🔥",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "�",
+        2
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "�",
+          "🔥"
+        ]
+      }
+    }
+  ]
+}

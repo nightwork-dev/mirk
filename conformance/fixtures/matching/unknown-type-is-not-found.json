@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/matching/unknown-type-is-not-found",
+  "title": "loading an unregistered type throws unknown-type",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "widget:dark"
+      ],
+      "expect": {
+        "throws": "Unknown fixture type \"widget\"."
+      }
+    }
+  ]
+}

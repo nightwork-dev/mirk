@@ -1,0 +1,22 @@
+{
+  "id": "store/atomic/get-versioned-missing-key",
+  "title": "getVersioned on a key that was never written is null",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

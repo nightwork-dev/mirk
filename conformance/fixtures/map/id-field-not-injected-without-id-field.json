@@ -1,0 +1,57 @@
+{
+  "id": "fixtures/map/id-field-not-injected-without-id-field",
+  "title": "with no idField the entry value is untouched and may be any JSON value",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":[1,2],\"light\":\"plain\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:light"
+      ],
+      "expect": {
+        "value": "plain"
+      }
+    }
+  ]
+}

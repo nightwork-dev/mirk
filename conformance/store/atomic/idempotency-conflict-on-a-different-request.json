@@ -1,0 +1,92 @@
+{
+  "id": "store/atomic/idempotency-conflict-on-a-different-request",
+  "title": "a different request under a used key is refused with both digests and writes nothing",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": "req-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "8e6064070c677eb8bde95fd6fd3807261e6b0712511da9fa31a7fa4bc93d0f2b",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 2
+            }
+          ],
+          "idempotency": {
+            "key": "req-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "idempotency-conflict",
+          "key": "req-1",
+          "expectedRequestDigest": "8e6064070c677eb8bde95fd6fd3807261e6b0712511da9fa31a7fa4bc93d0f2b",
+          "receivedRequestDigest": "3c521bc07a088a0375b0e15bd8497ee320a62ad9a4b103b49107728e51860da0"
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "a"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 1,
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "search/odd-field-names-with-weights",
+  "title": "fields with dots, spaces and emoji sort into a stable weighted schema",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "dot-hit",
+            "fields": {
+              "title.with.dot": "matcha",
+              "emoji 🔥": "nothing",
+              "text": "nothing"
+            }
+          },
+          {
+            "id": "emoji-hit",
+            "fields": {
+              "title.with.dot": "nothing",
+              "emoji 🔥": "matcha",
+              "text": "nothing"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha",
+        {
+          "fieldWeights": {
+            "title.with.dot": 5,
+            "emoji 🔥": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "dot-hit",
+          "emoji-hit"
+        ]
+      }
+    }
+  ]
+}

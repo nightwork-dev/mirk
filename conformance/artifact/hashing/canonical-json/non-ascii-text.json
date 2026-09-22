@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/non-ascii-text",
+  "title": "accented and CJK text is emitted as raw UTF-8",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        "café ünï 中文"
+      ],
+      "expect": {
+        "value": "\"café ünï 中文\""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        "café ünï 中文"
+      ],
+      "expect": {
+        "value": "45e7e822afdd27e7e40f6b80bb165c0fb7396ec8e72f3bec1b5872c2d9c66aa5"
+      }
+    }
+  ]
+}

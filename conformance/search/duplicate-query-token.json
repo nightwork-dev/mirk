@@ -1,0 +1,56 @@
+{
+  "id": "search/duplicate-query-token",
+  "title": "a repeated query term leaves the ranking unchanged",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "a",
+            "text": "fox fox tail"
+          },
+          {
+            "id": "b",
+            "text": "fox"
+          },
+          {
+            "id": "c",
+            "text": "cat dog bird owl"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "fox"
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "fox fox"
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# Virtual workspace root for the Python side of Mirk.
+#
+# There is no `[project]` table on purpose: this directory ships nothing. It
+# exists so `mirk-fixtures` (and later `mirk-artifact`) resolve `mirk-store`
+# from the checkout instead of an index, and so all members share one lockfile
+# and one environment.
+
+[tool.uv.workspace]
+members = ["store", "fixtures"]
+
+[tool.uv.sources]
+mirk-store = { workspace = true }

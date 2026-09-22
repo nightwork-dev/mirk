@@ -1,0 +1,83 @@
+{
+  "id": "store/atomic/sequence-allocation-across-mixed-writes",
+  "title": "one sequence serves keys and records alike, in write order",
+  "ports": [
+    "atomic",
+    "kv",
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a",
+        1
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "x"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "b",
+        2
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 1,
+          "version": "conformance-v1"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "c",
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "id": "x"
+          },
+          "version": "conformance-v2"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "b"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 2,
+          "version": "conformance-v3"
+        }
+      }
+    }
+  ]
+}

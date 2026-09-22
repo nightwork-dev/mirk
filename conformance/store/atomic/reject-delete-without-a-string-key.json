@@ -1,0 +1,26 @@
+{
+  "id": "store/atomic/reject-delete-without-a-string-key",
+  "title": "delete needs a string key",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "delete",
+              "key": 5
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "delete requires a string key"
+      }
+    }
+  ]
+}

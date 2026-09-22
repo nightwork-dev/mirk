@@ -1,0 +1,79 @@
+{
+  "id": "store/count-ignores-sort-limit-and-offset",
+  "title": "count answers how many match the where clause and ignores paging",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "k": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "k": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "k": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "d",
+          "k": 2
+        }
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "k": 1
+          },
+          "sortBy": "id",
+          "limit": 1,
+          "offset": 1
+        }
+      ],
+      "expect": {
+        "value": 3
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "limit": 1
+        }
+      ],
+      "expect": {
+        "value": 4
+      }
+    }
+  ]
+}

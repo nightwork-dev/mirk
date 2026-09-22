@@ -1,0 +1,37 @@
+{
+  "id": "store/atomic/reject-record-target-with-an-empty-collection",
+  "title": "a record target needs a non-empty collection",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "record",
+                "collection": "",
+                "id": "x"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "record target requires string collection and id"
+      }
+    }
+  ]
+}

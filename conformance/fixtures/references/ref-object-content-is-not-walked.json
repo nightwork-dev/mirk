@@ -1,0 +1,77 @@
+{
+  "id": "fixtures/references/ref-object-content-is-not-walked",
+  "title": "nested content under a $ref object is invisible to the walk (item 82)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "themes/light.json": "{\"name\":\"Light\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"theme:dark\",\"inner\":{\"$ref\":\"theme:light\"}}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "referenceGraph",
+      "args": [],
+      "expect": {
+        "value": {
+          "nodes": [
+            {
+              "ref": "page:home",
+              "type": "page",
+              "id": "home",
+              "resolved": true
+            },
+            {
+              "ref": "theme:dark",
+              "type": "theme",
+              "id": "dark",
+              "resolved": true
+            },
+            {
+              "ref": "theme:light",
+              "type": "theme",
+              "id": "light",
+              "resolved": true
+            }
+          ],
+          "edges": [
+            {
+              "from": "page:home",
+              "to": "theme:dark",
+              "fieldPath": [
+                "theme"
+              ]
+            }
+          ],
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

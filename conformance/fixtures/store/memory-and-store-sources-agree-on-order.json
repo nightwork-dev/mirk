@@ -1,0 +1,45 @@
+{
+  "id": "fixtures/store/memory-and-store-sources-agree-on-order",
+  "title": "a memory source visits the same two paths in the same order as a store source",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "files",
+              "priority": 0,
+              "files": {
+                "themes/Z.json": "[1]",
+                "themes/a.json": "{\"one\":{\"id\":\"other\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "throws": "Fixture map documents must parse to an object keyed by fixture id."
+      }
+    }
+  ]
+}

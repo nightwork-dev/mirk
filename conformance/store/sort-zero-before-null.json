@@ -1,0 +1,56 @@
+{
+  "id": "store/sort-zero-before-null",
+  "title": "zero is a value and sorts before an explicit null",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "zero",
+          "n": 0
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "null",
+          "n": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "negative",
+          "n": -1
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "n"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "negative",
+          "zero",
+          "null"
+        ]
+      }
+    }
+  ]
+}

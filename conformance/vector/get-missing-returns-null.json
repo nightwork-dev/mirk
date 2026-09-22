@@ -1,0 +1,34 @@
+{
+  "id": "vector/get-missing-returns-null",
+  "title": "get on an id that was never upserted returns null",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "ghost"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

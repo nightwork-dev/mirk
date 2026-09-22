@@ -1,0 +1,36 @@
+{
+  "id": "store/atomic/reject-invalid-target-kind",
+  "title": "a target of an unknown kind is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "blob",
+                "key": "a"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "invalid store target"
+      }
+    }
+  ]
+}

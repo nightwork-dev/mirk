@@ -45,6 +45,11 @@ condition; `closed` means the item is intentionally outside Mirk.
 | MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | deferred; evidence surfaces implemented     |
 | MR-18 | Bitemporal statements persistence                         | `@mirk/statements`            | near    | implemented; receipt-green; Verdaccio-published |
 | MR-19 | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`      | near    | implemented; receipt-green; Verdaccio-published |
+| MR-20 | Python port of `@mirk/store` (phase 1)                    | `python/store` (mirk-store)   | near    | implemented; receipt-green                  |
+| MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | implemented; receipt-green                  |
+| MR-22 | vec0 path: delete                                         | `@mirk/store/sqlite`, `python/store` | near | implemented; receipt-green                  |
+| MR-22b | Does the libSQL native vector path execute?              | `@mirk/store-libsql`          | near    | proposed; probe needed                      |
+| MR-23 | Python port of `@mirk/fixtures`                           | `python/fixtures` (mirk-fixtures) | near | implemented; corpus-green; wheel path proven |
 
 ## Current closure
 
@@ -194,6 +199,78 @@ receipts, and typed conflict, backend, and indeterminate outcomes. It does not w
 ports with arbitrary transaction callbacks or pretend a sequence of independent writes is atomic.
 In-memory and SQLite contract tests cover the capability; publication and consumer/runtime adoption
 remain separate evidence.
+
+### MR-20 · Python port of `@mirk/store` (phase 1)
+
+The KV, collection, vector, search and graph ports run in Python over the same
+memory and SQLite backends, including SQLite files written by TypeScript. Neither
+language is the other's reference: both replay one generated corpus at
+[`conformance/`](../conformance/README.md), and the generator refuses to write a
+scenario the in-memory reference and the SQLite adapter disagree on. Both runners
+execute every scenario on both backends with no skips allowed, and their per-port
+counts match. Ranking and set membership are contract; bm25 scores are not.
+
+Read the contract in [`python-port-spec.md`](python-port-spec.md), the wave plan in
+[`python-port/plan-phase1.md`](python-port/plan-phase1.md), and the green run with its
+falsification in
+[`evidence/python-port/2026-09-02-phase1-green.md`](evidence/python-port/2026-09-02-phase1-green.md).
+Two probes back the parts of the contract that could not be settled by reading:
+[`2026-09-01-fts5-bm25-probe.md`](evidence/python-port/2026-09-01-fts5-bm25-probe.md)
+pins FTS5 tokenizer and bm25 semantics against the real extension, promoted to
+`python/store/tests/test_fts5_semantics.py`; and
+[`2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md)
+records that the vec0 acceleration branch never executed in either language, so no
+SQLite vector result in the corpus ever came from it; MR-22 deleted the branch. Publication is separate evidence:
+there is no Python registry alongside Verdaccio yet, so the package is unpublished
+by decision rather than by omission.
+
+### MR-21 · Collision-safe physical table naming
+
+Physical table names are `<prefix>_<sanitized>_<fnv32 base36>`. The code review
+of the phase 1 diff showed two collection names that sanitize identically and
+collide on the 32-bit hash alias one table (`"%$;**@"` and `"~,~$(*"` both hash
+to `jqoxun`). Both languages must share the layout for file compatibility, so
+the fix is a layout migration with a schema-version marker (`_mirk_meta`), not a
+patch. See `python-port/reviews/2026-09-01-code-review-luna.md`, finding P1-3.
+Implemented: a `_mirk_tables(kind, name, table_name UNIQUE)` registry records the
+physical table for each logical name, with the hash-derived name kept as the
+first candidate so an existing file is adopted in place. Only that first
+candidate is adoptable: a `_2`, `_3`, … candidate is skipped when it is claimed
+by another name or when a stray table already sits there without a registry row.
+
+### MR-22 · vec0 path: delete
+
+The sqlite-vec branch of the SQLite vector facet never executed in either
+language, and reviving it would break the corpus's exact-agreement contract, so
+the ruling was to delete it:
+[`evidence/python-port/2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md).
+Both languages now keep the exact float64 cosine path only, `meta.accelerated`
+is `false`, `forceJsCosine` and the Python `vec` extra are gone, `sqlite-vec` is
+no longer a peer dependency, and the three unit tests that compared the
+accelerated adapter against the fallback are deleted rather than rewritten.
+Legacy `vectors_vec_*` shadow tables in existing files are left in place; they
+are inert.
+
+### MR-22b · Does the libSQL native vector path execute?
+
+`@mirk/store-libsql` reports `accelerated` for its own `vector_top_k` path, and
+nothing has yet proven that path runs rather than falling through to JS cosine,
+which is exactly the failure MR-22 found next door.
+
+### MR-23 · Python port of `@mirk/fixtures`
+
+`mirk-fixtures` loads authored documents through layered memory, store and
+filesystem sources with the same precedence, patching, provenance, reference
+graph and seeding as `@mirk/fixtures`, proven by `conformance/fixtures/` (88
+scenarios, both backends, both languages). Fixture types declare `jsonSchema`;
+the engine is injected in both languages (Ajv 2020 in TypeScript tests,
+`jsonschema` in Python tests) so neither package carries a runtime dependency,
+and validation is compared by failing instance paths, never by message. Every
+`localeCompare` in `@mirk/fixtures` became code point order on the way. Evidence,
+including the wheel installed into a clean venv and run from outside the
+checkout:
+[`evidence/python-port/2026-09-02-fixtures-green.md`](evidence/python-port/2026-09-02-fixtures-green.md).
+The CLI and the package-resource source are not ported by ruling.
 
 ## Medium term
 

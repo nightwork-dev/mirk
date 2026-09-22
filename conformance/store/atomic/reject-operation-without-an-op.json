@@ -1,0 +1,26 @@
+{
+  "id": "store/atomic/reject-operation-without-an-op",
+  "title": "an operation with no op name is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "invalid atomic operation"
+      }
+    }
+  ]
+}

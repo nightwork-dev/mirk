@@ -1,0 +1,36 @@
+{
+  "id": "artifact/hashing/canonical-json/negative-zero-in-object",
+  "title": "negative zero prints as 0 inside an object",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "a": {
+            "$num": "-0"
+          }
+        }
+      ],
+      "expect": {
+        "value": "{\"a\":0}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "a": {
+            "$num": "-0"
+          }
+        }
+      ],
+      "expect": {
+        "value": "45b619e97b5d9b029af4522e9ffb02fa99ff2bf226c82ee22a7cc10269a557e8"
+      }
+    }
+  ]
+}

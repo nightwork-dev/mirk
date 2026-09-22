@@ -1,0 +1,102 @@
+{
+  "id": "store/lone-surrogate-values-are-storable",
+  "title": "a lone surrogate survives as a KV value and inside a record field",
+  "ports": [
+    "kv",
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "lone",
+        "\udfff"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "lone"
+      ],
+      "expect": {
+        "value": "\udfff"
+      }
+    },
+    {
+      "op": "set",
+      "args": [
+        "nested",
+        {
+          "a": [
+            "\ud800",
+            {
+              "b": "x\udc00y"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "nested"
+      ],
+      "expect": {
+        "value": {
+          "a": [
+            "\ud800",
+            {
+              "b": "x\udc00y"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "s",
+        {
+          "id": "r",
+          "text": "x\udc00y",
+          "pair": "😀"
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "s",
+        "r"
+      ],
+      "expect": {
+        "value": {
+          "id": "r",
+          "text": "x\udc00y",
+          "pair": "😀"
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "where": {
+            "pair": "😀"
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "r",
+            "text": "x\udc00y",
+            "pair": "😀"
+          }
+        ]
+      }
+    }
+  ]
+}

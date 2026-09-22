@@ -1,0 +1,60 @@
+{
+  "id": "search/empty-and-punctuation-queries",
+  "title": "empty, whitespace and punctuation-only queries return nothing",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "quick",
+            "text": "the quick brown fox"
+          },
+          {
+            "id": "lazy",
+            "text": "the lazy dog sleeps"
+          },
+          {
+            "id": "another",
+            "text": "a fox in the henhouse"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        ""
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "   "
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "!!!"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

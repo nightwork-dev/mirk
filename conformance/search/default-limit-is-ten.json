@@ -1,0 +1,87 @@
+{
+  "id": "search/default-limit-is-ten",
+  "title": "search without a limit returns at most ten results",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "doc-00",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-01",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-02",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-03",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-04",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-05",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-06",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-07",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-08",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-09",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-10",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-11",
+            "text": "identical text everywhere"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical"
+      ],
+      "expect": {
+        "ids": [
+          "doc-00",
+          "doc-01",
+          "doc-02",
+          "doc-03",
+          "doc-04",
+          "doc-05",
+          "doc-06",
+          "doc-07",
+          "doc-08",
+          "doc-09"
+        ]
+      }
+    }
+  ]
+}

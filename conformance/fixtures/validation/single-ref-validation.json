@@ -1,0 +1,56 @@
+{
+  "id": "fixtures/validation/single-ref-validation",
+  "title": "validate(ref) checks exactly that fixture",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/a.json": "{\"name\":1}",
+                "themes/b.json": "{\"name\":2}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [
+        "theme:a"
+      ],
+      "expect": {
+        "invalidPaths": [
+          "theme:a#name"
+        ]
+      }
+    }
+  ]
+}

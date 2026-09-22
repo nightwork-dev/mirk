@@ -1,0 +1,41 @@
+{
+  "id": "vector/metadata-absent",
+  "title": "a document upserted without metadata comes back without the field",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

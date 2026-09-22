@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/integral-float",
+  "title": "an integral value prints without a fraction",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        100
+      ],
+      "expect": {
+        "value": "100"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        100
+      ],
+      "expect": {
+        "value": "ad57366865126e55649ecb23ae1d48887544976efea46a48eb5d85a6eeb4d306"
+      }
+    }
+  ]
+}

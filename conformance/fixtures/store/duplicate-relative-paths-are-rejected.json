@@ -1,0 +1,50 @@
+{
+  "id": "fixtures/store/duplicate-relative-paths-are-rejected",
+  "title": "two rows producing the same relative path throw duplicate-relative-path (item 40)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "one",
+                  "relativePath": "themes/dark.json",
+                  "content": "{\"name\":\"One\"}"
+                },
+                {
+                  "id": "two",
+                  "relativePath": "themes/dark.json",
+                  "content": "{\"name\":\"Two\"}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "throws": "Source \"db\" failed to list entries: Store source \"db\" produced duplicate relative path \"themes/dark.json\"."
+      }
+    }
+  ]
+}

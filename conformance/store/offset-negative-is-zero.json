@@ -1,0 +1,93 @@
+{
+  "id": "store/offset-negative-is-zero",
+  "title": "a negative offset is treated as no offset",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p1",
+          "name": "alpha",
+          "category": "ai",
+          "priority": 1,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p2",
+          "name": "bravo",
+          "category": "ai",
+          "priority": 2,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p3",
+          "name": "charlie",
+          "category": "web",
+          "priority": 3,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p4",
+          "name": "delta",
+          "category": "web",
+          "priority": 4,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p5",
+          "name": "echo",
+          "category": "ops",
+          "priority": 5,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "projects",
+        {
+          "offset": -2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "p1",
+          "p2",
+          "p3",
+          "p4",
+          "p5"
+        ]
+      }
+    }
+  ]
+}

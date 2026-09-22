@@ -1,0 +1,27 @@
+{
+  "id": "store/atomic/reject-set-without-a-string-key",
+  "title": "set needs a string key",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": 5,
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "set requires a string key"
+      }
+    }
+  ]
+}

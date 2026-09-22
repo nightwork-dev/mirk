@@ -1,0 +1,43 @@
+{
+  "id": "store/kv-keys-unicode-prefix",
+  "title": "a prefix matches keys carrying non-ASCII characters",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "emoji-🔥",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "emoji-water",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "other",
+        3
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [
+        "emoji-"
+      ],
+      "expect": {
+        "value": [
+          "emoji-water",
+          "emoji-🔥"
+        ]
+      }
+    }
+  ]
+}

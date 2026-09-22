@@ -1,0 +1,19 @@
+{
+  "id": "store/kv-has-missing",
+  "title": "has is false for a key that was never set",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "has",
+      "args": [
+        "ghost"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

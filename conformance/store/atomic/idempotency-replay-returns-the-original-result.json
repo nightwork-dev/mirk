@@ -1,0 +1,105 @@
+{
+  "id": "store/atomic/idempotency-replay-returns-the-original-result",
+  "title": "replaying an identical request returns replayed with the same versions and outcome",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": "req-1",
+            "outcome": {
+              "ok": true,
+              "id": "r1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "65757068fb1cc8c92f5b1b2571ef9823f30351e3099f998166362a09b1410e62",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ],
+          "outcome": {
+            "id": "r1",
+            "ok": true
+          }
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": "req-1",
+            "outcome": {
+              "ok": true,
+              "id": "r1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "65757068fb1cc8c92f5b1b2571ef9823f30351e3099f998166362a09b1410e62",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ],
+          "outcome": {
+            "id": "r1",
+            "ok": true
+          }
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 1,
+          "version": "conformance-v1"
+        }
+      }
+    }
+  ]
+}

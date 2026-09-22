@@ -1,0 +1,58 @@
+{
+  "id": "fixtures/store/locator-is-never-parsed",
+  "title": "a store item is matched by relativePath; its id is an opaque locator (item 35)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "item.with.dots/and/slash.json",
+                  "relativePath": "themes/store-theme.json",
+                  "content": "{\"name\":\"Stored\"}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:store-theme"
+        ]
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:store-theme"
+      ],
+      "expect": {
+        "value": {
+          "name": "Stored"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "vector/search-unknown-collection",
+  "title": "search on a collection that was never written returns nothing",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "other",
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

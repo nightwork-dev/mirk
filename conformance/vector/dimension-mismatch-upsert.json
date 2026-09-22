@@ -1,0 +1,51 @@
+{
+  "id": "vector/dimension-mismatch-upsert",
+  "title": "upserting a vector of the wrong length throws the shared mismatch message",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "b",
+          "vector": [
+            1,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "Vector dimension mismatch: expected 3, got 4"
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "docs"
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

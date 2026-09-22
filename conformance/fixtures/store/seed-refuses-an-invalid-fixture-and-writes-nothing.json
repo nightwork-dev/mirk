@@ -1,0 +1,61 @@
+{
+  "id": "fixtures/store/seed-refuses-an-invalid-fixture-and-writes-nothing",
+  "title": "a missing reference makes seeding throw seed-validation-failed and write nothing (item 42)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"theme:missing\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "page": "pages_out"
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Fixture \"page:home\" failed validation before store seeding."
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "pages_out",
+        "home"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

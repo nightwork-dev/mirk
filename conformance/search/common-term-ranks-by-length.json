@@ -1,0 +1,44 @@
+{
+  "id": "search/common-term-ranks-by-length",
+  "title": "a term in every document still ranks by document length, shortest first",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "long",
+            "text": "term padding padding padding padding"
+          },
+          {
+            "id": "medium",
+            "text": "term padding padding"
+          },
+          {
+            "id": "short",
+            "text": "term"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "term"
+      ],
+      "expect": {
+        "ids": [
+          "short",
+          "medium",
+          "long"
+        ]
+      }
+    }
+  ]
+}

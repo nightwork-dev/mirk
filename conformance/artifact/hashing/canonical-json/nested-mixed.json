@@ -1,0 +1,52 @@
+{
+  "id": "artifact/hashing/canonical-json/nested-mixed",
+  "title": "nesting adds no separators beyond , and :",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "a": {
+            "b": {
+              "c": [
+                1,
+                2,
+                {
+                  "d": "e"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": "{\"a\":{\"b\":{\"c\":[1,2,{\"d\":\"e\"}]}}}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "a": {
+            "b": {
+              "c": [
+                1,
+                2,
+                {
+                  "d": "e"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": "f16ac108f5aa7e1af9d308eb47a1b02f21f2dfa65cc8f9a2af6b54b85d617502"
+      }
+    }
+  ]
+}

@@ -209,6 +209,19 @@ Repeated targets, empty batches, unsupported values, and exceeded request limits
 the decision point. Search, vector, graph, filesystem, object-store, network, and application
 callbacks are outside the batch.
 
+Request limits belong to the backend, not to the capability. They guard a wire contract, so how far
+the request travels decides the right value: a remote adapter serializes the batch and keeps the
+conservative portable set (128 operations, 128 conditions, 1 MiB), while an embedded backend that
+never leaves the process and commits one local transaction carries a larger set (4096 operations,
+1024 conditions, 16 MiB). Every atomic store publishes what it enforces as `atomicLimits`, a caller
+may override any field at construction, and a rejection names the limit and its value. A wrapper
+that binds or lifts a store (namespacing, sync-to-async) enforces and reports the inner store's
+limits unchanged.
+
+The idempotency outcome cap is the exception and is fixed at 64 KiB in every backend. An outcome is
+persisted under its key for the life of the receipt, and v1 receipts do not expire, so no backend
+may accept a larger one.
+
 Completed decisions are `applied`, `replayed`, `conflict`, or `idempotency-conflict`. Invalid input,
 unsupported operations, and limits are typed rejections. A known pre-commit backend failure is typed
 and retryable only when safe; a failure that may have happened after commit is indeterminate and

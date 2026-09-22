@@ -16,8 +16,6 @@ are implemented locally. Publication and consumer adoption need separate evidenc
 npm install @mirk/store
 # Using the SQLite adapter (@mirk/store/sqlite)? Add its peer:
 npm install better-sqlite3
-# Optional: vec0 KNN acceleration (graceful exact-JS fallback without it)
-npm install sqlite-vec
 ```
 
 ## Subpaths
@@ -32,7 +30,7 @@ npm install sqlite-vec
 | `@mirk/store/graph`        | graph helpers over the collection port (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters | none                                                  |
 | `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                                                  |
 | `@mirk/store/coordination` | SQLite-backed async keyed coordinator with leases, renewal, fencing generations, and ownership-loss checks                                       | `better-sqlite3` (peer)                               |
-| `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer), `sqlite-vec` (optional peer) |
+| `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer)                               |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
 port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
@@ -93,9 +91,43 @@ if (supportsAtomicMutation(kv)) {
 ```
 
 Atomic payloads are JSON-safe only. Requests reject duplicate targets, empty batches, malformed
-values, and values above the portable condition, operation, request, or outcome limits before any
-decision. Idempotency receipts never expire and are durable in SQLite. `namespaceStore()` preserves
-the capability while binding targets, versions, and receipt keys to the namespace.
+values, and oversized requests before any decision. Idempotency receipts never expire and are
+durable in SQLite. `namespaceStore()` preserves the capability while binding targets, versions, and
+receipt keys to the namespace.
+
+### Request limits are per backend
+
+Request bounds are a wire-contract guard, so their right value depends on how far the request
+travels. Every atomic store publishes what it enforces as `store.atomicLimits`, and a wrapper
+(`namespaceStore`, `toAsync`) reports the limits of the store underneath it.
+
+| Limit | `DEFAULT_ATOMIC_LIMITS` | `IN_PROCESS_ATOMIC_LIMITS` |
+| --- | --- | --- |
+| `maxOperations` | 128 | 4096 |
+| `maxConditions` | 128 | 1024 |
+| `maxRequestBytes` | 1 MiB | 16 MiB |
+
+`InMemoryKv` and `SqliteAdapter.kv` both run in the calling process and use the in-process set: the
+request is never serialized onto a network and the batch is one local `BEGIN IMMEDIATE`. A remote
+or unknown transport should keep `DEFAULT_ATOMIC_LIMITS`.
+
+Override any field at construction:
+
+```ts
+const adapter = new SqliteAdapter({
+  path: "world.sqlite",
+  atomicLimits: { maxOperations: 512 },
+});
+adapter.kv.atomicLimits.maxOperations; // 512
+adapter.kv.atomicLimits.maxConditions; // 1024, the unoverridden in-process default
+```
+
+A rejection names the limit and its value, for example
+`request has 11 operations; this store's maxOperations is 10`.
+
+**The idempotency outcome cap is not configurable.** An outcome is persisted under its key forever,
+so `MAX_ATOMIC_OUTCOME_BYTES` (64 KiB) is a hard cap in every backend regardless of the limits
+above.
 
 ### Collections
 
@@ -195,7 +227,6 @@ db.close();
 | `path`          | `string`   | DB file path, or `":memory:"`.                                                                                                                                 |
 | `db`            | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one.                                                                                          |
 | `dimensions`    | `number`   | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
-| `forceJsCosine` | `boolean`  | Pin the exact JS-cosine path even when `sqlite-vec` is installed (mainly for tests).                                                                           |
 | `busyTimeoutMs` | `number`   | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections.                                            |
 
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
@@ -223,10 +254,10 @@ OS processes, crash injection, reconciliation, reopen checks, and path-free oper
 recovery metrics. It does not start or require a writer daemon.
 
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by
-**exact cosine**. When the optional `sqlite-vec` peer is installed, search is transparently
-accelerated by vec0 using the `cosine` distance metric, so rankings are identical to the JS path;
-without it, the exact JS-cosine fallback runs. `db.vector.meta.accelerated` reports which path is
-live.
+**exact cosine**, accumulated in float64. That is the only search path this adapter has, so
+`db.vector.meta.accelerated` is always `false`. A sqlite-vec (vec0) branch used to sit beside it
+and never executed once; it was deleted under roadmap MR-22, and `sqlite-vec` is no longer a peer
+dependency. Files written by an older version still open and read normally.
 
 ## Async coordination
 

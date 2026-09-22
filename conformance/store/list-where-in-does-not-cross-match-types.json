@@ -1,0 +1,62 @@
+{
+  "id": "store/list-where-in-does-not-cross-match-types",
+  "title": "a numeric value never matches the same digits stored as text",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "n",
+          "f": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "s",
+          "f": "1"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          1
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "n"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "1"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "s"
+        ]
+      }
+    }
+  ]
+}

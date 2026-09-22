@@ -1,0 +1,44 @@
+{
+  "id": "store/kv-delete-existing",
+  "title": "delete returns true for an existing key and get is null afterwards",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "doomed",
+        "value"
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "doomed"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "doomed"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "doomed"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

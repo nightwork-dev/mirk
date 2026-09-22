@@ -11,6 +11,7 @@
 // and it is applied at load. graphRAG composes this primitive with @mirk/store/vector;
 // it does not live here.
 
+import { compareCodePoints } from "./order.js";
 import type { AsyncStore, AsyncStoreInQuery, StoreFilter } from "./types.js";
 
 /**
@@ -257,8 +258,8 @@ export async function traverse(
   }
 
   // ── Deterministic ordering for cross-backing parity. ──
-  reached.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  traversedEdges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  reached.sort(compareCodePoints);
+  traversedEdges.sort((a, b) => compareCodePoints(a.id, b.id));
 
   return { nodes: reached, edges: traversedEdges };
 }
@@ -336,8 +337,8 @@ export async function traverseFrontierBatched(
     frontier = next;
   }
 
-  reached.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  traversedEdges.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  reached.sort(compareCodePoints);
+  traversedEdges.sort((a, b) => compareCodePoints(a.id, b.id));
 
   return { nodes: reached, edges: traversedEdges };
 }

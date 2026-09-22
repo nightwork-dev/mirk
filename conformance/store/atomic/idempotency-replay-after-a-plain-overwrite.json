@@ -1,0 +1,106 @@
+{
+  "id": "store/atomic/idempotency-replay-after-a-plain-overwrite",
+  "title": "a replay returns the versions the original produced, even after a plain set moved on",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": "req-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "8e6064070c677eb8bde95fd6fd3807261e6b0712511da9fa31a7fa4bc93d0f2b",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "set",
+      "args": [
+        "a",
+        99
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "a"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": 99,
+          "version": "conformance-v2"
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": "req-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "8e6064070c677eb8bde95fd6fd3807261e6b0712511da9fa31a7fa4bc93d0f2b",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "a"
+      ],
+      "expect": {
+        "value": 99
+      }
+    }
+  ]
+}

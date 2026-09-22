@@ -1,0 +1,34 @@
+{
+  "id": "artifact/hashing/canonical-json/keys-astral-versus-bmp",
+  "title": "two keys differing only above the BMP order by code point, not UTF-16 unit",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "a�b": 1,
+          "a😀b": 2
+        }
+      ],
+      "expect": {
+        "value": "{\"a�b\":1,\"a😀b\":2}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "a�b": 1,
+          "a😀b": 2
+        }
+      ],
+      "expect": {
+        "value": "0ff7cc6004fe7e9ae9957f21054cfeb92a92bcf997ef37252c3912c52b329b94"
+      }
+    }
+  ]
+}

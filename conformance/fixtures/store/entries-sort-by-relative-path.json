@@ -1,0 +1,57 @@
+{
+  "id": "fixtures/store/entries-sort-by-relative-path",
+  "title": "store entries list in code point order of the relative path",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 0,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "zulu",
+                  "content": "{\"name\":\"Zulu\"}"
+                },
+                {
+                  "id": "Alpha",
+                  "content": "{\"name\":\"Alpha\"}"
+                },
+                {
+                  "id": "alpha",
+                  "content": "{\"name\":\"alpha\"}"
+                }
+              ],
+              "pathPrefix": "themes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": [
+          "theme:Alpha",
+          "theme:alpha",
+          "theme:zulu"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "id": "artifact/hashing/bytes/sha256-hex-empty-string",
+  "title": "sha256Hex over the empty string is the empty digest",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "sha256Hex",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

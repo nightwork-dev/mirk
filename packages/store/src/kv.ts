@@ -28,10 +28,15 @@ export type {
   AtomicCompletedMutationResult,
   SyncAtomicMutationStore,
   AsyncAtomicMutationStore,
+  AtomicMutationLimits,
 } from "./atomic.js";
 export {
   supportsAtomicMutation,
   supportsAsyncAtomicMutation,
+  DEFAULT_ATOMIC_LIMITS,
+  IN_PROCESS_ATOMIC_LIMITS,
+  resolveAtomicLimits,
 } from "./atomic.js";
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
+export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";

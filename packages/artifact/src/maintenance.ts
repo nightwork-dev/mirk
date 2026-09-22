@@ -13,6 +13,7 @@ import type {
   StoredArtifactRecord,
 } from "./maintenance-types.js";
 
+import { compareCodePoints } from "@mirk/store";
 import { digestStream, makeId, metadataFingerprint } from "./util.js";
 import type { ArtifactLineageEdge } from "./types.js";
 
@@ -20,6 +21,7 @@ export interface ArtifactMaintenanceOptions {
   now?: () => number;
   ownerId?: string;
   leaseTtlMs?: number;
+  auditIdFactory?: () => string;
 }
 
 type SnapshotObject = {
@@ -39,6 +41,7 @@ export class ArtifactMaintenance {
   readonly #now: () => number;
   readonly #ownerId: string;
   readonly #leaseTtlMs: number;
+  readonly #auditIdFactory: () => string;
   readonly #snapshots = new Map<string, Snapshot>();
 
   constructor(
@@ -51,10 +54,11 @@ export class ArtifactMaintenance {
       options.ownerId ??
       `artifact-maintenance-${Math.random().toString(36).slice(2)}`;
     this.#leaseTtlMs = Math.max(1, options.leaseTtlMs ?? 30_000);
+    this.#auditIdFactory = options.auditIdFactory ?? makeId;
   }
 
   async audit(): Promise<ArtifactAuditReport> {
-    const auditId = makeId();
+    const auditId = this.#auditIdFactory();
     const records = await this.#allRecords();
     const snapshot: Snapshot = {
       refs: new Map(),
@@ -629,16 +633,6 @@ export async function auditArtifacts(
   options?: ArtifactMaintenanceOptions
 ): Promise<ArtifactAuditReport> {
   return new ArtifactMaintenance(objects, repository, options).audit();
-}
-
-function compareCodePoints(a: string, b: string): number {
-  if (a === b) return 0;
-  const aa = Array.from(a, (char) => char.codePointAt(0)!);
-  const bb = Array.from(b, (char) => char.codePointAt(0)!);
-  const length = Math.min(aa.length, bb.length);
-  for (let i = 0; i < length; i += 1)
-    if (aa[i] !== bb[i]) return aa[i]! < bb[i]! ? -1 : 1;
-  return aa.length < bb.length ? -1 : 1;
 }
 
 export type {

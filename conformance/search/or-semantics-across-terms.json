@@ -1,0 +1,44 @@
+{
+  "id": "search/or-semantics-across-terms",
+  "title": "a multi-term query matches documents holding any of the terms",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "quick",
+            "text": "the quick brown fox"
+          },
+          {
+            "id": "lazy",
+            "text": "the lazy dog sleeps"
+          },
+          {
+            "id": "another",
+            "text": "a fox in the henhouse"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "fox dog"
+      ],
+      "expect": {
+        "ids": [
+          "lazy",
+          "quick",
+          "another"
+        ]
+      }
+    }
+  ]
+}
