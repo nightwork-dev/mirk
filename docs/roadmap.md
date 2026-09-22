@@ -1,330 +1,81 @@
 # Roadmap — mirk
 
-Mirk provides substrate-level storage primitives with no application domain baked in. New primitives
-must have a generic contract, clear backend parity, and demonstrated use beyond a single application.
-Shipped history remains visible here so stable roadmap IDs are never reused.
+Mirk provides storage primitives with no application domain baked in. A new primitive needs a
+generic contract, parity across real backends, and conformance tests for its critical behavior.
+Every item keeps a stable `MR-NN` identifier; IDs are never reused.
 
-Detailed sequencing for the current closure program lives in
-[`substrate-work-spec.md`](substrate-work-spec.md). Mirk maintains package-owned
-port and adapter contract suites; consuming projects retain their own
-integration and deployment evidence outside this repository.
+Shipped items are documented in their package READMEs. This page tracks what exists and what is
+still open.
 
-Status vocabulary and evidence precedence are defined in the root
-[`README.md`](../README.md). This roadmap records Mirk-owned implementation and
-release evidence; it does not become a consumer conformance matrix.
+| ID     | Title                                                     | Package                              | Status        |
+| ------ | --------------------------------------------------------- | ------------------------------------ | ------------- |
+| MR-01  | Graph primitive — edge model and traversal                | `@mirk/store/graph`                  | shipped       |
+| MR-02  | Event primitive                                           | —                                    | closed        |
+| MR-03  | Addressable no-drop inbox                                 | —                                    | deferred      |
+| MR-04  | Batch/IN collection matching                              | `@mirk/store`                        | shipped       |
+| MR-05  | Full-text search primitive                                | `@mirk/store/search`                 | shipped       |
+| MR-06  | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`                 | shipped       |
+| MR-07  | Authored-data fixture loader                              | `@mirk/fixtures`                     | shipped       |
+| MR-08  | Qdrant vector adapter                                     | `@mirk/vector-qdrant`                | proposed      |
+| MR-09  | Shared-connection SurrealDB adapters                      | `@mirk/surreal`                      | shipped       |
+| MR-10  | Durable artifact substrate                                | `@mirk/artifact`                     | shipped       |
+| MR-11  | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`               | shipped       |
+| MR-12  | PostgreSQL async store adapter                            | `@mirk/store-postgres`               | shipped       |
+| MR-13  | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search`        | proposed      |
+| MR-14  | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector`        | proposed      |
+| MR-15  | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                        | shipped       |
+| MR-16  | Backend-neutral atomic mutation capabilities              | `@mirk/store/atomic`                 | shipped       |
+| MR-17  | Coordinated multi-process SQLite writer profile           | —                                    | deferred      |
+| MR-18  | Bitemporal statements persistence                         | `@mirk/statements`                   | shipped       |
+| MR-19  | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`             | shipped       |
+| MR-20  | Python port of `@mirk/store`                              | `python/store` (`mirk-store`)        | shipped       |
+| MR-21  | Collision-safe physical table naming                      | `@mirk/store`, `python/store`        | shipped       |
+| MR-22  | Remove the never-executed sqlite-vec path                 | `@mirk/store/sqlite`, `python/store` | shipped       |
+| MR-22b | Does the libSQL native vector path execute?               | `@mirk/store-libsql`                 | open question |
+| MR-23  | Python port of `@mirk/fixtures`                           | `python/fixtures` (`mirk-fixtures`)  | shipped       |
 
-## How this roadmap works
+"Shipped" means implemented and tested on the default branch. Published versions are listed in
+[`CHANGELOG.md`](../CHANGELOG.md). The Python packages build as wheels but are not yet on an index.
 
-Every item has a stable `MR-NN` identifier, package, horizon, and status. Items move forward when the
-port is proven, real backends can meet its semantics, and critical behavior has conformance tests.
-Use the status words from the root README: `implemented`, `receipt-green`,
-`Verdaccio-published`, `public-npm-published`, `remote/tagged`,
-`consumer-installed`, `consumer-adopted`, and `runtime/deployment-proven`.
-`proposed` marks an admitted roadmap item with no implementation yet;
-`consumer-gated`, `parity-gated`, and `deferred` describe an unmet admission
-condition; `closed` means the item is intentionally outside Mirk.
-
-| ID    | Title                                                     | Package                       | Horizon | Status                                      |
-| ----- | --------------------------------------------------------- | ----------------------------- | ------- | ------------------------------------------- |
-| MR-01 | Graph primitive — edge model and traversal                | `@mirk/store/graph`           | near    | implemented; receipt-green                 |
-| MR-02 | Event primitive                                           | —                             | med     | closed; outside Mirk                        |
-| MR-03 | Addressable no-drop inbox                                 | `@mirk/inbox`                 | maybe   | deferred; needs a storage-only contract     |
-| MR-04 | Batch/IN collection matching                              | `@mirk/store`                 | near    | implemented; receipt-green                 |
-| MR-05 | Full-text search primitive                                | `@mirk/store/search`          | near    | implemented; receipt-green                 |
-| MR-06 | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`          | near    | implemented; receipt-green                 |
-| MR-07 | Authored-data fixture loader                              | `@mirk/fixtures`              | near    | implemented; receipt-green; Verdaccio-published |
-| MR-08 | Qdrant vector adapter                                     | `@mirk/vector-qdrant`         | med     | proposed; consumer-gated                    |
-| MR-09 | Shared-connection SurrealDB adapters                      | `@mirk/surreal`               | med     | implemented; receipt-green; Verdaccio-published |
-| MR-10 | Durable artifact substrate                                | `@mirk/artifact`              | near    | implemented; receipt-green; Verdaccio-published |
-| MR-11 | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`        | near    | implemented; receipt-green; Verdaccio-published |
-| MR-12 | PostgreSQL async store adapter                            | `@mirk/store-postgres`        | near    | implemented; Verdaccio-published; receipt requires a live PostgreSQL |
-| MR-13 | PostgreSQL native full-text facet                         | `@mirk/store-postgres/search` | med     | proposed; parity-gated                      |
-| MR-14 | PostgreSQL pgvector facet                                 | `@mirk/store-postgres/vector` | med     | proposed; consumer-gated                    |
-| MR-15 | Shared logical namespaces and bounded SQLite writer waits | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
-| MR-16 | Backend-neutral atomic mutation capabilities              | `@mirk/store`                 | near    | implemented; receipt-green; Verdaccio-published |
-| MR-17 | Coordinated multi-process SQLite writer profile           | package TBD                   | med     | deferred; evidence surfaces implemented     |
-| MR-18 | Bitemporal statements persistence                         | `@mirk/statements`            | near    | implemented; receipt-green; Verdaccio-published |
-| MR-19 | OpenDAL object-storage artifact adapter                   | `@mirk/artifact-opendal`      | near    | implemented; receipt-green; Verdaccio-published |
-| MR-20 | Python port of `@mirk/store` (phase 1)                    | `python/store` (mirk-store)   | near    | implemented; receipt-green                  |
-| MR-21 | Collision-safe physical table naming                      | `@mirk/store`, `python/store` | med     | implemented; receipt-green                  |
-| MR-22 | vec0 path: delete                                         | `@mirk/store/sqlite`, `python/store` | near | implemented; receipt-green                  |
-| MR-22b | Does the libSQL native vector path execute?              | `@mirk/store-libsql`          | near    | proposed; probe needed                      |
-| MR-23 | Python port of `@mirk/fixtures`                           | `python/fixtures` (mirk-fixtures) | near | implemented; corpus-green; wheel path proven |
-
-## Current closure
-
-The current train at `07cb48e` is `implemented` and `receipt-green` for 9 of 10
-packages: they pass the clean `pnpm release:receipt --all` checks, with receipts
-tracked in `docs/evidence/receipts/2026-08-12/`. `@mirk/store-postgres` has no
-receipt at this commit. Its whole suite requires `MIRK_POSTGRES_TEST_URL`, and
-since receipts now record executed test counts, publication mode refuses a
-receipt for a run that executed zero tests. CI supplies that URL; a local
-workstation without PostgreSQL cannot produce this package's receipt.
-Their versions are present in
-local Verdaccio, but no receipt binds that registry metadata to this commit.
-The commit is pushed but not tagged, and this roadmap does not claim
-`public-npm-published` or deployment proof. `templates/sigil-chat` provides one
-external `consumer-adopted` current-train path; Mirk keeps that evidence outside
-the repository rather than maintaining a consumer matrix.
-
-The next gates are independent review of the proposed closure specification,
-commit/tag and registry publication provenance, and another current-train
-consumer. No new storage category or broadening is admitted before those gates.
-
-## Near term
-
-### MR-01 · Graph primitive
-
-`@mirk/store/graph` ships flat edge records, `neighbors()`, `traverse()`, and
-`traverseFrontierBatched()` over the ordinary collection port. The optional `AsyncGraphTraversal`
-capability lets an engine provide native traversal without changing the public result contract.
-Traversal is cycle-safe, preserves complete edge records, supports direction and depth bounds, and
-applies caller policy through `edgeFilter`.
-
-### MR-04 · Batch/IN collection matching
-
-The optional `SyncStoreInQuery` and `AsyncStoreInQuery` capabilities add `listWhereIn()`. Graph
-frontier traversal uses the capability when available and retains the load-once fallback otherwise.
-Implementations must preserve normal `StoreFilter` semantics and deterministic traversal results.
-
-### MR-05 · Full-text search primitive
-
-`@mirk/store/search` provides `SearchStore` and `AsyncSearchStore`, an in-memory BM25-style
-reference, sync-to-async lifting, and an SQLite FTS5 facet. Documents may use a single text value or
-stable named fields with query-time field weights. Ranking, filters, schema mismatch behavior,
-updates, removals, and reopen persistence are covered by parity tests.
-
-### MR-06 · Lazy SQLite vector dimensions
-
-`SqliteAdapter` can open without vector dimensions. The vector facet learns dimensions from its
-first write, persists them, and enforces them on reopen. Searching an empty unconfigured vector
-store still requires known dimensions, preventing an accidental schema choice.
-
-### MR-07 · Authored-data fixture loader
-
-`@mirk/fixtures` validates and materializes authored data with deterministic layering, patch
-overlays, references, provenance, and diagnostics. Core remains parser-injected and Standard Schema
-based. Store integration lives at `@mirk/fixtures/store` and can both load fixture records and seed
-ordinary collections.
-
-Filesystem and file-backed package-resource sources, the explicit Node-only CLI subpath, and the
-`mirk-fixtures` binary are implemented locally. Optional parser plugins
-and bundled browser/edge package manifests remain separately gated future work. Publication and
-consumer/runtime adoption are not asserted by this roadmap row.
-
-Specification: [`fixtures-spec.md`](fixtures-spec.md). Package documentation:
-[`packages/fixtures/README.md`](../packages/fixtures/README.md).
+## Open
 
 ### MR-08 · Qdrant vector adapter
 
-A server-side implementation of the existing vector port. It should arrive when an actual workload
-outgrows the embedded and general-purpose database adapters. Release requires cross-backend cosine,
-filter, update, removal, and dimensionality parity.
-
-### MR-09 · Shared-connection SurrealDB adapters
-
-`@mirk/surreal` owns one `SurrealConnection`; separately imported `/store`, `/graph`, `/vector`,
-`/search`, `/storage`, `/node`, and `/wasm` subpaths can share it without loading unrelated
-capabilities.
-
-The graph facet uses native relation records and bounded engine traversal while preserving the same
-public traversal contract as the generic helpers. Store, vector, graph, object storage, and artifact
-composition are tested against the Node embedded engine and a loopback server connection.
-
-The browser WASM helper supports `mem://`. Persistent `indxdb://` remains disabled until a released
-upstream engine containing the IndexedDB transaction fix passes Mirk's write/reopen/read browser
-gate. Weighted multi-field search also remains an explicit unsupported capability until the engine
-can meet the search port.
-
-Application-specific schemas, temporal validity rules, live-query policies, and domain query shapes
-remain above Mirk's adapters.
-
-### MR-10 · Durable artifact substrate
-
-`@mirk/artifact` provides durable byte-bearing outputs, object-storage ports, integrity, portable
-metadata, and source/derivative lineage. It deliberately excludes jobs, providers, workers, retries,
-progress, approval, and application-specific attachment semantics.
-
-The core package, store repository, filesystem object store, OpenDAL binding, repository-atomic
-finalization, explicit single-writer versus atomic coordinator mode, repository-owned shared-writer /
-exclusive-deletion object leases, and the read-only audit plus plan-first maintenance repair subpath
-are implemented locally. These storage leases are distinct from
-execution-system resource leases. Adapters without the required capability remain single-writer or
-reject destructive repair; publication and consumer/runtime adoption are separate evidence.
-
-Metadata uses `@mirk/store/kv`; bytes use an `ObjectStore`. `@mirk/artifact-opendal` supplies the
-optional OpenDAL adapter.
-
-Specification: [`artifact-spec.md`](artifact-spec.md).
-
-### MR-11 · Markdown and YAML-headmatter store
-
-`@mirk/store-markdown` implements `SyncStore` over one Markdown file per record. Configurable field
-mappings support frontmatter, whole-body content, or named sections. Reads reflect current disk
-state; writes preserve unknown frontmatter and unconfigured body sections, use atomic replacement,
-regenerate an optional index, and can create one local Git commit per mutation.
-
-Version 1 is single-writer and last-write-wins across processes. Corrupt records produce one typed
-aggregate error containing every affected path because the current collection contract cannot return
-healthy records and diagnostics together.
-
-### MR-12 · PostgreSQL async store adapter
-
-`@mirk/store-postgres` implements `AsyncStore` and `AsyncStoreInQuery` over one owned or
-caller-provided `pg.Pool`. Fixed JSONB-backed KV and records tables keep collection names as bound
-data. Tests cover exact top-level filters, insertion and sorted-tie ordering, null/missing behavior,
-literal key prefixes, persistence, pool ownership, pagination, and hostile identifiers against a
-real PostgreSQL server.
-
-Specification: [`store-postgres-spec.md`](store-postgres-spec.md). Package documentation:
-[`packages/store-postgres/README.md`](../packages/store-postgres/README.md).
-
-### MR-15 · Shared logical namespaces and bounded SQLite writer waits
-
-`@mirk/store@0.9.0` implements logical `namespaceStore()` views, a 30-second default SQLite busy timeout,
-and synchronous `deferred`, `immediate`, and `exclusive` transaction modes on `SqliteAdapter`. These
-are the admitted direct-connection foundation; they do not claim that direct SQLite is a universal
-multi-process default.
-
-The broader concurrency specification is split across MR-15's shipped foundation, MR-16's implemented
-optional atomic mutation contract, and MR-17's implemented evidence surfaces with its coordinated
-writer profile still deferred:
-[`shared-store-concurrency-spec.md`](shared-store-concurrency-spec.md).
-
-### MR-16 · Backend-neutral atomic mutation capabilities
-
-`@mirk/store@0.9.0` implements a deliberately optional declarative atomic mutation
-capability with versioned reads, explicit conditions, bounded mutation batches, no-expiry idempotency
-receipts, and typed conflict, backend, and indeterminate outcomes. It does not widen the base store
-ports with arbitrary transaction callbacks or pretend a sequence of independent writes is atomic.
-In-memory and SQLite contract tests cover the capability; publication and consumer/runtime adoption
-remain separate evidence.
-
-### MR-20 · Python port of `@mirk/store` (phase 1)
-
-The KV, collection, vector, search and graph ports run in Python over the same
-memory and SQLite backends, including SQLite files written by TypeScript. Neither
-language is the other's reference: both replay one generated corpus at
-[`conformance/`](../conformance/README.md), and the generator refuses to write a
-scenario the in-memory reference and the SQLite adapter disagree on. Both runners
-execute every scenario on both backends with no skips allowed, and their per-port
-counts match. Ranking and set membership are contract; bm25 scores are not.
-
-Read the contract in [`python-port-spec.md`](python-port-spec.md), the wave plan in
-[`python-port/plan-phase1.md`](python-port/plan-phase1.md), and the green run with its
-falsification in
-[`evidence/python-port/2026-09-02-phase1-green.md`](evidence/python-port/2026-09-02-phase1-green.md).
-Two probes back the parts of the contract that could not be settled by reading:
-[`2026-09-01-fts5-bm25-probe.md`](evidence/python-port/2026-09-01-fts5-bm25-probe.md)
-pins FTS5 tokenizer and bm25 semantics against the real extension, promoted to
-`python/store/tests/test_fts5_semantics.py`; and
-[`2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md)
-records that the vec0 acceleration branch never executed in either language, so no
-SQLite vector result in the corpus ever came from it; MR-22 deleted the branch. Publication is separate evidence:
-there is no Python registry alongside Verdaccio yet, so the package is unpublished
-by decision rather than by omission.
-
-### MR-21 · Collision-safe physical table naming
-
-Physical table names are `<prefix>_<sanitized>_<fnv32 base36>`. The code review
-of the phase 1 diff showed two collection names that sanitize identically and
-collide on the 32-bit hash alias one table (`"%$;**@"` and `"~,~$(*"` both hash
-to `jqoxun`). Both languages must share the layout for file compatibility, so
-the fix is a layout migration with a schema-version marker (`_mirk_meta`), not a
-patch. See `python-port/reviews/2026-09-01-code-review-luna.md`, finding P1-3.
-Implemented: a `_mirk_tables(kind, name, table_name UNIQUE)` registry records the
-physical table for each logical name, with the hash-derived name kept as the
-first candidate so an existing file is adopted in place. Only that first
-candidate is adoptable: a `_2`, `_3`, … candidate is skipped when it is claimed
-by another name or when a stray table already sits there without a registry row.
-
-### MR-22 · vec0 path: delete
-
-The sqlite-vec branch of the SQLite vector facet never executed in either
-language, and reviving it would break the corpus's exact-agreement contract, so
-the ruling was to delete it:
-[`evidence/python-port/2026-09-02-vec0-branch-dead.md`](evidence/python-port/2026-09-02-vec0-branch-dead.md).
-Both languages now keep the exact float64 cosine path only, `meta.accelerated`
-is `false`, `forceJsCosine` and the Python `vec` extra are gone, `sqlite-vec` is
-no longer a peer dependency, and the three unit tests that compared the
-accelerated adapter against the fallback are deleted rather than rewritten.
-Legacy `vectors_vec_*` shadow tables in existing files are left in place; they
-are inert.
-
-### MR-22b · Does the libSQL native vector path execute?
-
-`@mirk/store-libsql` reports `accelerated` for its own `vector_top_k` path, and
-nothing has yet proven that path runs rather than falling through to JS cosine,
-which is exactly the failure MR-22 found next door.
-
-### MR-23 · Python port of `@mirk/fixtures`
-
-`mirk-fixtures` loads authored documents through layered memory, store and
-filesystem sources with the same precedence, patching, provenance, reference
-graph and seeding as `@mirk/fixtures`, proven by `conformance/fixtures/` (88
-scenarios, both backends, both languages). Fixture types declare `jsonSchema`;
-the engine is injected in both languages (Ajv 2020 in TypeScript tests,
-`jsonschema` in Python tests) so neither package carries a runtime dependency,
-and validation is compared by failing instance paths, never by message. Every
-`localeCompare` in `@mirk/fixtures` became code point order on the way. Evidence,
-including the wheel installed into a clean venv and run from outside the
-checkout:
-[`evidence/python-port/2026-09-02-fixtures-green.md`](evidence/python-port/2026-09-02-fixtures-green.md).
-The CLI and the package-resource source are not ported by ruling.
-
-## Medium term
+A server-side implementation of the existing vector port, for workloads that outgrow the embedded
+and general-purpose database adapters. Release requires cross-backend cosine, filter, update,
+removal, and dimensionality parity.
 
 ### MR-13 · PostgreSQL native full-text search facet
 
-A separately imported async search facet over the MR-12 pool using PostgreSQL `tsvector`, `tsquery`,
-and GIN indexes. It lands only when field weighting, filtering, ranking order, updates, removals, and
-empty-query behavior meet the existing search contract. Language configuration and index migrations
-must be explicit.
+A separately imported async search facet over the `@mirk/store-postgres` pool using `tsvector`,
+`tsquery`, and GIN indexes. It lands only when field weighting, filtering, ranking order, updates,
+removals, and empty-query behavior meet the existing search contract.
 
 ### MR-14 · PostgreSQL pgvector facet
 
-A separately imported `AsyncVectorStore` facet sharing the MR-12 pool. Exact cosine search is the
-parity baseline. The vector extension and codec remain dependencies of this subpath only; HNSW and
-IVFFlat are explicit operational options because they may trade recall for latency.
+A separately imported `AsyncVectorStore` facet sharing the same pool. Exact cosine search is the
+parity baseline; HNSW and IVFFlat are explicit options because they trade recall for latency.
 
 ### MR-17 · Coordinated multi-process SQLite writer profile
 
-`@mirk/store@0.9.0` implements read-only SQLite inspection, explicit checkpoint
-operations, declared generic thresholds, and a two-process fault/contention harness with generated
-records, reconciliation, reopen, and WAL evidence. The coordinated client/writer boundary remains
-deferred: no writer daemon is part of MR-17, and any future service requires separate protocol and
-authorization evidence. Direct multi-process SQLite remains an explicit opt-in rather than the
-default.
+SQLite inspection and explicit checkpoints ship in `@mirk/store/sqlite`, and several processes may
+open one file directly. A coordinated writer that serializes many processes' writes through one
+owner is deferred; use PostgreSQL for sustained multi-writer workloads.
 
-### Migration and release evidence
+### MR-22b · Does the libSQL native vector path execute?
 
-`@mirk/migrate@0.2.0` is `Verdaccio-published` with plan-bound checkpoint v2, explicit v1
-upgrades, caller-owned post-copy verification, and the existing manifest copy lanes. Public npm
-publication and consumer adoption are separate states; the current-train consumer evidence is
-external and is not a Mirk conformance matrix.
-
-`pnpm release:verify` exercises package build, tests, typecheck, packed contents, export resolution,
-dependency boundaries, and a temporary generic install. `pnpm release:receipt` additionally requires
-a clean source tree for a publication receipt. These commands provide package-owned build evidence;
-they do not prove registry publication or downstream runtime adoption.
-
-### `@mirk/statements` · specialized package
-
-`@mirk/statements` is a SQLite-backed persistence package for the separately versioned
-`statements-storage/v1` schema, including admission receipts, bitemporal indexes, replay, and its
-legacy dual-read parity harness. It may use Mirk's general store and coordination capabilities, but
-its domain-shaped schema is independently versioned and does not widen the general store ports.
-
-### MR-02 · Event primitive
-
-Closed. Event delivery, wake scheduling, and transport orchestration are not storage primitives and
-do not belong in Mirk. Mirk may supply durable records beneath such systems without owning their
-messaging contract.
-
-## Maybe later
+`@mirk/store-libsql` reports `accelerated` for its `vector_top_k` path, but no test yet shows that
+path executes rather than falling back to JS cosine. Until one does, treat libSQL vector search as
+exact cosine.
 
 ### MR-03 · Addressable no-drop inbox
 
-A possible append-log and status primitive layered over `@mirk/store/kv`. It is deferred and treated
-as closed for the current roadmap until a proven storage-only contract emerges. A messaging or
-workflow framework is out of scope; no inbox package is admitted on the basis of a single consumer.
+A possible append-log and status primitive over `@mirk/store/kv`, deferred until a storage-only
+contract emerges. A messaging or workflow framework is out of scope.
+
+## Closed
+
+### MR-02 · Event primitive
+
+Event delivery, wake scheduling, and transport orchestration are not storage primitives. Mirk may
+supply durable records beneath such systems without owning their messaging contract.

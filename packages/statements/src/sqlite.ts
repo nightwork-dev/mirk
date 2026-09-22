@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
+import { compareCodePoints } from "@mirk/store";
 import {
   createSqliteCoordinator,
   type AsyncCoordinator,
@@ -23,6 +24,36 @@ import {
   type StatementModality,
   type StatementBackfillState,
 } from "./types.js";
+
+export type StatementStoreErrorCode =
+  | "missing-database-path"
+  | "missing-required-field"
+  | "terminal-initial-status"
+  | "invalid-status-transition"
+  | "world-mismatch"
+  | "branch-mismatch"
+  | "missing-actor-instance"
+  | "unexpected-actor-instance"
+  | "missing-provenance-source"
+  | "missing-admission-receipt";
+
+/** Thrown when a statement store call is given invalid input. */
+export class StatementStoreError extends Error {
+  declare readonly name: "StatementStoreError";
+  readonly code: StatementStoreErrorCode;
+
+  constructor(code: StatementStoreErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(StatementStoreError.prototype, "name", {
+  value: "StatementStoreError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export interface SqliteStatementStoreOptions {
   readonly path: string;
@@ -72,7 +103,7 @@ export class SqliteStatementStore {
 
   constructor(options: SqliteStatementStoreOptions) {
     if (!options.path)
-      throw new Error("SqliteStatementStore requires a database path.");
+      throw new StatementStoreError("missing-database-path", "SqliteStatementStore requires a database path.");
     this.#ownsDb = options.db === undefined;
     this.#db =
       options.db ??
@@ -344,12 +375,15 @@ export class SqliteStatementStore {
           const parsed = JSON.parse(
             existing.result_json
           ) as StatementOperationResult;
-          if (existing.fingerprint === fingerprint)
+          const legacy = legacyFingerprintFor(request);
+          if (
+            existing.fingerprint === fingerprint ||
+            existing.fingerprint === legacy
+          )
             return { ...parsed, replay: true };
-          const conflict = this.#existingIdempotencyConflict(
-            request,
-            fingerprint
-          );
+          const conflict =
+            this.#existingIdempotencyConflict(request, fingerprint) ??
+            this.#existingIdempotencyConflict(request, legacy);
           if (conflict) {
             return {
               ...(JSON.parse(conflict.result_json) as StatementOperationResult),
@@ -697,8 +731,8 @@ export class SqliteStatementStore {
     status: StatementBackfillState["status"],
     cursor?: unknown
   ): StatementBackfillState {
-    if (!backfillId) throw new Error("backfillId is required.");
-    if (!sourceName) throw new Error("sourceName is required.");
+    if (!backfillId) throw new StatementStoreError("missing-required-field", "backfillId is required.");
+    if (!sourceName) throw new StatementStoreError("missing-required-field", "sourceName is required.");
     const updatedAt = this.#now().toISOString();
     this.#db
       .prepare(
@@ -746,15 +780,33 @@ function statementRefFor(request: StatementAdmissionRequest): StatementRef {
 }
 
 function fingerprintFor(request: StatementAdmissionRequest): string {
-  return createHash("sha256").update(stableStringify(request)).digest("hex");
+  return createHash("sha256")
+    .update(stableStringify(request, compareCodePoints))
+    .digest("hex");
 }
 
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+// Receipts written before 0.2.1 hold a fingerprint whose object keys were
+// ordered by `localeCompare`. Replays check it as a fallback so those rows still
+// match; it is only ever read, never written.
+function legacyFingerprintFor(request: StatementAdmissionRequest): string {
+  return createHash("sha256")
+    .update(stableStringify(request, (a, b) => a.localeCompare(b)))
+    .digest("hex");
+}
+
+function stableStringify(
+  value: unknown,
+  compareKeys: (a: string, b: string) => number
+): string {
+  if (Array.isArray(value))
+    return `[${value.map((item) => stableStringify(item, compareKeys)).join(",")}]`;
   if (value && typeof value === "object") {
     return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`)
+      .sort(([a], [b]) => compareKeys(a, b))
+      .map(
+        ([key, val]) =>
+          `${JSON.stringify(key)}:${stableStringify(val, compareKeys)}`
+      )
       .join(",")}}`;
   }
   return JSON.stringify(value);
@@ -768,7 +820,7 @@ function isTerminal(status: StatementStatus): boolean {
 
 function initialStatus(status: StatementStatus): StatementStatus {
   if (isTerminal(status))
-    throw new Error(
+    throw new StatementStoreError("terminal-initial-status", 
       "Initial admission may not create a terminal statement head."
     );
   return status;
@@ -781,7 +833,7 @@ function transitionStatus(
   if (from === "proposed") return to;
   if (from === "accepted" && (to === "accepted" || to === "superseded"))
     return to;
-  throw new Error(`Invalid statement status transition ${from} -> ${to}.`);
+  throw new StatementStoreError("invalid-status-transition", `Invalid statement status transition ${from} -> ${to}.`);
 }
 
 function enforceStoreStatus(
@@ -833,19 +885,19 @@ function validateRequest(request: StatementAdmissionRequest): void {
     recordedAt: envelope.recordedAt,
   })) {
     if (typeof value !== "string" || value.length === 0)
-      throw new Error(`${name} is required.`);
+      throw new StatementStoreError("missing-required-field", `${name} is required.`);
   }
   if (request.operationKind === "admit") {
     if (request.envelope.context.worldId !== request.envelope.worldId)
-      throw new Error("context.worldId must match envelope.worldId.");
+      throw new StatementStoreError("world-mismatch", "context.worldId must match envelope.worldId.");
     if (request.envelope.context.branchId !== request.envelope.branchId)
-      throw new Error("context.branchId must match envelope.branchId.");
+      throw new StatementStoreError("branch-mismatch", "context.branchId must match envelope.branchId.");
   }
   if (request.operationKind === "revise" && request.envelope.patch.context) {
     if (request.envelope.patch.context.worldId !== request.envelope.worldId)
-      throw new Error("patch.context.worldId must match envelope.worldId.");
+      throw new StatementStoreError("world-mismatch", "patch.context.worldId must match envelope.worldId.");
     if (request.envelope.patch.context.branchId !== request.envelope.branchId)
-      throw new Error("patch.context.branchId must match envelope.branchId.");
+      throw new StatementStoreError("branch-mismatch", "patch.context.branchId must match envelope.branchId.");
   }
 }
 
@@ -854,18 +906,18 @@ function validateRecord(record: StatementRecord): void {
     record.context.kind === "actor-epistemic" &&
     !record.context.actorInstanceId
   ) {
-    throw new Error("actor-epistemic context requires actorInstanceId.");
+    throw new StatementStoreError("missing-actor-instance", "actor-epistemic context requires actorInstanceId.");
   }
   if (
     record.context.kind !== "actor-epistemic" &&
     record.context.actorInstanceId
   ) {
-    throw new Error(
+    throw new StatementStoreError("unexpected-actor-instance", 
       "actorInstanceId is only allowed for actor-epistemic context."
     );
   }
   if (!record.provenance.sources.length)
-    throw new Error("statement provenance requires at least one source.");
+    throw new StatementStoreError("missing-provenance-source", "statement provenance requires at least one source.");
   if (!record.admissionReceiptId)
-    throw new Error("statement revision requires admissionReceiptId.");
+    throw new StatementStoreError("missing-admission-receipt", "statement revision requires admissionReceiptId.");
 }

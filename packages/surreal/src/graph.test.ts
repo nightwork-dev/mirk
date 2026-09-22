@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createNodeEngines } from "@surrealdb/node";
 import { Surreal, createRemoteEngines } from "surrealdb";
 
-import { SurrealGraphAdapter, type SurrealQueryConnection } from "./graph.js";
+import { SurrealGraphAdapter, SurrealGraphError, type SurrealQueryConnection } from "./graph.js";
 import { SurrealConnection } from "./index.js";
 
 class RecordingConnection implements SurrealQueryConnection {
@@ -64,6 +64,19 @@ describe("SurrealGraphAdapter", () => {
 
     expect(adapter.edges.canTraverseGraph("links")).toBe(true);
     expect(adapter.edges.canTraverseGraph("plain_edges")).toBe(false);
+  });
+
+  it("codes unconfigured graphs and unsafe identifiers", async () => {
+    const adapter = await SurrealGraphAdapter.open(new RecordingConnection(), graphOptions);
+
+    const unconfigured = await adapter.edges.traverseGraph("plain_edges", { start: "a", depth: 1 }).catch((reason: unknown) => reason);
+    expect(unconfigured).toBeInstanceOf(Error);
+    expect(unconfigured).toBeInstanceOf(SurrealGraphError);
+    expect(unconfigured).toMatchObject({ code: "graph-not-configured", name: "SurrealGraphError" });
+    expect(Object.keys(unconfigured as object)).not.toContain("name");
+
+    const unsafe = await adapter.edges.traverseGraph("bad-name", { start: "a", depth: 1 }).catch((reason: unknown) => reason);
+    expect(unsafe).toMatchObject({ code: "invalid-identifier" });
   });
 
   it("round-trips flat Mirk edge records through relation rows", async () => {

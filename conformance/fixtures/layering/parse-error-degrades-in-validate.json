@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/parse-error-degrades-in-validate",
-  "title": "a malformed document is reported by validate() rather than thrown, and the source is skipped (item 78)",
+  "title": "a malformed document is reported by validate() rather than thrown, and the source is skipped",
   "ports": [
     "fixtures"
   ],

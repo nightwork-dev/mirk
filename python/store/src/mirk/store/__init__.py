@@ -18,12 +18,20 @@ from .atomic import (
     target_key,
     validate_atomic_request,
 )
-from .canonical import canonical_json, sha256_hex
-from .filter import apply_filter, json_equal, matches_where
+from .canonical import CanonicalJsonError, CanonicalJsonErrorCode, canonical_json, sha256_hex
+from .filter import (
+    StoreFilterError,
+    StoreFilterErrorCode,
+    apply_filter,
+    json_equal,
+    matches_where,
+)
 from .memory import InMemoryStore
-from .namespace import NamespacedStore, namespace_store
-from .sqlite import SqliteStore, hash_name
+from .namespace import NamespacedStore, NamespaceError, NamespaceErrorCode, namespace_store
+from .search import SearchInputError, SearchInputErrorCode
+from .sqlite import SqliteAdapterError, SqliteAdapterErrorCode, SqliteStore, hash_name
 from .types import Json, JsonObject, StoreFilter, StoreMeta, SyncStore, SyncStoreInQuery
+from .vector import VectorInputError, VectorInputErrorCode
 
 __all__ = [
     "DEFAULT_ATOMIC_LIMITS",
@@ -33,16 +41,28 @@ __all__ = [
     "AtomicMutationIndeterminateError",
     "AtomicMutationLimits",
     "AtomicMutationRejectedError",
+    "CanonicalJsonError",
+    "CanonicalJsonErrorCode",
     "InMemoryStore",
     "Json",
     "JsonObject",
+    "NamespaceError",
+    "NamespaceErrorCode",
     "NamespacedStore",
+    "SearchInputError",
+    "SearchInputErrorCode",
+    "SqliteAdapterError",
+    "SqliteAdapterErrorCode",
     "SqliteStore",
     "StoreFilter",
+    "StoreFilterError",
+    "StoreFilterErrorCode",
     "StoreMeta",
     "SyncStore",
     "SyncStoreInQuery",
     "ValidatedRequest",
+    "VectorInputError",
+    "VectorInputErrorCode",
     "apply_filter",
     "canonical_json",
     "compare_targets",

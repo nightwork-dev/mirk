@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/deeper-than-32-levels-is-invisible",
-  "title": "the reference walk stops below depth 32, so a very deep $ref is not extracted (item 74)",
+  "title": "the reference walk stops below depth 32, so a very deep $ref is not extracted",
   "ports": [
     "fixtures"
   ],

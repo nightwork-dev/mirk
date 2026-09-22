@@ -3,7 +3,7 @@ import { Surreal, createRemoteEngines } from "surrealdb";
 import { createNodeEngines } from "@surrealdb/node";
 
 import { SurrealConnection } from "../src/index.js";
-import { SurrealStoreAdapter } from "../src/store.js";
+import { SurrealIdentifierError, SurrealStoreAdapter, SurrealValueError } from "../src/store.js";
 
 interface Project {
   id: string;
@@ -68,6 +68,11 @@ describe("SurrealStoreAdapter (AsyncStore)", () => {
     await store.set("a_c", 3);
     expect(await store.keys()).toEqual(["a_b", "a_c", "axb"]);
     expect(await store.keys("a_")).toEqual(["a_b", "a_c"]);
+  });
+
+  it("keys() orders by code point, not locale collation or UTF-16 code unit", async () => {
+    for (const key of ["a", "B", "_", "é", "Z", "\u{1F600}", "\uFFFD"]) await store.set(key, key);
+    expect(await store.keys()).toEqual(["B", "Z", "_", "a", "é", "\uFFFD", "\u{1F600}"]);
   });
 
   it("collection put/getById/remove/count", async () => {
@@ -170,6 +175,19 @@ describe("SurrealStoreAdapter (AsyncStore)", () => {
     await store.put("sort", { id: "z", "a.b": 2, a: { b: 2 } });
     const sorted = (await store.list<{ id: string }>("sort", { sortBy: "a.b" })).map((r) => r.id);
     expect(sorted).toEqual(["y", "z", "x"]);
+  });
+
+  it("codes an empty collection name and non-JSON values", async () => {
+    const empty = await store.put("", { id: "a" }).catch((reason: unknown) => reason);
+    expect(empty).toBeInstanceOf(Error);
+    expect(empty).toBeInstanceOf(SurrealIdentifierError);
+    expect(empty).toMatchObject({ code: "invalid-collection-name", name: "SurrealIdentifierError" });
+    expect(Object.keys(empty as object)).not.toContain("name");
+
+    const value = await store.put("items", { id: "a", toJSON: () => undefined }).catch((reason: unknown) => reason);
+    expect(value).toBeInstanceOf(TypeError);
+    expect(value).toBeInstanceOf(SurrealValueError);
+    expect(value).toMatchObject({ code: "unserializable-value", name: "SurrealValueError" });
   });
 
   it("hostile collection and field names cannot alter queries", async () => {

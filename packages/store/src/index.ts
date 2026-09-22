@@ -24,7 +24,10 @@ export type {
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
 export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";
-export { namespaceStore } from "./namespace.js";
+export { namespaceStore, NamespaceError } from "./namespace.js";
+export type { NamespaceErrorCode } from "./namespace.js";
+export { StoreFilterError } from "./sql.js";
+export type { StoreFilterErrorCode } from "./sql.js";
 // The ordering primitive every port's tie-break is defined in terms of. It was
 // only reachable as the deprecated `compareCodePoint` alias on
 // `@mirk/store/atomic`; consumers that sort ids alongside the store need it
@@ -52,6 +55,7 @@ export type {
   SyncAtomicMutationStore,
   AsyncAtomicMutationStore,
   AtomicMutationLimits,
+  CanonicalJsonErrorCode,
 } from "./atomic.js";
 export {
   AtomicMutationRejectedError,
@@ -59,11 +63,30 @@ export {
   AtomicMutationIndeterminateError,
   supportsAtomicMutation,
   supportsAsyncAtomicMutation,
+  canonicalDigest,
   canonicalJson,
+  CanonicalJsonError,
   DEFAULT_ATOMIC_LIMITS,
   IN_PROCESS_ATOMIC_LIMITS,
   resolveAtomicLimits,
 } from "./atomic.js";
+
+// Browser and Node WebCrypto sealed record envelopes for app-owned vault keys.
+// The API is async by design and is also exposed as @mirk/store/encrypted.
+export type {
+  EncryptedRecordContext,
+  EncryptedRecordEnvelope,
+  EncryptedRecordErrorCode,
+} from "./encrypted.js";
+export {
+  ENCRYPTED_RECORD_PURPOSE,
+  ENCRYPTED_RECORD_SUITE,
+  ENCRYPTED_RECORD_VERSION,
+  EncryptedRecordError,
+  openEncryptedRecord,
+  sealEncryptedRecord,
+  validateEncryptedRecordEnvelope,
+} from "./encrypted.js";
 
 // Vector port + in-memory reference + shared helpers
 export type {
@@ -81,7 +104,9 @@ export {
   bufferToVector,
   assertDimensions,
   isUsableVector,
+  VectorInputError,
 } from "./vector/cosine.js";
+export type { VectorInputErrorCode } from "./vector/cosine.js";
 export { InMemoryVectorStore } from "./vector/memory.js";
 export { toAsyncVector } from "./vector/to-async-vector.js";
 export { matchesWhere } from "./vector/filter.js";
@@ -99,6 +124,8 @@ export type {
 export { InMemorySearchStore } from "./search/memory.js";
 export { toAsyncSearch } from "./search/to-async-search.js";
 export { tokenize, sanitizeFtsQuery } from "./search/tokenize.js";
+export { SearchInputError } from "./search/fields.js";
+export type { SearchInputErrorCode } from "./search/fields.js";
 
 // Graph contract types. The traversal helpers remain available from /graph.
 export type {

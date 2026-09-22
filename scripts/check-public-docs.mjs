@@ -105,6 +105,7 @@ function checkPublicSurface(file, text) {
     { pattern: /[A-Za-z]:\\Users\\/g, label: "local Windows home path" },
     { pattern: /\bfile:\/\//gi, label: "local file URL" },
     { pattern: /\bdocs\.local\//g, label: "private docs.local path" },
+    { pattern: /\b(?:localhost|127\.0\.0\.1):4873\b/g, label: "local npm registry" },
     { pattern: /\brelease candidate\b/gi, label: "stale release-candidate marker" },
     { pattern: /\bimplemented, pre-release\b/gi, label: "stale pre-release marker" },
     { pattern: /status-draft/gi, label: "stale draft badge" },

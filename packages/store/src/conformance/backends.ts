@@ -2,8 +2,7 @@
 // The one module in src/conformance that touches a native binding: it builds a
 // live target per backend for a scenario. It is TOOLING, not a package entry
 // point — it is absent from the tsup build list and from package.json exports,
-// exactly like src/sqlite-harness.ts, so no consumer can import it and drag
-// better-sqlite3 into a client build.
+// so no consumer can import it and drag better-sqlite3 into a client build.
 //
 // Every SQLite target opens `:memory:`, so a scenario never sees another
 // scenario's rows.
@@ -103,11 +102,10 @@ function graphApi(store: Parameters<typeof toAsync>[0]): Record<string, unknown>
  *  scenario's `capabilities` is a corpus typo, and every runner must fail on it
  *  rather than pass a scenario whose gate nobody understands.
  *
- *  `vec0` is not a capability and never will be: roadmap MR-22 deleted the vec0
- *  path from the SQLite adapter after it was shown never to execute
- *  (docs/evidence/python-port/2026-09-02-vec0-branch-dead.md). There is no
+ *  `vec0` is not a capability and never will be: the vec0 path was deleted
+ *  from the SQLite adapter after it was shown never to execute. There is no
  *  accelerated path left to gate a scenario on. */
-export const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
+const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
 
 /** Optional capabilities a backend has right now. `listWhereIn` is a method both
  *  stores implement. */

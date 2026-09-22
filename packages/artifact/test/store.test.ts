@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { StoredArtifactRecord } from "../src/index.js";
-import { StoreArtifactRepository } from "../src/store.js";
+import { ArtifactOperationError, StoreArtifactRepository } from "../src/store.js";
 
 const record = (id: string, createdAt: number): StoredArtifactRecord => ({ id, objectKey: `objects/${id}`, mediaType: "text/plain", sizeBytes: 1, digest: { algorithm: "sha256", value: id }, createdAt });
 
@@ -38,6 +38,8 @@ describe("StoreArtifactRepository", () => {
   it("rejects cursors that do not belong to the result set", async () => {
     const repository = new StoreArtifactRepository(toAsync(new InMemoryKv()));
     await repository.create(record("a", 1));
-    await expect(repository.list({ cursor: "missing" })).rejects.toThrow("invalid artifact cursor");
+    const rejection = expect(repository.list({ cursor: "missing" })).rejects;
+    await rejection.toThrow(ArtifactOperationError);
+    await rejection.toMatchObject({ code: "invalid-cursor" });
   });
 });

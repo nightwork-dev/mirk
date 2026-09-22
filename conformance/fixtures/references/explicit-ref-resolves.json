@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/explicit-ref-resolves",
-  "title": "an explicit $ref to an existing fixture validates clean and produces one edge (items 22, 23)",
+  "title": "an explicit $ref to an existing fixture validates clean and produces one edge",
   "ports": [
     "fixtures"
   ],

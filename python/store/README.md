@@ -1,8 +1,8 @@
 # mirk-store
 
 The Python port of `@mirk/store`: substrate-agnostic key-value and collection
-storage primitives. Phase 1 covers the KV and collection port over two backends,
-an in-memory reference and SQLite.
+storage primitives: the KV, collection, vector, search, and graph ports over two
+backends, an in-memory reference and SQLite.
 
 The SQLite adapter opens files the TypeScript adapter wrote and writes files it
 can read. Same tables, same pragmas, same JSON encoding, and the same atomic
@@ -88,6 +88,58 @@ TypeScript suite and this package replay every scenario against every backend
 they implement. A behavior that is not in the corpus is not contractual, and a
 behavior that differs between backends is a bug in one of them.
 
+## Known differences from TypeScript
+
+These are outcomes a user of both languages can actually hit. Where the
+contract picked a side, the TypeScript side listed here is the one that
+changed to match; where it says "not pinned," both languages may keep
+differing.
+
+- **Mutation after `put`/`get` is undefined.** The Python in-memory store
+  copies records on write and on read; the TypeScript in-memory store hands
+  out live references. A consumer that mutates an object after `put`, or
+  mutates a value returned from `get`/`list`, gets different results by
+  language today. Do not rely on it either way.
+- **Integers above 2^53** are out of the shared contract: a Python `int`
+  beyond that range is stored as its nearest float64, matching how numbers
+  round-trip through the TypeScript adapter's JSON. Not pinned in the corpus.
+- **`NaN` and infinite floats are rejected**, not converted. Python's encoder
+  raises rather than silently writing `null` (which is what TypeScript's
+  `JSON.stringify` does with those values).
+- **Lone surrogates** (an unpaired UTF-16 code unit) are contractual as
+  stored VALUES on both languages, escaped the same way in JSON. They are not
+  contractual as identifiers: a key, record id, collection name, or filter
+  value containing one is bound as SQLite TEXT. Python's `sqlite3` refuses to
+  encode it; TypeScript's better-sqlite3 silently replaces it with U+FFFD.
+- **`keys()` ordering, `count` with `limit`/`offset`, negative `limit`,
+  `where`/`listWhereIn` on non-scalar values, and boolean vs. `1`
+  distinguishing** all had a TypeScript backend disagree with itself
+  (memory vs. SQLite) before this port; the corpus now pins one answer for
+  both languages and both backends: `keys()` sorts by code point; `count`
+  ignores `sortBy`/`limit`/`offset`; a negative `limit` returns nothing;
+  `where`/`listWhereIn` on an object or array value throws `Store filters
+  only support JSON scalar values.`; and `where {v: true}` never matches a
+  stored `1`.
+- **Sort ties** land in insertion order on both backends; SQLite achieves
+  this with `rowid` as the final `ORDER BY` key, which is equivalent to
+  insertion order for every observable case.
+- **Mixed number/string values in one sort field** are unspecified — not
+  pinned in the corpus, and JavaScript's coercion and SQLite's type ranking
+  can disagree. Don't sort a field holding both types and expect a
+  particular order.
+- **Search tokenization diverges deliberately and is not fixed.** The SQLite
+  FTS5 tokenizer strips diacritics (`café` indexes as `cafe`); the in-memory
+  tokenizer keeps them, in both languages. No document mixing the two is in
+  the corpus. Don't compare indexed diacritics across backends.
+- **The vector facet has no accelerated path.** `SqliteAdapter.vector` always
+  computes exact float64 cosine similarity; there is no `sqlite-vec`
+  extension to install and no `vec` extra. `meta.accelerated` is always
+  `false`.
+- **Physical table naming can collide only in principle, not in practice.**
+  Two collection or search names that sanitize and hash to the same physical
+  name still get two distinct tables: the registry described above appends
+  `_2`, `_3`, and so on for a name that would otherwise collide.
+
 ## Adding a port
 
 The conformance runner resolves a scenario's port to a target by convention, so
@@ -105,8 +157,7 @@ handle, so a SQLite facet shares the connection the runner already opened
 instead of opening a second one against the same file. A missing module or a
 missing factory makes the scenario a recorded skip, counted per port in the test
 summary. `ALLOWED_SKIPPED_PORTS` in `tests/test_conformance.py` lists the ports
-that may still be missing; the integrator empties it and every skip becomes a
-failure.
+that may still be missing; any other skip is a failure.
 
 `tests/test_sqlite_compat.py` exports `run_node_script` for cross-language
 tests: hand it ESM source and argv, get back the JSON its last stdout line

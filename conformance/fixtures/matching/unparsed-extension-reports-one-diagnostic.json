@@ -1,6 +1,6 @@
 {
   "id": "fixtures/matching/unparsed-extension-reports-one-diagnostic",
-  "title": "a file under the directory with no registered parser yields exactly one no-parser diagnostic (item 17)",
+  "title": "a file under the directory with no registered parser yields exactly one no-parser diagnostic",
   "ports": [
     "fixtures"
   ],

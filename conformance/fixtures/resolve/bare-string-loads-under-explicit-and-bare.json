@@ -1,6 +1,6 @@
 {
   "id": "fixtures/resolve/bare-string-loads-under-explicit-and-bare",
-  "title": "the same call under explicit-and-bare loads the fixture (item 28)",
+  "title": "the same call under explicit-and-bare loads the fixture",
   "ports": [
     "fixtures"
   ],

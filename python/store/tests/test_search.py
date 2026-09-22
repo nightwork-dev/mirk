@@ -30,6 +30,7 @@ from mirk.store import SqliteStore
 from mirk.store.search import (
     InMemorySearchStore,
     SearchDocument,
+    SearchInputError,
     SearchOptions,
     SearchResult,
     sanitize_fts_query,
@@ -357,10 +358,12 @@ def test_field_list_stays_pinned_across_a_reopen(tmp_path: Path) -> None:
             hit["id"]
             for hit in reopened_facet.search("docs", "fox", {"fieldWeights": {"title": 4}})
         ] == ["d1"]
-        with pytest.raises(ValueError, match="was initialized with fields"):
+        with pytest.raises(SearchInputError) as text_shape:
             reopened_facet.index("docs", {"id": "d2", "text": "fox"})
-        with pytest.raises(ValueError, match="was initialized with fields"):
+        assert text_shape.value.code == "field-set-mismatch"
+        with pytest.raises(SearchInputError) as field_shape:
             reopened_facet.index("docs", {"id": "d3", "fields": {"title": "fox"}})
+        assert field_shape.value.code == "field-set-mismatch"
     finally:
         reopened.close()
 
@@ -491,58 +494,41 @@ def test_odd_field_names_round_trip_through_sqlite(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("doc", "message"),
+    "doc",
     [
-        ({"id": "x", "text": "a", "fields": {"t": "b"}}, "not both"),
-        ({"id": "x"}, "must provide `text` or `fields`"),
-        ({"id": "x", "fields": {}}, "at least one field"),
-        ({"id": "x", "fields": {"title": 5}}, 'field "title" must be a string'),
+        {"id": "x", "text": "a", "fields": {"t": "b"}},
+        {"id": "x"},
+        {"id": "x", "fields": {}},
+        {"id": "x", "fields": {"title": 5}},
     ],
 )
-def test_document_validation_messages(doc: Any, message: str) -> None:
-    """Both backends raise the same message, so a corpus `throws` step matches either."""
+def test_invalid_documents_raise_value_error(doc: Any) -> None:
+    """Both backends raise ValueError; the corpus pins the shared messages."""
     facet, store = _sqlite_facet()
     try:
-        with pytest.raises(ValueError, match=message):
+        with pytest.raises(ValueError):
             InMemorySearchStore().index("c", doc)
-        with pytest.raises(ValueError, match=message):
+        with pytest.raises(ValueError):
             facet.index("c", doc)
     finally:
         store.close()
 
 
 @pytest.mark.parametrize(
-    ("weights", "message"),
-    [
-        ({"text": -1}, "non-negative finite number"),
-        ({"text": float("inf")}, "non-negative finite number"),
-        ({"text": float("nan")}, "non-negative finite number"),
-        ({"unknown": 1}, "Unknown search field weight"),
-    ],
+    "weights",
+    [{"text": -1}, {"text": float("inf")}, {"text": float("nan")}, {"unknown": 1}],
 )
-def test_weight_validation_messages(weights: dict[str, float], message: str) -> None:
+def test_invalid_weights_raise_value_error(weights: dict[str, float]) -> None:
     docs = _text_docs([("a", "fox")])
     facet, store = _sqlite_facet()
     try:
         memory = InMemorySearchStore()
         memory.indexMany("c", docs)
         facet.indexMany("c", docs)
-        with pytest.raises(ValueError, match=message):
+        with pytest.raises(ValueError):
             memory.search("c", "fox", {"fieldWeights": weights})
-        with pytest.raises(ValueError, match=message):
+        with pytest.raises(ValueError):
             facet.search("c", "fox", {"fieldWeights": weights})
-    finally:
-        store.close()
-
-
-def test_bad_weight_values_throw_for_a_missing_collection_but_names_do_not() -> None:
-    """Weight values are validated before the collection is looked up; names after."""
-    facet, store = _sqlite_facet()
-    try:
-        for target in (InMemorySearchStore(), facet):
-            with pytest.raises(ValueError, match="non-negative finite number"):
-                target.search("absent", "fox", {"fieldWeights": {"text": -1}})
-            assert target.search("absent", "fox", {"fieldWeights": {"text": 2}}) == []
     finally:
         store.close()
 

@@ -1,16 +1,24 @@
 import type { Diagnostic, StandardSchemaV1Issue } from "./types.js";
 
 export class FixtureError extends Error {
+  declare readonly name: string;
   readonly diagnostic: Diagnostic;
 
   constructor(diagnostic: Diagnostic) {
     super(diagnostic.message);
-    this.name = "FixtureError";
     this.diagnostic = diagnostic;
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(FixtureError.prototype, "name", {
+  value: "FixtureError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class FixtureValidationError extends FixtureError {
+  declare readonly name: "FixtureValidationError";
   readonly issues: ReadonlyArray<StandardSchemaV1Issue>;
 
   constructor(
@@ -28,10 +36,16 @@ export class FixtureValidationError extends FixtureError {
       path,
       fieldPath: issues[0]?.path ? formatIssuePath(issues[0].path) : undefined,
     });
-    this.name = "FixtureValidationError";
     this.issues = issues;
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(FixtureValidationError.prototype, "name", {
+  value: "FixtureValidationError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export function diagnosticsFromError(fixture: string | undefined, error: unknown): Diagnostic[] {
   if (error instanceof FixtureValidationError) {
@@ -58,6 +72,6 @@ export function diagnosticsFromError(fixture: string | undefined, error: unknown
   }];
 }
 
-export function formatIssuePath(path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>): string {
+function formatIssuePath(path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>): string {
   return path.map((part) => String(typeof part === "object" && part !== null ? part.key : part)).join(".");
 }

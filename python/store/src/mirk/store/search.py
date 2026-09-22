@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 import unicodedata
-from typing import Any, Protocol, TypedDict, cast, runtime_checkable
+from typing import Any, Literal, Protocol, TypedDict, cast, runtime_checkable
 
 from .filter import matches_where
 from .types import StoreFilter
@@ -34,6 +34,8 @@ __all__ = [
     "B",
     "InMemorySearchStore",
     "SearchDocument",
+    "SearchInputError",
+    "SearchInputErrorCode",
     "SearchOptions",
     "SearchResult",
     "SearchStore",
@@ -54,6 +56,25 @@ IDF_FLOOR = 1e-6
 """FTS5's floor for a non-positive idf. It is 1e-6, not 0, and the difference is
 observable in ranking: a term present in every document still orders by term
 frequency instead of collapsing to an id tie-break."""
+
+
+SearchInputErrorCode = Literal[
+    "text-and-fields",
+    "missing-text-or-fields",
+    "empty-fields",
+    "non-string-field",
+    "field-set-mismatch",
+    "invalid-weight",
+    "unknown-weight-field",
+]
+
+
+class SearchInputError(ValueError):
+    """Raised for a malformed search document or field-weight option."""
+
+    def __init__(self, code: SearchInputErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: SearchInputErrorCode = code
 
 
 class SearchDocument(TypedDict, total=False):
@@ -157,20 +178,29 @@ def normalize_search_document(doc: SearchDocument) -> tuple[list[str], dict[str,
     has_text = "text" in record
     has_fields = "fields" in record
     if has_text and has_fields:
-        raise ValueError("SearchDocument must provide either `text` or `fields`, not both.")
+        raise SearchInputError(
+            "text-and-fields",
+            "SearchDocument must provide either `text` or `fields`, not both.",
+        )
     if has_text:
         return ([DEFAULT_SEARCH_FIELD], {DEFAULT_SEARCH_FIELD: record["text"]})
     if not has_fields:
-        raise ValueError("SearchDocument must provide `text` or `fields`.")
+        raise SearchInputError(
+            "missing-text-or-fields", "SearchDocument must provide `text` or `fields`."
+        )
     fields: dict[str, Any] = record["fields"]
     names = search_field_order(list(fields.keys()))
     if not names:
-        raise ValueError("SearchDocument.fields must contain at least one field.")
+        raise SearchInputError(
+            "empty-fields", "SearchDocument.fields must contain at least one field."
+        )
     values: dict[str, str] = {}
     for name in names:
         value = fields[name]
         if not isinstance(value, str):
-            raise ValueError(f'SearchDocument field "{name}" must be a string.')
+            raise SearchInputError(
+                "non-string-field", f'SearchDocument field "{name}" must be a string.'
+            )
         values[name] = value
     return (names, values)
 
@@ -178,9 +208,10 @@ def normalize_search_document(doc: SearchDocument) -> tuple[list[str], dict[str,
 def assert_same_search_fields(existing: list[str], incoming: list[str], collection: str) -> None:
     """A collection is pinned to the field list of its first document."""
     if existing != incoming:
-        raise ValueError(
+        raise SearchInputError(
+            "field-set-mismatch",
             f'Search collection "{collection}" was initialized with fields '
-            f"[{', '.join(existing)}], got [{', '.join(incoming)}]."
+            f"[{', '.join(existing)}], got [{', '.join(incoming)}].",
         )
 
 
@@ -192,8 +223,9 @@ def assert_valid_field_weight_values(weights: dict[str, float] | None) -> None:
     """Every weight must be a finite, non-negative number. Zero is allowed."""
     for field, weight in (weights or {}).items():
         if not _is_number(weight) or not math.isfinite(weight) or weight < 0:
-            raise ValueError(
-                f'Search field weight for "{field}" must be a non-negative finite number.'
+            raise SearchInputError(
+                "invalid-weight",
+                f'Search field weight for "{field}" must be a non-negative finite number.',
             )
 
 
@@ -208,7 +240,9 @@ def field_weights_for(fields: list[str], weights: dict[str, float] | None) -> li
     known = set(fields)
     for field in weights or {}:
         if field not in known:
-            raise ValueError(f'Unknown search field weight "{field}".')
+            raise SearchInputError(
+                "unknown-weight-field", f'Unknown search field weight "{field}".'
+            )
     return [float((weights or {}).get(field, 1)) for field in fields]
 
 

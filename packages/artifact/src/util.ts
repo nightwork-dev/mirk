@@ -9,7 +9,12 @@ import type {
   JsonValue,
   StoredArtifactRecord,
 } from "./types.js";
-import { canonicalJson } from "@mirk/store";
+import { canonicalDigest } from "@mirk/store";
+import {
+  ArtifactLimitError,
+  ArtifactOperationError,
+  ArtifactValidationError,
+} from "./errors.js";
 
 export async function* chunks(source: ByteSource): ByteStream {
   if (source instanceof Uint8Array) {
@@ -18,7 +23,7 @@ export async function* chunks(source: ByteSource): ByteStream {
   }
   for await (const chunk of source) {
     if (!(chunk instanceof Uint8Array))
-      throw new TypeError("artifact byte sources must yield Uint8Array chunks");
+      throw new ArtifactValidationError("invalid-byte-chunk", "artifact byte sources must yield Uint8Array chunks");
     yield chunk;
   }
 }
@@ -64,7 +69,7 @@ export function assertObjectKey(key: string): void {
     key.startsWith("/") ||
     key.split("/").some((part) => part === ".." || part === ".")
   ) {
-    throw new TypeError(`invalid object key: ${JSON.stringify(key)}`);
+    throw new ArtifactValidationError("invalid-object-key", `invalid object key: ${JSON.stringify(key)}`);
   }
 }
 
@@ -74,28 +79,28 @@ export function assertPortableMetadata(input: {
   producer?: ArtifactProducer;
 }): void {
   if (!input.mediaType.trim() || !input.mediaType.includes("/"))
-    throw new TypeError("mediaType must be a non-empty MIME type");
+    throw new ArtifactValidationError("invalid-media-type", "mediaType must be a non-empty MIME type");
   if (input.producer && !input.producer.system.trim())
-    throw new TypeError("producer.system must be non-empty");
+    throw new ArtifactValidationError("invalid-producer", "producer.system must be non-empty");
   if (input.annotations) assertBoundedJson(input.annotations, "annotations");
 }
 
 export function assertBoundedJson(value: JsonValue, label: string): void {
   const serialized = JSON.stringify(value);
   if (serialized === undefined)
-    throw new TypeError(`${label} must be JSON-safe`);
+    throw new ArtifactValidationError("non-json-metadata", `${label} must be JSON-safe`);
   if (utf8ToBytes(serialized).byteLength > 64 * 1024)
-    throw new RangeError(`${label} exceeds 64 KiB`);
+    throw new ArtifactLimitError("metadata-too-large", `${label} exceeds 64 KiB`);
   visitJson(value, 0, label);
 }
 
 function visitJson(value: JsonValue, depth: number, label: string): void {
-  if (depth > 20) throw new RangeError(`${label} exceeds maximum depth 20`);
+  if (depth > 20) throw new ArtifactLimitError("metadata-too-deep", `${label} exceeds maximum depth 20`);
   if (value === null || typeof value === "string" || typeof value === "boolean")
     return;
   if (typeof value === "number") {
     if (!Number.isFinite(value))
-      throw new TypeError(`${label} contains a non-finite number`);
+      throw new ArtifactValidationError("non-finite-metadata", `${label} contains a non-finite number`);
     return;
   }
   for (const child of Array.isArray(value) ? value : Object.values(value))
@@ -114,8 +119,7 @@ export function descriptor(record: StoredArtifactRecord): ArtifactDescriptor {
 }
 
 export function metadataFingerprint(input: unknown): string {
-  const stable = canonicalJson(input);
-  return bytesToHex(sha256(utf8ToBytes(stable)));
+  return canonicalDigest(input);
 }
 
 /**
@@ -138,10 +142,10 @@ export function artifactFinalizationDigest(
       ? {}
       : { annotations: record.annotations }),
   };
-  return bytesToHex(sha256(utf8ToBytes(canonicalJson(request))));
+  return canonicalDigest(request);
 }
 
-/** Public alias used by integrations that prefer the shorter name. */
+/** @deprecated Use artifactFinalizationDigest. */
 export const finalizationDigest = artifactFinalizationDigest;
 
 export function makeId(): string {
@@ -155,7 +159,7 @@ export function makeId(): string {
   ).crypto;
   if (cryptoApi?.randomUUID) return cryptoApi.randomUUID();
   if (!cryptoApi?.getRandomValues)
-    throw new Error("artifact IDs require Web Crypto or an injected idFactory");
+    throw new ArtifactOperationError("web-crypto-unavailable", "artifact IDs require Web Crypto or an injected idFactory");
   const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;

@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/provenance-base-then-patch",
-  "title": "provenance kinds are [base, patch] with the file path on both (item 11)",
+  "title": "provenance kinds are [base, patch] with the file path on both",
   "ports": [
     "fixtures"
   ],

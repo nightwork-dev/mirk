@@ -19,9 +19,10 @@
 // `--out` exists so scenario authors can verify a new scenario without touching
 // the shared corpus, and so the freshness gate can generate into a temporary
 // directory and diff rather than overwriting the very edit it is meant to
-// catch. Only the integrator runs the no-flag form.
+// catch. Run the no-flag form once per change; it rewrites the whole shared
+// corpus.
 //
-// Regenerate after an intentional semantics change and REVIEW THE DIFF: a
+// Regenerate after an intentional semantics change and review the diff: a
 // surprising change in a scenario is a regression, not a refresh.
 
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";

@@ -18,7 +18,9 @@ export {
   bufferToVector,
   assertDimensions,
   isUsableVector,
+  VectorInputError,
 } from "./vector/cosine.js";
+export type { VectorInputErrorCode } from "./vector/cosine.js";
 export { InMemoryVectorStore } from "./vector/memory.js";
 export { toAsyncVector } from "./vector/to-async-vector.js";
 // The canonical pre-KNN metadata filter — exported so source adapters (sqlite,

@@ -15,5 +15,7 @@ export type {
 export { InMemorySearchStore } from "./search/memory.js";
 export { toAsyncSearch } from "./search/to-async-search.js";
 export { tokenize, sanitizeFtsQuery } from "./search/tokenize.js";
+export { SearchInputError } from "./search/fields.js";
+export type { SearchInputErrorCode } from "./search/fields.js";
 // The canonical exact-match meta filter — the same definition /vector exports.
 export { matchesWhere } from "./vector/filter.js";

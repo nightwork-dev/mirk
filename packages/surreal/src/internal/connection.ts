@@ -19,6 +19,22 @@ export interface SurrealConnectionQueryOptions {
   bindings?: Record<string, unknown>;
 }
 
+export type SurrealConnectionErrorCode = "connection-closed";
+
+export class SurrealConnectionError extends Error {
+  declare readonly name: "SurrealConnectionError";
+  constructor(readonly code: SurrealConnectionErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealConnectionError.prototype, "name", {
+  value: "SurrealConnectionError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export class SurrealConnection {
   private closed = false;
 
@@ -43,7 +59,7 @@ export class SurrealConnection {
     sql: string,
     bindings?: Record<string, unknown>,
   ): Promise<T> {
-    if (this.closed) throw new Error("SurrealConnection is closed.");
+    if (this.closed) throw new SurrealConnectionError("connection-closed", "SurrealConnection is closed.");
     return this.client.query<T>(sql, bindings);
   }
 

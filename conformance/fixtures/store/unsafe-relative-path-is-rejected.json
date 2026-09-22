@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/unsafe-relative-path-is-rejected",
-  "title": "a store item whose relativePath escapes the source throws unsafe-relative-path (item 39)",
+  "title": "a store item whose relativePath escapes the source throws unsafe-relative-path",
   "ports": [
     "fixtures"
   ],

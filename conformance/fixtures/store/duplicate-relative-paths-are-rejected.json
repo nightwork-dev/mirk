@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/duplicate-relative-paths-are-rejected",
-  "title": "two rows producing the same relative path throw duplicate-relative-path (item 40)",
+  "title": "two rows producing the same relative path throw duplicate-relative-path",
   "ports": [
     "fixtures"
   ],

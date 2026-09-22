@@ -57,15 +57,17 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store/vector`     | `VectorStore` port · `InMemoryVectorStore` · cosine helpers                                                                                                       | none                                                                              |
 | `@mirk/store/search`     | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search                                                                                            | none                                                                              |
 | `@mirk/store/graph`      | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal)                                                                      | none                                                                              |
+| `@mirk/store/encrypted`  | authenticated AES-GCM record envelopes bound to a caller-owned storage context                                                                                    | none                                                                              |
 | `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
 | `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer)                                                           |
 | `@mirk/store-libsql`     | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets                                                                                          | none                                                                              |
 | `@mirk/store-postgres`   | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters                                                                                  | `pg`                                                                              |
 | `@mirk/store-markdown`   | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history                                                                | none                                                                              |
+| `@mirk/store-indexeddb`  | async browser source adapter on native IndexedDB — key-value, collections, and atomic mutation in one database                                                    | none                                                                              |
 | `@mirk/fixtures`         | typed authored-data loader, registry, refs, diagnostics, provenance, and the explicit-config `mirk-fixtures` CLI                                                  | none                                                                              |
 | `@mirk/artifact`         | durable artifact metadata, integrity, lineage, atomic finalization, object leases, and plan-first maintenance                                                     | none                                                                              |
 | `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port                                                                                                 | `opendal` (peer)                                                                  |
-| `@mirk/statements`       | specialized SQLite storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses; it does not widen general store ports | `better-sqlite3` (peer)                                                           |
+| `@mirk/statements`       | specialized SQLite storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses                                          | `better-sqlite3` (peer)                                                           |
 | `@mirk/surreal`          | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection                           | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
 | `@mirk/migrate`          | backend-neutral checkpointed migration across Mirk ports and caller manifests                                                                                     | none                                                                              |
 
@@ -76,9 +78,7 @@ graph ports, over stdlib `sqlite3` with zero runtime dependencies. It opens SQLi
 TypeScript wrote and writes files TypeScript reads. Neither language is the other's reference:
 both replay one generated corpus at [`conformance/`](conformance/README.md), the generator refuses
 to emit a scenario the in-memory reference and the SQLite adapter disagree on, and each runner
-executes every scenario on both of its backends with no skips permitted. `pnpm conformance:current`
-regenerates into a temporary tree and diffs, so a hand-edited or stale corpus fails a release
-receipt rather than riding along inside one.
+executes every scenario on both of its backends with no skips permitted.
 
 ## Sync by design
 
@@ -98,17 +98,8 @@ npm install better-sqlite3
 ESM-only. Node ≥ 20.
 
 For a remote or embedded async SurrealDB source, install `@mirk/surreal` and compose only the
-adapter subpaths you need over one `SurrealConnection`. The package currently ships store, graph,
-vector, object-storage, owned Node embedded, and browser WASM in-memory support. Weighted
-multi-field search and persistent WASM `indxdb://` remain explicit unsupported gates rather than
-compatibility shims.
-
-**IndexedDB status:** published `@surrealdb/wasm` versions 3.0.0–3.0.3 contain a confirmed upstream
-transaction bug that breaks `indxdb://` when selecting a namespace/database. SurrealDB tracks the
-failure in [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) and merged the
-IndxDB 0.12 fix in [surrealdb.js#600](https://github.com/surrealdb/surrealdb.js/pull/600), but the
-fixed WASM package has not yet been published. Mirk supports WASM `mem://` now and will enable
-`indxdb://` only after the fixed release passes its browser write/reopen/read test.
+adapter subpaths you need over one `SurrealConnection`. See its
+[README](packages/surreal/README.md) for what each subpath supports.
 
 For PostgreSQL, install `@mirk/store-postgres`. It implements the async KV and collection ports over
 one owned or caller-provided `pg.Pool`; future search and vector facets will share the same pool.
@@ -157,80 +148,18 @@ API in
 
 - **Ports vs source adapters.** Interfaces and in-memory references stay native-free; source
   adapters implement one or more ports over a single connection and are the only place native
-  bindings appear.
-- **No barrels.** `export *` is forbidden; every entry declares explicit named re-exports.
-- **Optional-peer native deps**, referenced solely from the sqlite adapter.
-- **Backend parity.** The in-memory reference and the sqlite adapter must behave identically —
+  bindings appear, as optional peer dependencies.
+- **Backend parity.** The in-memory reference and the SQLite adapter behave identically —
   ordering, tie-breaks, null/zero handling. Cross-backend parity tests are the contract.
-
-## Develop
-
-```bash
-pnpm install
-pnpm build      # tsup, per package
-pnpm test       # vitest — real backends, real persistence, real assertions
-pnpm -r typecheck
-```
-
-## Release
-
-Mirk uses Changesets for release bookkeeping:
-
-```bash
-pnpm changeset          # describe package-impacting changes
-pnpm version-packages   # apply versions from pending changesets
-pnpm release            # build, then changeset publish
-pnpm release:verify -- --all   # package-owned tarball/export/install evidence
-pnpm release:receipt -- --all  # same evidence, requiring a clean source tree
-```
-
-Do not hand-bump package versions for future releases; add a changeset and let `pnpm version-packages` apply it.
-Release receipts are build evidence. They do not by themselves prove registry publication or consumer/runtime adoption.
 
 ## Status
 
-Pre-1.0. Mirk uses the following evidence vocabulary. These are separate states, not synonyms:
+Pre-1.0: minor versions may change APIs. Release history is in [`CHANGELOG.md`](CHANGELOG.md) and
+planned work in [`docs/roadmap.md`](docs/roadmap.md). Each package's README is its contract.
 
-| State | Evidence required | Does not establish |
-| --- | --- | --- |
-| `implemented` | Source and package contract evidence exist in the current checkout. | A release, registry publication, or consumer use. |
-| `receipt-green` | A clean `mirk-release-receipt/v1` names the source commit and passes build, test, typecheck, pack, export, boundary, and temporary-consumer checks. | Registry publication, remote merge, or downstream adoption. |
-| `Verdaccio-published` | The named version resolves from the canonical local Verdaccio registry. | Public npm publication or provenance from a particular commit. |
-| `public-npm-published` | The named version resolves from `https://registry.npmjs.org`. | Consumer installation or runtime use. |
-| `remote/tagged` | The source commit is present in the intended remote ref and has an explicit release tag where required. | Registry publication or consumer use. |
-| `consumer-installed` | A consumer's frozen lockfile and clean install resolve the named package train. | Relevant behavior or deployment. |
-| `consumer-adopted` | Consumer source exercises the package and its relevant tests or smoke path pass. | Public release or deployment. |
-| `runtime/deployment-proven` | A real runtime or deployed user path exercises the package. | Nothing beyond that path. |
+## Contributing
 
-Use this evidence order when describing a release: current source → commit-bound receipt →
-remote/tag → named registry → consumer install/adoption → runtime or deployment. A later state
-never upgrades an earlier one implicitly. In particular, a Verdaccio package is not a public npm
-package, and a green receipt is not a publication receipt.
-
-Current closure evidence (2026-08-12):
-
-- `implemented` and `receipt-green`: 9 of the 10 current `@mirk/*` packages have clean receipts
-  from `07cb48e` (`pnpm release:receipt --all`), tracked in
-  [`docs/evidence/receipts/2026-08-12/`](docs/evidence/receipts/2026-08-12/). Each receipt records
-  the number of tests the package actually executed. `@mirk/store-postgres` has no receipt at this
-  commit: its whole suite skips without `MIRK_POSTGRES_TEST_URL`, and publication mode refuses a
-  receipt for a run that executed zero tests. CI supplies that URL.
-- `Verdaccio-published`: the current package train is present in the canonical local registry.
-  This metadata is not tied to `07cb48e` by a publication receipt.
-- `remote/tagged`: `07cb48e` is pushed to `origin/main`; no tag points at it yet.
-- `consumer-adopted`: `templates/sigil-chat` installs the current train from its frozen lockfile
-  and exercises Mirk-backed store, fixture, Markdown, and artifact paths. Consumer evidence stays
-  with that product; Mirk does not maintain a cross-project conformance matrix.
-- `public-npm-published` and `runtime/deployment-proven`: not claimed for this train.
-
-Roadmap: [`docs/roadmap.md`](docs/roadmap.md). The `@mirk/fixtures` authored-data primitive spec
-lives at [`docs/fixtures-spec.md`](docs/fixtures-spec.md), with the package README at
-[`packages/fixtures/README.md`](packages/fixtures/README.md). The durable artifact substrate is
-implemented in [`packages/artifact`](packages/artifact), with its ownership and failure contract in
-[`docs/artifact-spec.md`](docs/artifact-spec.md).
-The PostgreSQL adapter contract is documented in
-[`docs/store-postgres-spec.md`](docs/store-postgres-spec.md).
-Release history: [`CHANGELOG.md`](CHANGELOG.md).
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development, conformance, and release workflow.
 
 ## License
 

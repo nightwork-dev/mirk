@@ -1,12 +1,11 @@
 // ─── Legacy (pre-registry) SQLite file fixture ──────────────────────────────
-// Writes a SQLite file in the layout @mirk/store produced BEFORE MR-21: physical
+// Writes a SQLite file in the layout @mirk/store produced BEFORE the table registry: physical
 // table names derived from `<prefix><sanitized>_<fnv32>` with NO `_mirk_tables`
 // registry and NO `_mirk_meta`. Both the TypeScript and the Python adapter open
 // this file to prove the adoption step — an existing file keeps working, its
 // tables are claimed in place, and no data is rewritten.
 //
-// The DDL below is copied verbatim from docs/python-port/digests/store-graph-sqlite.md
-// sections B.2, B.3 and B.4 (the layout as observed on a real pre-MR-21 file).
+// The DDL below is the layout observed on a real pre-registry file, copied verbatim.
 // It is intentionally NOT imported from src/: a fixture that shares code with the
 // adapter under test proves nothing.
 //
@@ -24,7 +23,7 @@
 import { rmSync } from "node:fs";
 import Database from "better-sqlite3";
 
-/** Pre-MR-21 naming, copied from the digest: 32-bit FNV-1a over UTF-16 code
+/** Pre-MR-21 naming: 32-bit FNV-1a over UTF-16 code
  *  units, base36, appended to the sanitized name. */
 function hashName(s) {
   let h = 2166136261;

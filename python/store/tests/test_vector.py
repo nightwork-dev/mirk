@@ -17,20 +17,14 @@ from typing import Any
 
 import pytest
 
-from mirk.store.sqlite_vector import (
-    NO_DIMENSIONS_MESSAGE,
-    SqliteVectorFacet,
-    connection_of,
-    dimensions_conflict_message,
-    positive_dimensions_message,
-)
+from mirk.store.sqlite_vector import SqliteVectorFacet, connection_of
 from mirk.store.vector import (
     InMemoryVectorStore,
+    VectorInputError,
     VectorSearchOptions,
     VectorSearchResultList,
     bytes_to_vector,
     cosine_similarity,
-    dimension_mismatch_message,
     is_usable_vector,
     matches_where,
     to_float32,
@@ -217,25 +211,25 @@ def test_dimensions_persist_across_a_reopen(tmp_path: Path) -> None:
     second, second_connection = open_facet(db)
     try:
         assert second.meta["dimensions"] == 4
-        with pytest.raises(ValueError) as mismatch:
+        with pytest.raises(VectorInputError) as mismatch:
             second.upsert("c", {"id": "b", "vector": [1.0, 0.0, 0.0]})
-        assert str(mismatch.value) == dimension_mismatch_message(4, 3)
+        assert mismatch.value.code == "dimension-mismatch"
         doc = second.get("c", "a")
         assert doc is not None and doc["vector"] == [1.0, 0.0, 0.0, 0.0]
     finally:
         second_connection.close()
 
-    with pytest.raises(ValueError) as conflict:
+    with pytest.raises(VectorInputError) as conflict:
         open_facet(db, dimensions=3)
-    assert str(conflict.value) == dimensions_conflict_message(db, 4, 3)
+    assert conflict.value.code == "dimensions-changed"
 
 
 def test_search_before_any_dimensions_are_known_raises() -> None:
     facet, connection = open_facet(":memory:")
     try:
-        with pytest.raises(ValueError) as info:
+        with pytest.raises(VectorInputError) as info:
             facet.search("c", [1.0, 0.0, 0.0])
-        assert str(info.value) == NO_DIMENSIONS_MESSAGE
+        assert info.value.code == "dimensions-unknown"
         assert facet.meta["dimensions"] == 0
     finally:
         connection.close()
@@ -244,9 +238,9 @@ def test_search_before_any_dimensions_are_known_raises() -> None:
 def test_zero_dimensions_are_rejected() -> None:
     facet, connection = open_facet(":memory:")
     try:
-        with pytest.raises(ValueError) as info:
+        with pytest.raises(VectorInputError) as info:
             facet.configure_dimensions(0)
-        assert str(info.value) == positive_dimensions_message(0)
+        assert info.value.code == "invalid-dimensions"
     finally:
         connection.close()
 

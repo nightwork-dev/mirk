@@ -1,6 +1,6 @@
 {
   "id": "fixtures/merge/array-replace",
-  "title": "array-replace merges only top-level keys (item 20)",
+  "title": "array-replace merges only top-level keys",
   "ports": [
     "fixtures"
   ],

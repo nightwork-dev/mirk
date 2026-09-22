@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/id-field-injected-first",
-  "title": "the map key is injected into idField when absent, and prepended (item 4)",
+  "title": "the map key is injected into idField when absent, and prepended",
   "ports": [
     "fixtures"
   ],

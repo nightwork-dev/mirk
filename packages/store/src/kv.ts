@@ -38,5 +38,7 @@ export {
   resolveAtomicLimits,
 } from "./atomic.js";
 export { toAsync } from "./to-async.js";
+export { StoreFilterError } from "./sql.js";
+export type { StoreFilterErrorCode } from "./sql.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
 export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";

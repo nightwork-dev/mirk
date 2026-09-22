@@ -12,7 +12,11 @@ import type {
 } from "./types.js";
 import { ObjectAlreadyExistsError } from "./memory.js";
 import { assertObjectKey, chunks } from "./util.js";
+import { ArtifactValidationError } from "./errors.js";
 import { compareCodePoints } from "@mirk/store";
+
+export { ArtifactValidationError } from "./errors.js";
+export type { ArtifactValidationErrorCode } from "./errors.js";
 
 /**
  * Filesystem-backed {@link ObjectStore} — durable object bytes on local disk,
@@ -173,7 +177,8 @@ export class FileObjectStore implements ListableObjectStore {
   #path(key: string, suffix: string): string {
     const full = resolve(this.#root, key + suffix);
     if (full !== this.#root && !full.startsWith(this.#root + sep)) {
-      throw new TypeError(
+      throw new ArtifactValidationError(
+        "object-key-escapes-root",
         `object key escapes store root: ${JSON.stringify(key)}`
       );
     }

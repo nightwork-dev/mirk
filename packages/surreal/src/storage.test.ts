@@ -4,7 +4,12 @@ import { Surreal, createRemoteEngines } from "surrealdb";
 
 import { ObjectAlreadyExistsError, type ByteStream, type ObjectInfo } from "@mirk/artifact";
 import { SurrealConnection } from "./index.js";
-import { SurrealObjectStore, type SurrealConnectionLike } from "./storage.js";
+import {
+  SurrealObjectStore,
+  SurrealObjectStoreOptionError,
+  SurrealObjectStoreValidationError,
+  type SurrealConnectionLike,
+} from "./storage.js";
 
 interface Upload {
   key: string;
@@ -134,6 +139,23 @@ async function drain(stream: ByteStream | undefined): Promise<Uint8Array> {
 }
 
 describe("SurrealObjectStore", () => {
+  it("codes invalid object keys, identifiers and options", async () => {
+    const store = await SurrealObjectStore.open(new FakeSurrealConnection());
+    const key = await store.head("../escape").catch((reason: unknown) => reason);
+    expect(key).toBeInstanceOf(TypeError);
+    expect(key).toBeInstanceOf(SurrealObjectStoreValidationError);
+    expect(key).toMatchObject({ code: "invalid-object-key", name: "SurrealObjectStoreValidationError", message: 'invalid object key: "../escape"' });
+    expect(Object.keys(key as object)).not.toContain("name");
+
+    const prefix = await SurrealObjectStore.open(new FakeSurrealConnection(), { tablePrefix: "bad-prefix" }).catch((reason: unknown) => reason);
+    expect(prefix).toMatchObject({ code: "invalid-identifier" });
+
+    const option = await SurrealObjectStore.open(new FakeSurrealConnection(), { chunkSizeBytes: 0 }).catch((reason: unknown) => reason);
+    expect(option).toBeInstanceOf(RangeError);
+    expect(option).toBeInstanceOf(SurrealObjectStoreOptionError);
+    expect(option).toMatchObject({ code: "invalid-option", name: "SurrealObjectStoreOptionError" });
+  });
+
   it("stores and reads chunked immutable generations through a shared connection", async () => {
     const connection = new FakeSurrealConnection();
     const store = await SurrealObjectStore.open(connection, { chunkSizeBytes: 2, idFactory: ids("g1"), tokenFactory: ids("t1") });
@@ -178,7 +200,7 @@ describe("SurrealObjectStore", () => {
     const connection = new FakeSurrealConnection();
     const store = await SurrealObjectStore.open(connection, { chunkSizeBytes: 1, idFactory: ids("g1"), tokenFactory: ids("t1") });
 
-    await expect(store.put("k", failingSource())).rejects.toThrow(/source failed/);
+    await expect(store.put("k", failingSource())).rejects.toBe(sourceError);
 
     expect(await store.head("k")).toBeUndefined();
     expect(connection.uploads.has("g1")).toBe(false);
@@ -261,9 +283,11 @@ describe("SurrealObjectStore", () => {
   });
 });
 
+const sourceError = new Error("source failed");
+
 async function* failingSource(): AsyncIterable<Uint8Array> {
   yield new Uint8Array([1]);
-  throw new Error("source failed");
+  throw sourceError;
 }
 
 function ids(...values: string[]): () => string {

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from .canonical import escape_lone_surrogates
 from .types import StoreFilter
@@ -17,6 +17,8 @@ from .types import StoreFilter
 __all__ = [
     "FILTER_SCALAR_MESSAGE",
     "IN_SCALAR_MESSAGE",
+    "StoreFilterError",
+    "StoreFilterErrorCode",
     "apply_filter",
     "dumps_json",
     "json_equal",
@@ -28,6 +30,18 @@ __all__ = [
 
 FILTER_SCALAR_MESSAGE = "Store filters only support JSON scalar values."
 IN_SCALAR_MESSAGE = "Store IN queries only support JSON scalar values."
+
+StoreFilterErrorCode = Literal["non-scalar-filter", "non-scalar-in-value"]
+
+
+class StoreFilterError(ValueError):
+    """Raised for a `where` or IN value that is not a JSON scalar."""
+
+    def __init__(self, code: StoreFilterErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: StoreFilterErrorCode = code
+
+
 _MAX_SAFE_INTEGER = 2**53
 
 
@@ -109,7 +123,7 @@ def validate_where(where: dict[str, Any]) -> None:
     """Reject non-scalar `where` values before any row is examined."""
     for value in where.values():
         if not is_scalar(value):
-            raise ValueError(FILTER_SCALAR_MESSAGE)
+            raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
 
 
 def matches_where(item: Any, where: dict[str, Any]) -> bool:

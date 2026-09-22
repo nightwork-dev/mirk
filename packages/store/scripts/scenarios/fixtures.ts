@@ -14,9 +14,6 @@
 // Validation is compared by PATHS, never by message: Ajv and Python's
 // `jsonschema` word every message differently. See the `invalidPaths` expect
 // form in src/conformance/format.ts.
-//
-// Numbering in the comments refers to the assertion list in
-// docs/python-port/digests/fixtures.md §13.
 
 import { defineScenario } from "../../src/conformance/define.js";
 
@@ -108,7 +105,7 @@ const THEME_SCHEMA = {
 };
 
 export const scenarios = [
-  // ── Registry (items 1, 2, and the new no-contract rejection) ──────────────
+  // ── Registry ──────────────
   scenario(
     "registry/types-sorted-by-code-point",
     "types() sorts registered type names by code point, whatever order they were registered in",
@@ -135,7 +132,7 @@ export const scenarios = [
     },
   ),
 
-  // ── One file, one fixture: matching (items 17, 72, 73) ────────────────────
+  // ── One file, one fixture: matching ────────────────────
   scenario(
     "matching/id-is-basename-without-extension",
     "a fixture id is the file basename with the matched extension removed",
@@ -167,7 +164,7 @@ export const scenarios = [
   ),
   scenario(
     "matching/root-directory-matches-source-root",
-    'directory "" matches files at the source root (item 73)',
+    'directory "" matches files at the source root',
     {
       types: [type("theme", "")],
       sources: [memory("pack", 0, { "dark.json": { name: "Dark" }, "nested/x.json": { name: "X" } })],
@@ -176,7 +173,7 @@ export const scenarios = [
   ),
   scenario(
     "matching/slash-directory-matches-source-root",
-    'directory "/" also means the source root (item 73)',
+    'directory "/" also means the source root',
     {
       types: [type("theme", "/")],
       sources: [memory("pack", 0, { "dark.json": { name: "Dark" } })],
@@ -185,7 +182,7 @@ export const scenarios = [
   ),
   scenario(
     "matching/extension-match-is-a-suffix",
-    "extension matching is endsWith, so a.min.json under [.json] is the fixture a.min (item 72)",
+    "extension matching is endsWith, so a.min.json under [.json] is the fixture a.min",
     {
       types: [type("theme", "themes", { extensions: [".json"] })],
       sources: [memory("pack", 0, { "themes/a.min.json": { name: "A" } })],
@@ -203,7 +200,7 @@ export const scenarios = [
   ),
   scenario(
     "matching/unparsed-extension-reports-one-diagnostic",
-    "a file under the directory with no registered parser yields exactly one no-parser diagnostic (item 17)",
+    "a file under the directory with no registered parser yields exactly one no-parser diagnostic",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -265,10 +262,10 @@ export const scenarios = [
     [{ op: "load", args: [":dark"], expect: throws }],
   ),
 
-  // ── Keyed map documents (items 3-9) ──────────────────────────────────────
+  // ── Keyed map documents ──────────────────────────────────────
   scenario(
     "map/one-document-many-fixtures",
-    "a map document yields one independently addressable fixture per top-level key (item 3)",
+    "a map document yields one independently addressable fixture per top-level key",
     {
       types: [type("theme", "themes", { document: { kind: "map", idField: "id" } })],
       sources: [
@@ -285,7 +282,7 @@ export const scenarios = [
   ),
   scenario(
     "map/id-field-injected-first",
-    "the map key is injected into idField when absent, and prepended (item 4)",
+    "the map key is injected into idField when absent, and prepended",
     {
       types: [type("theme", "themes", { document: { kind: "map", idField: "id" } })],
       sources: [memory("pack", 0, { "themes/core.json": { dark: { name: "Dark" } } })],
@@ -306,7 +303,7 @@ export const scenarios = [
   ),
   scenario(
     "map/patch-entry-patches-one-key",
-    "a $patch entry in a higher layer patches only its own key (item 5)",
+    "a $patch entry in a higher layer patches only its own key",
     {
       types: [
         type("theme", "themes", { document: { kind: "map", idField: "id" }, mergeStrategy: "deep" }),
@@ -327,7 +324,7 @@ export const scenarios = [
   ),
   scenario(
     "map/provenance-carries-the-key-suffix",
-    "provenance paths for a map fixture are <file>#<key>, in layer order (item 6)",
+    "provenance paths for a map fixture are <file>#<key>, in layer order",
     {
       types: [
         type("theme", "themes", { document: { kind: "map", idField: "id" }, mergeStrategy: "deep" }),
@@ -343,7 +340,7 @@ export const scenarios = [
   ),
   scenario(
     "map/pack-validates-clean",
-    "a well-formed map pack validates with no diagnostics (item 7)",
+    "a well-formed map pack validates with no diagnostics",
     {
       types: [
         type("theme", "themes", {
@@ -359,7 +356,7 @@ export const scenarios = [
   ),
   scenario(
     "map/base-id-mismatch-rejected",
-    "a base map entry whose explicit id disagrees with its key throws map-id-mismatch (item 8)",
+    "a base map entry whose explicit id disagrees with its key throws map-id-mismatch",
     {
       types: [type("theme", "themes", { document: { kind: "map", idField: "id" } })],
       sources: [memory("pack", 0, { "themes/core.json": { dark: { id: "other", name: "Dark" } } })],
@@ -368,7 +365,7 @@ export const scenarios = [
   ),
   scenario(
     "map/patch-id-mismatch-rejected",
-    "a PATCH map entry whose explicit id disagrees with its key throws map-id-mismatch (item 9)",
+    "a PATCH map entry whose explicit id disagrees with its key throws map-id-mismatch",
     {
       types: [type("theme", "themes", { document: { kind: "map", idField: "id" } })],
       sources: [
@@ -399,10 +396,10 @@ export const scenarios = [
     [{ op: "load", args: ["theme:dark"], expect: throws }],
   ),
 
-  // ── Layering and patches (items 10-16, 71, 75, 76, 78) ───────────────────
+  // ── Layering and patches ───────────────────
   scenario(
     "layering/patch-merges-over-base",
-    "a base in a low layer plus a $patch in a high layer produces the merged value (item 10)",
+    "a base in a low layer plus a $patch in a high layer produces the merged value",
     {
       types: [type("theme", "themes", { mergeStrategy: "deep" })],
       sources: [
@@ -416,7 +413,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/provenance-base-then-patch",
-    "provenance kinds are [base, patch] with the file path on both (item 11)",
+    "provenance kinds are [base, patch] with the file path on both",
     {
       types: [type("theme", "themes", { mergeStrategy: "deep" })],
       sources: [
@@ -428,7 +425,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/shadowed-patch-ref-mismatch-still-fires",
-    "a $patch naming another ref throws even when it sits below the selected base (item 12)",
+    "a $patch naming another ref throws even when it sits below the selected base",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -440,7 +437,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/patch-at-base-priority-does-not-apply",
-    "a patch at or below the base's priority does not apply; the value is the base alone (item 13)",
+    "a patch at or below the base's priority does not apply; the value is the base alone",
     {
       types: [type("theme", "themes", { mergeStrategy: "deep" })],
       sources: [
@@ -455,7 +452,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/patches-without-a-base-are-rejected",
-    "a pack of patches with no full document throws patch-without-base (item 15)",
+    "a pack of patches with no full document throws patch-without-base",
     {
       types: [type("theme", "themes")],
       sources: [memory("pack", 0, { "themes/dark.json": { $patch: "theme:dark", accent: "red" } })],
@@ -464,7 +461,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/patch-above-base-ref-mismatch",
-    "a patch above the base naming a different ref throws patch-ref-mismatch (item 16)",
+    "a patch above the base naming a different ref throws patch-ref-mismatch",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -491,7 +488,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/shadowed-base-is-never-validated",
-    "a base a higher layer replaced is never schema-validated, however malformed (item 71)",
+    "a base a higher layer replaced is never schema-validated, however malformed",
     {
       types: [type("theme", "themes", { jsonSchema: THEME_SCHEMA })],
       sources: [
@@ -532,7 +529,7 @@ export const scenarios = [
   ),
   scenario(
     "layering/patch-cannot-delete-a-key",
-    "no strategy removes a key: a deep patch retains what it omits and overwrites with null (items 75, 76)",
+    "no strategy removes a key: a deep patch retains what it omits and overwrites with null",
     {
       types: [type("theme", "themes", { mergeStrategy: "deep" })],
       sources: [
@@ -544,14 +541,14 @@ export const scenarios = [
     },
     [{ op: "load", args: ["theme:dark"], expect: value }],
   ),
-  // `validate()` degrades where `list()` aborts (item 78). Only the degradation
+  // `validate()` degrades where `list()` aborts. Only the degradation
   // is pinned here, and its message is IGNORED: `parse-failed` wraps the host
   // parser's own words, which V8 and CPython spell differently for the same
   // broken document. That `list()` throws is pinned by every other list-throws
   // scenario in this file, all of which raise a message Mirk itself writes.
   scenario(
     "layering/parse-error-degrades-in-validate",
-    "a malformed document is reported by validate() rather than thrown, and the source is skipped (item 78)",
+    "a malformed document is reported by validate() rather than thrown, and the source is skipped",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -567,12 +564,12 @@ export const scenarios = [
     ],
   ),
 
-  // ── Merge strategies (items 18-20) ───────────────────────────────────────
+  // ── Merge strategies ───────────────────────────────────────
   ...(
     [
-      ["replace", "replace keeps only the incoming keys (item 18)"],
-      ["deep", "deep merges nested objects, replaces arrays, retains omitted keys (item 19)"],
-      ["array-replace", "array-replace merges only top-level keys (item 20)"],
+      ["replace", "replace keeps only the incoming keys"],
+      ["deep", "deep merges nested objects, replaces arrays, retains omitted keys"],
+      ["array-replace", "array-replace merges only top-level keys"],
     ] as const
   ).map(([strategy, title]) =>
     scenario(
@@ -653,10 +650,10 @@ export const scenarios = [
     ],
   ),
 
-  // ── References and the graph (items 22-29, 31, 74, 82) ───────────────────
+  // ── References and the graph ───────────────────
   scenario(
     "references/explicit-ref-resolves",
-    "an explicit $ref to an existing fixture validates clean and produces one edge (items 22, 23)",
+    "an explicit $ref to an existing fixture validates clean and produces one edge",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -673,7 +670,7 @@ export const scenarios = [
   ),
   scenario(
     "references/missing-target-is-one-diagnostic",
-    "a $ref to a fixture nothing carries yields one missing-reference diagnostic (items 24, 26)",
+    "a $ref to a fixture nothing carries yields one missing-reference diagnostic",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -690,7 +687,7 @@ export const scenarios = [
   ),
   scenario(
     "references/bare-string-is-not-a-reference-by-default",
-    "under the default mode a canonical-looking string produces no edge (item 25)",
+    "under the default mode a canonical-looking string produces no edge",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -736,7 +733,7 @@ export const scenarios = [
   ),
   scenario(
     "references/prose-containing-a-ref-is-not-a-reference",
-    "bare-ref detection checks the WHOLE string, so prose is never a reference (item 29)",
+    "bare-ref detection checks the WHOLE string, so prose is never a reference",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       referenceMode: "explicit-and-bare",
@@ -754,7 +751,7 @@ export const scenarios = [
   ),
   scenario(
     "references/malformed-ref-is-a-graph-diagnostic",
-    "a $ref whose value is not a valid ref becomes an invalid-ref diagnostic on the graph (item 31)",
+    "a $ref whose value is not a valid ref becomes an invalid-ref diagnostic on the graph",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -771,7 +768,7 @@ export const scenarios = [
   ),
   scenario(
     "references/ref-object-content-is-not-walked",
-    "nested content under a $ref object is invisible to the walk (item 82)",
+    "nested content under a $ref object is invisible to the walk",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -801,7 +798,7 @@ export const scenarios = [
   ),
   scenario(
     "references/deeper-than-32-levels-is-invisible",
-    "the reference walk stops below depth 32, so a very deep $ref is not extracted (item 74)",
+    "the reference walk stops below depth 32, so a very deep $ref is not extracted",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -815,10 +812,10 @@ export const scenarios = [
     [{ op: "referenceGraph", args: [], expect: value }],
   ),
 
-  // ── resolveRef (items 27, 28) ────────────────────────────────────────────
+  // ── resolveRef ────────────────────────────────────────────
   scenario(
     "resolve/bare-string-returned-unchanged",
-    "resolveRef returns a canonical string unchanged under the default mode (item 27)",
+    "resolveRef returns a canonical string unchanged under the default mode",
     {
       types: [type("theme", "themes")],
       sources: [memory("pack", 0, { "themes/dark.json": { name: "Dark" } })],
@@ -827,7 +824,7 @@ export const scenarios = [
   ),
   scenario(
     "resolve/bare-string-loads-under-explicit-and-bare",
-    "the same call under explicit-and-bare loads the fixture (item 28)",
+    "the same call under explicit-and-bare loads the fixture",
     {
       types: [type("theme", "themes")],
       referenceMode: "explicit-and-bare",
@@ -1327,10 +1324,10 @@ export const scenarios = [
     [{ op: "validate", args: [], expect: invalidPaths }],
   ),
 
-  // ── Store source and sink (items 35, 36, 39-43) ──────────────────────────
+  // ── Store source and sink ──────────────────────────
   scenario(
     "store/locator-is-never-parsed",
-    "a store item is matched by relativePath; its id is an opaque locator (item 35)",
+    "a store item is matched by relativePath; its id is an opaque locator",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -1350,7 +1347,7 @@ export const scenarios = [
   ),
   scenario(
     "store/path-prefix-applies-only-without-an-explicit-path",
-    "an explicit relativePath ignores pathPrefix; without one the path is <prefix>/<id><ext> (item 36)",
+    "an explicit relativePath ignores pathPrefix; without one the path is <prefix>/<id><ext>",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -1394,7 +1391,7 @@ export const scenarios = [
     [{ op: "list", args: [], expect: value }],
   ),
   // Source-entry order is observable in exactly one place: which of several
-  // competing errors a broken pack raises first (digest §4.4). "Z" sorts before
+  // competing errors a broken pack raises first. "Z" sorts before
   // "a" by code point and after it under ICU collation, so these two scenarios
   // are what a locale-aware comparator would fail.
   scenario(
@@ -1424,7 +1421,7 @@ export const scenarios = [
   ),
   scenario(
     "store/unsafe-relative-path-is-rejected",
-    "a store item whose relativePath escapes the source throws unsafe-relative-path (item 39)",
+    "a store item whose relativePath escapes the source throws unsafe-relative-path",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -1437,7 +1434,7 @@ export const scenarios = [
   ),
   scenario(
     "store/duplicate-relative-paths-are-rejected",
-    "two rows producing the same relative path throw duplicate-relative-path (item 40)",
+    "two rows producing the same relative path throw duplicate-relative-path",
     {
       types: [type("theme", "themes")],
       sources: [
@@ -1472,7 +1469,7 @@ export const scenarios = [
   ),
   scenario(
     "store/seed-writes-each-fixture",
-    "seedStoreFromFixtures writes every fixture of every target into its collection (item 41)",
+    "seedStoreFromFixtures writes every fixture of every target into its collection",
     {
       types: [type("theme", "themes", { jsonSchema: THEME_SCHEMA })],
       sources: [
@@ -1490,7 +1487,7 @@ export const scenarios = [
   ),
   scenario(
     "store/seed-can-carry-provenance",
-    "includeProvenance stores the layer stack alongside the value (item 41)",
+    "includeProvenance stores the layer stack alongside the value",
     {
       types: [type("theme", "themes", { mergeStrategy: "deep" })],
       sources: [
@@ -1509,7 +1506,7 @@ export const scenarios = [
   ),
   scenario(
     "store/seed-refuses-an-invalid-fixture-and-writes-nothing",
-    "a missing reference makes seeding throw seed-validation-failed and write nothing (item 42)",
+    "a missing reference makes seeding throw seed-validation-failed and write nothing",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [
@@ -1526,7 +1523,7 @@ export const scenarios = [
   ),
   scenario(
     "store/seed-collects-every-target-before-writing-any",
-    "a later target's failure stops an earlier target's valid fixture from being written (item 43)",
+    "a later target's failure stops an earlier target's valid fixture from being written",
     {
       types: [type("theme", "themes"), type("page", "pages")],
       sources: [

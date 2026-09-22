@@ -27,7 +27,7 @@ import pytest
 from mirk.store import SqliteStore, hash_name
 from mirk.store.atomic import validate_atomic_request
 from mirk.store.conformance import repo_root
-from mirk.store.search import InMemorySearchStore
+from mirk.store.search import InMemorySearchStore, SearchInputError
 from mirk.store.sqlite_search import SqliteSearchFacet
 from mirk.store.sqlite_vector import SqliteVectorFacet
 
@@ -410,8 +410,9 @@ def test_python_searches_what_typescript_indexed(tmp_path: Path) -> None:
         assert [hit["meta"] for hit in hits] == written["metas"]
         assert [hit["id"] for hit in facet.search("notes", "badgers")] == ["c"]
         # The schema row TypeScript wrote pins the fields for the Python writer too.
-        with pytest.raises(ValueError, match="was initialized with fields"):
+        with pytest.raises(SearchInputError) as mismatch:
             facet.index("fielded", {"id": "f2", "text": "wrong shape"})
+        assert mismatch.value.code == "field-set-mismatch"
     finally:
         store.close()
 

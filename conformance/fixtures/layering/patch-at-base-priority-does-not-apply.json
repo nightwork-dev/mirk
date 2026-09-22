@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/patch-at-base-priority-does-not-apply",
-  "title": "a patch at or below the base's priority does not apply; the value is the base alone (item 13)",
+  "title": "a patch at or below the base's priority does not apply; the value is the base alone",
   "ports": [
     "fixtures"
   ],

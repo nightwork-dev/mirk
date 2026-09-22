@@ -54,6 +54,5 @@ V1 assumes one writing process. Atomic replacement prevents torn individual file
 can still overwrite one another and index generation is last-writer-wins.
 
 Malformed files are never skipped. `list()` scans the collection and throws
-`MarkdownStoreCorruptionError` containing every failing path. The base `SyncStore` contract cannot
-currently return valid items together with per-record diagnostics; a future minimal port extension
-could add a diagnostic collection-read result without changing normal `list()` semantics.
+`MarkdownStoreCorruptionError` containing every failing path; there is no partial read that
+returns the valid records alongside diagnostics.

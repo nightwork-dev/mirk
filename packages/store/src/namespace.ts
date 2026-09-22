@@ -13,9 +13,27 @@ import { AtomicMutationRejectedError } from "./atomic.js";
 
 const SEPARATOR = "\u001f";
 
+export type NamespaceErrorCode = "invalid-namespace";
+
+/** Thrown for an empty namespace or one containing the unit separator. */
+export class NamespaceError extends Error {
+  declare readonly name: "NamespaceError";
+  constructor(readonly code: NamespaceErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(NamespaceError.prototype, "name", {
+  value: "NamespaceError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 function assertNamespace(namespace: string): void {
   if (namespace.length === 0 || namespace.includes(SEPARATOR)) {
-    throw new Error(
+    throw new NamespaceError(
+      "invalid-namespace",
       "namespace must be non-empty and must not contain the unit separator"
     );
   }

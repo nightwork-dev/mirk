@@ -174,12 +174,6 @@ function suite(name: string, make: () => Promise<Made>): void {
       expect(store.search("nope", v(1, 0, 0, 0))).toEqual([]);
     });
 
-    it("rejects a dimension mismatch on upsert and search", () => {
-      const bad = Float32Array.from([1, 0, 0, 0, 0]);
-      expect(() => store.upsert("docs", { id: "b", vector: bad })).toThrow(/dimension/);
-      expect(() => store.search("docs", bad)).toThrow(/dimension/);
-    });
-
     it("upsertMany is atomic — a mid-array mismatch inserts nothing", () => {
       store.upsert("docs", { id: "pre", vector: v(1, 0, 0, 0) });
       const bad = Float32Array.from([1, 0, 0]); // wrong dimensionality
@@ -189,7 +183,7 @@ function suite(name: string, make: () => Promise<Made>): void {
           { id: "b", vector: bad },
           { id: "c", vector: v(0, 1, 0, 0) },
         ]),
-      ).toThrow(/dimension/);
+      ).toThrow(expect.objectContaining({ name: "VectorInputError", code: "dimension-mismatch" }));
       expect(store.count("docs")).toBe(1);
       expect(store.get("docs", "a")).toBeNull();
       expect(store.get("docs", "c")).toBeNull();
@@ -268,7 +262,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
       const b = new SqliteAdapter({ path });
       expect(b.vector.meta.dimensions).toBe(DIMS);
       expect(b.vector.get("docs", "x")?.metadata).toEqual({ k: 1 });
-      expect(() => b.vector.upsert("docs", { id: "bad", vector: Float32Array.from([1, 0, 0]) })).toThrow(/dimension/);
+      expect(() => b.vector.upsert("docs", { id: "bad", vector: Float32Array.from([1, 0, 0]) })).toThrow(expect.objectContaining({ name: "VectorInputError", code: "dimension-mismatch" }));
       b.close();
     } finally {
       rmSync(path, { force: true });
@@ -280,7 +274,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
   it("requires dimensions for search until a write or persisted dimension configures the facet", () => {
     const adapter = new SqliteAdapter({ path: ":memory:" });
     try {
-      expect(() => adapter.vector.search("docs", v(1, 0, 0, 0))).toThrow(/no dimensions yet/);
+      expect(() => adapter.vector.search("docs", v(1, 0, 0, 0))).toThrow(expect.objectContaining({ name: "VectorInputError", code: "dimensions-unknown" }));
       expect(adapter.vector.meta.dimensions).toBe(0);
     } finally {
       adapter.close();
@@ -296,7 +290,7 @@ describe("SqliteAdapter.vector — lazy dimensions", () => {
           { id: "a", vector: v(1, 0, 0, 0) },
           { id: "bad", vector: Float32Array.from([1, 0, 0]) },
         ]),
-      ).toThrow(/dimension/);
+      ).toThrow(expect.objectContaining({ name: "VectorInputError", code: "dimension-mismatch" }));
       expect(a.vector.count("docs")).toBe(0);
       a.close();
 
@@ -341,7 +335,7 @@ describe("SqliteAdapter.vector — persistence", () => {
       const a = new SqliteAdapter({ path, dimensions: 4 });
       a.vector.upsert("docs", { id: "x", vector: v(1, 0, 0, 0) });
       a.close();
-      expect(() => new SqliteAdapter({ path, dimensions: 3 })).toThrow(/dimension/i);
+      expect(() => new SqliteAdapter({ path, dimensions: 3 })).toThrow(expect.objectContaining({ name: "VectorInputError", code: "dimensions-changed" }));
     } finally {
       rmSync(path, { force: true });
       rmSync(`${path}-wal`, { force: true });

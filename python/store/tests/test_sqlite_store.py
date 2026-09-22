@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from mirk.store import SqliteStore, hash_name
+from mirk.store import SqliteAdapterError, SqliteStore, hash_name
 from mirk.store.sqlite import (
     REGISTRY_TABLE,
     is_table_registry_conflict,
@@ -101,8 +101,9 @@ def test_removing_clears_the_version_row(tmp_path: Path) -> None:
 
 
 def test_negative_busy_timeout_is_rejected() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(SqliteAdapterError) as caught:
         SqliteStore(":memory:", busy_timeout_ms=-1)
+    assert caught.value.code == "invalid-busy-timeout"
 
 
 def test_close_releases_the_connection() -> None:
@@ -319,11 +320,9 @@ def test_a_file_from_a_newer_adapter_is_refused(tmp_path: Path) -> None:
     connection.execute("UPDATE _mirk_meta SET value = '3' WHERE key = 'schema_version'")
     connection.close()
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(SqliteAdapterError) as caught:
         SqliteStore(path)
-    assert str(caught.value) == (
-        "Mirk SQLite file schema version 3 is newer than this adapter understands (2)."
-    )
+    assert caught.value.code == "unsupported-schema-version"
 
 
 def test_an_unclaimed_table_on_a_suffixed_candidate_is_skipped(tmp_path: Path) -> None:

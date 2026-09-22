@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/patch-cannot-delete-a-key",
-  "title": "no strategy removes a key: a deep patch retains what it omits and overwrites with null (items 75, 76)",
+  "title": "no strategy removes a key: a deep patch retains what it omits and overwrites with null",
   "ports": [
     "fixtures"
   ],

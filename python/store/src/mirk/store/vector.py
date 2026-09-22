@@ -14,7 +14,16 @@ from __future__ import annotations
 
 import math
 import struct
-from typing import TYPE_CHECKING, Any, Protocol, Required, TypedDict, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    Protocol,
+    Required,
+    TypedDict,
+    cast,
+    runtime_checkable,
+)
 
 from .filter import dumps_json
 
@@ -24,6 +33,8 @@ if TYPE_CHECKING:
 __all__ = [
     "InMemoryVectorStore",
     "VectorDocument",
+    "VectorInputError",
+    "VectorInputErrorCode",
     "VectorSearchOptions",
     "VectorSearchResult",
     "VectorSearchResultList",
@@ -104,6 +115,22 @@ class VectorStore(Protocol):
     ) -> VectorSearchResultList: ...
 
 
+VectorInputErrorCode = Literal[
+    "dimension-mismatch",
+    "invalid-dimensions",
+    "dimensions-changed",
+    "dimensions-unknown",
+]
+
+
+class VectorInputError(ValueError):
+    """Raised when a vector or a store's dimensionality is invalid."""
+
+    def __init__(self, code: VectorInputErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: VectorInputErrorCode = code
+
+
 def dimension_mismatch_message(expected: int, got: int) -> str:
     """The one dimension-mismatch message, shared by every backend."""
     return f"Vector dimension mismatch: expected {expected}, got {got}"
@@ -112,7 +139,9 @@ def dimension_mismatch_message(expected: int, got: int) -> str:
 def assert_dimensions(vector: list[float], dimensions: int) -> None:
     """Raise when a vector's length does not match the store's dimensions."""
     if len(vector) != dimensions:
-        raise ValueError(dimension_mismatch_message(dimensions, len(vector)))
+        raise VectorInputError(
+            "dimension-mismatch", dimension_mismatch_message(dimensions, len(vector))
+        )
 
 
 def _round_f32(value: float) -> float:

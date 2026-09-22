@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/seed-refuses-an-invalid-fixture-and-writes-nothing",
-  "title": "a missing reference makes seeding throw seed-validation-failed and write nothing (item 42)",
+  "title": "a missing reference makes seeding throw seed-validation-failed and write nothing",
   "ports": [
     "fixtures"
   ],

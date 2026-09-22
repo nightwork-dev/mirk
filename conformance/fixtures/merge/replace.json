@@ -1,6 +1,6 @@
 {
   "id": "fixtures/merge/replace",
-  "title": "replace keeps only the incoming keys (item 18)",
+  "title": "replace keeps only the incoming keys",
   "ports": [
     "fixtures"
   ],

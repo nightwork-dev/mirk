@@ -2,9 +2,6 @@
 
 Checkpointed, backend-agnostic copy helpers over Mirk ports.
 
-Plan-bound checkpoint v2, explicit v1 upgrades, and caller-owned post-copy verification are
-implemented locally. Publication and consumer adoption need separate evidence.
-
 ```bash
 npm install @mirk/migrate
 ```
@@ -69,10 +66,12 @@ await copyVectorManifest(entries(), destination, {
 });
 ```
 
-Use `upgradeCheckpointV1` when an existing checkpoint must be resumed under a plan. The helper requires
-the complete plan identity and an explicit conversion timestamp; it never derives either from the
-old checkpoint. A v2 resume rejects a different plan identity, and plan-bound resumes must use v2
-checkpoints rather than silently treating an old count as plan-bound.
+Use `upgradeCheckpointV1` when an existing checkpoint must be resumed under a plan. The helper
+validates the v1 lane and processed count, requires the complete plan identity and an explicit
+`convertedAt` (the conversion time, not when the v1 checkpoint was written), and never infers the
+source, destination, or digest. A v2 resume rejects a different plan identity, and plan-bound
+resumes must use v2 checkpoints rather than silently treating an old count as plan-bound. Plan
+identities are stored in checkpoints; keep credentials and connection strings out of them.
 
 ## Post-copy verification
 
@@ -93,12 +92,20 @@ const { result, verification } = await runMigrationWithVerification(
 `MigrationVerification` is domain-free (`ok`, `checked`, and diagnostic records). A failed check is
 returned to the caller; the wrapper does not decide whether to roll back, retry, or delete source data.
 
-## Contract boundary
+## Guarantees and caller responsibilities
 
-Validation should use representative caller manifests rather than private consumer datasets: copy
-named store collections through the `AsyncStore` port, replay vector/search/graph/object manifests in
-a stable order, interrupt after a checkpoint, resume from the recorded processed counts, and assert
-destination counts plus restored content.
+- A checkpoint records progress only. It does not verify the destination, and it is not proof that
+  a cutover is complete; verify counts, IDs, and content before switching over.
+- Persist checkpoints in a restart-safe store, not only in memory, and replay the same ordering on
+  resume. Re-running a lane is safe because writes are upserts.
+- The package never deletes or modifies source data. Keep the source intact until you no longer
+  need to roll back.
+- Stop ordinary writes to a destination namespace until its migration is complete; the helpers do
+  not exclude concurrent writers.
+
+Test a migration with representative manifests: copy named collections, replay manifests in a
+stable order, interrupt after a checkpoint, resume from the recorded counts, and assert destination
+counts and restored content.
 
 The package does not provide transforms, schema inference, a domain migration language, source
-enumeration for non-KV ports, or a general ETL framework.
+enumeration for non-KV ports, deletion propagation, or a general ETL framework.

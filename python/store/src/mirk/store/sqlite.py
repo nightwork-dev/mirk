@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 from .atomic import (
     IN_PROCESS_ATOMIC_LIMITS,
@@ -29,7 +29,13 @@ from .atomic import (
     resolve_atomic_limits,
     validate_atomic_request,
 )
-from .filter import FILTER_SCALAR_MESSAGE, IN_SCALAR_MESSAGE, dumps_json, is_scalar
+from .filter import (
+    FILTER_SCALAR_MESSAGE,
+    IN_SCALAR_MESSAGE,
+    StoreFilterError,
+    dumps_json,
+    is_scalar,
+)
 from .types import JsonObject, StoreFilter, StoreMeta
 
 __all__ = [
@@ -37,6 +43,8 @@ __all__ = [
     "REGISTRY_TABLE",
     "SCHEMA_VERSION",
     "TABLE_RESOLUTION_ATTEMPTS",
+    "SqliteAdapterError",
+    "SqliteAdapterErrorCode",
     "SqliteStore",
     "build_limit_offset",
     "build_order_by",
@@ -55,6 +63,17 @@ _BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 _UNSAFE_TABLE_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _LIKE_SPECIALS = re.compile(r"([\\%_])")
 _SAFE_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
+
+SqliteAdapterErrorCode = Literal["unsupported-schema-version", "invalid-busy-timeout"]
+
+
+class SqliteAdapterError(ValueError):
+    """Raised when a SQLite file or adapter option cannot be used."""
+
+    def __init__(self, code: SqliteAdapterErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: SqliteAdapterErrorCode = code
+
 
 REGISTRY_TABLE = "_mirk_tables"
 META_TABLE = "_mirk_meta"
@@ -107,7 +126,7 @@ def _bind(value: Any) -> SqlParam:
         return 1 if value else 0
     if isinstance(value, int | float | str):
         return value
-    raise ValueError(FILTER_SCALAR_MESSAGE)
+    raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
 
 
 def build_where_clause(filter: StoreFilter | None = None) -> tuple[str, list[SqlParam]]:
@@ -124,7 +143,7 @@ def build_where_clause(filter: StoreFilter | None = None) -> tuple[str, list[Sql
             params.append(path)
             continue
         if not is_scalar(value):
-            raise ValueError(FILTER_SCALAR_MESSAGE)
+            raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
         conditions.append(f"(json_extract(data, ?) = ? AND {_type_guard(value)})")
         params.extend([path, _bind(value), path])
     return (f" WHERE {' AND '.join(conditions)}", params)
@@ -169,7 +188,7 @@ def _build_in_clause(
             params.append(path)
             continue
         if not is_scalar(value):
-            raise ValueError(IN_SCALAR_MESSAGE)
+            raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
         parts.append(f"(json_extract(data, ?) = ? AND {_type_guard(value)})")
         params.extend([path, _bind(value), path])
     keyword = " AND" if has_prior_where else " WHERE"
@@ -234,9 +253,10 @@ def ensure_registry(connection: sqlite3.Connection) -> None:
         if found is not None:
             parsed = _parse_version(found)
             if parsed is not None and parsed > SCHEMA_VERSION:
-                raise ValueError(
+                raise SqliteAdapterError(
+                    "unsupported-schema-version",
                     f"Mirk SQLite file schema version {found} is newer than this"
-                    f" adapter understands ({SCHEMA_VERSION})."
+                    f" adapter understands ({SCHEMA_VERSION}).",
                 )
         connection.execute(_REGISTRY_DDL[1])
         if found is None:
@@ -441,7 +461,10 @@ class SqliteStore:
         atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
     ) -> None:
         if busy_timeout_ms < 0:
-            raise ValueError(f"busy_timeout_ms must be non-negative; got {busy_timeout_ms}.")
+            raise SqliteAdapterError(
+                "invalid-busy-timeout",
+                f"busy_timeout_ms must be non-negative; got {busy_timeout_ms}.",
+            )
         self._meta = StoreMeta(backend="sqlite")
         self._atomic_limits = resolve_atomic_limits(atomic_limits, IN_PROCESS_ATOMIC_LIMITS)
         self._owns_connection = connection is None

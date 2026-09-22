@@ -2,16 +2,13 @@
 
 > Typed, layered, explainable authored data.
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
-
 ## Why this exists
 
 Applications do not only run code. They also run authored data: defaults, templates, themes,
 configuration fragments, lookup tables, prompts, content packs, test fixtures.
 
-Reading that data is easy. Trusting it is the hard part.
-
-Once authored data matters, the same questions come up repeatedly:
+Reading that data is easy. Trusting it is the hard part. Once authored data matters, the same
+questions come up repeatedly:
 
 - What shape is this record supposed to have?
 - Which source wins when defaults, app overrides, and user overrides all define the same id?
@@ -28,9 +25,24 @@ precedence, small patch overlays, checked references, and provenance.
 npm install @mirk/fixtures
 ```
 
-## The contract
+## Imports
 
-A fixture is addressed by a stable ref:
+Root imports stay dependency-light and runtime-neutral. Source helpers and the CLI live behind
+explicit subpaths, so the root entry never pulls filesystem APIs, parser bundles, database bindings,
+or CLI code into a browser or edge bundle.
+
+| Import                      | What you get                                                | Node-only |
+| --------------------------- | ----------------------------------------------------------- | --------- |
+| `@mirk/fixtures`            | registry, type definitions, loader, refs, errors            | no        |
+| `@mirk/fixtures/memory`     | in-memory source for tests, examples, and generated packs   | no        |
+| `@mirk/fixtures/store`      | store-backed source and store seeding over `@mirk/store/kv` | no        |
+| `@mirk/fixtures/filesystem` | filesystem source for local directories and CLI workflows   | yes       |
+| `@mirk/fixtures/package`    | file-backed defaults shipped inside a package               | yes       |
+| `@mirk/fixtures/cli`        | explicit-config CLI helpers and the `mirk-fixtures` binary  | yes       |
+
+## Quick start
+
+A fixture is addressed by a stable ref, `<type>:<id>`:
 
 ```txt
 theme:dark
@@ -38,7 +50,8 @@ template:welcome
 prompt:code-review
 ```
 
-A fixture type defines where records live and how they are validated:
+The type must be registered before loading. The id is source-relative: it is the file's basename with
+the matched extension removed, never an absolute path.
 
 ```ts
 import {
@@ -71,12 +84,36 @@ const loader = createFixtureLoader({ registry, sources: [defaults] });
 const dark = await loader.load("theme:dark");
 ```
 
-A type declares its shape one of two ways, and may declare both.
+`register(def)` returns nothing and rejects a duplicate type name. `registry.types()` returns type
+names in Unicode code point order.
 
-**`jsonSchema`** is a JSON Schema 2020-12 DOCUMENT — data, not code — so the same
-declaration validates the same authored files in TypeScript and in the Python
-port. The engine is injected, because the root entry stays browser-safe and free
-of runtime dependencies:
+## Fixture types
+
+`defineFixtureType` preserves TypeScript inference at the call site. A definition has:
+
+| Field                | Meaning                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `type`               | Namespace used in refs. Required.                                                        |
+| `directory`          | Source-relative directory holding documents of this type. Required.                      |
+| `jsonSchema`         | JSON Schema 2020-12 document for the authored shape. See below.                          |
+| `schema`             | Standard Schema v1 validator. See below.                                                 |
+| `extensions`         | Accepted extensions. Defaults to the extensions that have registered parsers.            |
+| `document`           | `{ kind: "map", idField? }` to author several fixtures in one file.                      |
+| `mergeStrategy`      | How patches merge. Defaults to `replace`.                                                |
+| `referenceMode`      | `explicit-only` (default) or `explicit-and-bare`. Overrides the loader-wide setting.     |
+| `extractReferences`  | `(value) => Array<{ ref, fieldPath }>`, added to the built-in extraction.                |
+| `validateReferences` | `(value, ctx) => Diagnostic[]`, cross-document checks run by `validate()`.               |
+| `materialize`        | `(value, ctx) => runtime value`, used by `loader.materialize()`.                         |
+| `purpose`            | Tooling hint: `archetype`, `component`, `lookup`, `factory`, or `raw`.                   |
+
+### Validation: `jsonSchema` and `schema`
+
+A type declares its shape one of two ways, and may declare both. A type declaring neither is rejected
+when it is registered.
+
+**`jsonSchema`** is a JSON Schema 2020-12 document — data, not code — so the same declaration
+validates the same authored files in TypeScript and in the Python port. The engine is injected,
+because the root entry stays browser-safe and free of runtime dependencies:
 
 ```ts
 import Ajv2020 from "ajv/dist/2020.js";
@@ -107,26 +144,20 @@ const loader = createFixtureLoader({
 });
 ```
 
-A type that declares `jsonSchema` and gets no `jsonSchemaValidator` fails loudly
-rather than loading unvalidated data. `jsonSchema: true` is the explicit way to
-say "any document".
+A type that declares `jsonSchema` and gets no `jsonSchemaValidator` fails loudly rather than loading
+unvalidated data. `jsonSchema: true` is the explicit way to say "any document".
 
-**`schema`** is a Standard Schema v1 validator and is optional. The package does
-not choose Zod, Valibot, ArkType, or any other validator for you. When both are
-present, `jsonSchema` runs first and the Standard Schema's OUTPUT becomes the
-fixture value. A type declaring neither is rejected when it is registered.
+**`schema`** is a Standard Schema v1 validator. The package does not choose Zod, Valibot, ArkType, or
+any other validator for you. When both are present, `jsonSchema` runs first and the Standard Schema's
+output becomes the fixture value.
 
-Either way the failure surface is one error, `FixtureValidationError`, and one
-diagnostic code, `schema-invalid`.
-
-Parsers are injected. JSON is built in; YAML, JSON5, TOML, or custom formats are caller choices, not
-root-package bundle tax.
+Either way the failure surface is one error, `FixtureValidationError`, and one diagnostic code,
+`schema-invalid`.
 
 ### Keyed fixture maps
 
-One file can author several fixtures of the same registered type. Opt the type
-into map documents and, when useful, let Mirk inject each map key as an `id`
-field:
+One file can author several fixtures of the same type. Opt the type into map documents and, when
+useful, let the loader inject each map key as an `id` field:
 
 ```ts
 const backgroundType = defineFixtureType({
@@ -145,15 +176,55 @@ const backgroundType = defineFixtureType({
 }
 ```
 
-The records remain independently addressable as `background:drifter` and
-`background:detective`. Higher layers may patch either record by placing the
-same key in another map document with an ordinary `$patch` value. Provenance
-identifies both the source file and map key, such as
+The records are independently addressable as `background:drifter` and `background:detective`. When
+`idField` is set, the key fills a missing field on a base record, and an explicitly different value is
+rejected. Higher layers may patch either record by placing the same key in another map document with
+an ordinary `$patch` value. Provenance identifies both the file and the key, such as
 `backgrounds/core.json#detective`.
 
-## Layers and patches
+## Parsers
 
-Authored data usually has more than one layer:
+JSON is built in. YAML, JSON5, TOML, or custom formats are caller choices, supplied by extension:
+
+```ts
+import { parse as parseYaml } from "yaml";
+
+const loader = createFixtureLoader({
+  registry,
+  sources,
+  parsers: { ".yaml": parseYaml },
+});
+```
+
+A parser is a function from text to a value, and may be async. A parser can also be a
+`{ kind, parse }` entry where `kind` is `plain`, `async`, `positioned`, or `async-positioned`. A
+positioned parser returns `{ value, positionFor(path) }`, which adds a line/column `range` to
+diagnostics. Positions only enrich diagnostics; correctness never depends on them.
+
+A matching file with no parser for its extension is a `no-parser` diagnostic. A parse failure is a
+`parse-failed` diagnostic carrying the source id, relative path, and the parser's message.
+
+## Sources and layers
+
+A source lists entries and reads them. Sources, parsers, validators, and hooks may be sync or async;
+the loader normalizes everything to promises.
+
+```ts
+interface FixtureSourceEntry {
+  relativePath: string; // matched against type directory and extension; shown in provenance
+  locator: string;      // opaque, source-owned read token
+}
+
+interface FixtureSource {
+  readonly id: string;
+  list(): MaybePromise<readonly FixtureSourceEntry[]>;
+  read(entry: FixtureSourceEntry): MaybePromise<string>;
+}
+```
+
+A source reads by `locator`, never by re-deriving identity from `relativePath`.
+
+Sources become layers:
 
 ```ts
 const loader = createFixtureLoader({
@@ -166,8 +237,29 @@ const loader = createFixtureLoader({
 });
 ```
 
-Higher-priority base records replace lower-priority base records. Higher-priority patch documents can
-modify only the fields they own:
+A plain source in the array is shorthand for `{ source, layer: source.id, priority: <array index> }`.
+Equal priorities are allowed; declaration order breaks the tie. Layer names such as `base`, `app`,
+or `user` are conventions only — the loader treats no name specially.
+
+### Loading rules
+
+For `loadRaw("type:id")` the loader:
+
+1. Parses the ref and finds the registered type (`invalid-ref`, `unknown-type`).
+2. Lists every source and matches entries directly under the type directory with an accepted
+   extension. Files in nested subdirectories are ignored.
+3. Reads and parses each match. A single document is one fixture named by its filename; a map
+   document is one fixture per top-level key.
+4. Classifies each value as a base document or a patch document (an object with `$patch`).
+5. Selects the highest-priority base. With no base at all, it raises `patch-without-base`; with no
+   document at all, `not-found`.
+6. Validates the base against the type's schema.
+7. Applies patches with a higher priority than the base, in priority order, removing the `$patch`
+   key and validating after every merge, so a schema error is attributed to the patch that caused
+   it.
+8. Records provenance and caches the result by ref.
+
+A patch looks like this:
 
 ```json
 {
@@ -178,24 +270,53 @@ modify only the fields they own:
 }
 ```
 
-The result is deterministic, and the loader records provenance:
+The `$patch` target must exactly match the ref being loaded, including for patches inside map
+documents; a mismatch is `patch-ref-mismatch`. Patches at or below the selected base's priority are
+not applied.
 
-```txt
-theme:dark
-  base   defaults/themes/dark.json
-  patch  app/themes/dark.json
-  patch  user/themes/dark.json
+### Merge strategies
+
+| Strategy        | Behavior                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `replace`       | The patch body replaces the value. The default.                                              |
+| `deep`          | Plain objects merge recursively; arrays and scalars replace.                                  |
+| `array-replace` | Plain objects merge one level deep; every incoming field, including arrays, replaces.         |
+
+`deep` treats only plain objects as mergeable. Dates, Maps, Sets, class instances, and typed arrays
+replace like scalars. There is no deletion marker: under `deep` and `array-replace` a patch can add
+and overwrite keys but not remove one, and under `replace` the patch body (minus `$patch`) becomes
+the whole value.
+
+A custom strategy is a function `(existing, incoming, ctx) => merged`. `ctx.fixture` is the target
+ref and `ctx.layers` lists the layers applied so far. Merge functions must not mutate their inputs;
+the built-in strategies clone. The merged value is validated like any other.
+
+### Provenance
+
+```ts
+const { value, provenance } = await loader.loadRaw("theme:dark");
+// provenance.layers:
+// [{ sourceId: "defaults", layer: "base", priority: 0,  path: "themes/dark.json", kind: "base" },
+//  { sourceId: "app",      layer: "app",  priority: 10, path: "themes/dark.json", kind: "patch" }]
 ```
+
+Each layer has `kind`:
+
+- `base` — the selected base document;
+- `replace` — a lower-priority base that the selected base replaced;
+- `patch` — a patch that was applied;
+- `shadowed` — a patch that was not applied because it sat at or below the base.
+
+`path` is the normalized source-relative path. Provenance never contains absolute filesystem paths,
+package roots, or backend connection details, so it is safe to show in a CLI or UI.
 
 <p align="center">
   <img src="docs/diagrams/layering-pipeline.svg" alt="Layered sources feed @mirk/fixtures, which parses, validates, applies patches, resolves references, and returns a final value plus provenance." width="900" />
 </p>
 
-Application code gets the final value. Tools get the reason that value won.
-
 ## References
 
-Fixtures can refer to other fixtures explicitly:
+Fixtures refer to other fixtures explicitly:
 
 ```json
 {
@@ -204,44 +325,101 @@ Fixtures can refer to other fixtures explicitly:
 }
 ```
 
-Explicit `$ref` objects are the default. Bare string refs are opt-in so prose-heavy records do not
-accidentally become reference graphs.
+Explicit `{ $ref }` objects are always recognized. Bare `"type:id"` strings are opt-in, through
+`referenceMode: "explicit-and-bare"` on the loader or on one type, so prose-heavy records do not
+accidentally become reference graphs. Even then, a bare string counts only when the whole string is
+a canonical ref; a ref-shaped substring inside prose never does. A type's `extractReferences` adds
+references the built-in walk cannot see.
 
-The loader can validate references and build a graph:
+`loader.resolveRef(value, expectedType?)` turns a ref-or-inline value into a fixture value:
+
+- a ref loads the referenced fixture, and a ref of the wrong type is `type-mismatch`;
+- an inline value with `expectedType` is validated against that type's schema;
+- an inline value without `expectedType` is returned unchanged.
+
+`refString`, `parseRef`, `formatRef`, `isCanonicalRef`, and `isExplicitRef` from the root handle refs
+directly.
+
+## Validation reports and the reference graph
 
 ```ts
-const report = await loader.validate();
+const report = await loader.validate();        // or loader.validate("theme:dark")
 const graph = await loader.referenceGraph();
 ```
 
-Missing targets become diagnostics and unresolved graph nodes, not late runtime surprises.
+`validate()` loads every listed fixture, runs schema validation, checks every extracted reference,
+and runs each type's `validateReferences` hook. It returns `{ ok, diagnostics }` and keeps going
+after a failure: one bad file or one failing source contributes diagnostics while the rest of the
+pack is still checked. Missing targets are `missing-reference`; malformed refs are `invalid-ref`.
 
-## Sources
+`referenceGraph()` returns `{ nodes, edges, diagnostics }`. Nodes are `{ ref, type, id, resolved }`;
+edges are `{ from, to, fieldPath }`. Dangling targets stay in the graph as `resolved: false`, and
+malformed refs become diagnostics rather than crashing construction.
 
-The loader works over a small source interface: list entries, read entry. Source helpers adapt the
-places authored data commonly lives.
+`loader.list(type?)` returns every ref the sources define, in code point order.
 
-| Source                      | Use it for                                  | Status      |
-| --------------------------- | ------------------------------------------- | ----------- |
-| `@mirk/fixtures/memory`     | tests, examples, generated packs            | implemented |
-| `@mirk/fixtures/store`      | durable packs backed by `@mirk/store/kv`    | implemented |
-| `@mirk/fixtures/filesystem` | local directories and CLI workflows         | implemented |
-| `@mirk/fixtures/package`    | file-backed defaults shipped with a package | implemented |
+## Materialization
 
-Everything above the source boundary is shared: parsing, validation, layering, patching, reference
-resolution, materialization, diagnostics, and provenance.
+Raw data is the validated document. Materialized data is the runtime representation a type's
+`materialize` hook builds from it:
+
+```ts
+const raw = await loader.load("prompt:review");
+const compiled = await loader.materialize("prompt:review");
+```
+
+A type without `materialize` passes the raw value through. The hook receives `ctx.loadRaw(ref)` and
+`ctx.materialize(ref)` so it can compose other fixtures. Re-entering a ref already being
+materialized in the same call chain raises `materialization-cycle`.
+
+Raw and materialized values are cached separately. `loader.invalidate(ref)` drops that raw value and
+every materialized value; `loader.invalidate()` drops everything.
+
+## Diagnostics
+
+Every failure is a structured record:
+
+```ts
+interface Diagnostic {
+  severity: "info" | "warning" | "error";
+  code: string;       // e.g. "not-found", "schema-invalid", "patch-without-base"
+  message: string;
+  fixture?: string;   // ref
+  source?: string;    // source id
+  path?: string;      // source-relative path
+  fieldPath?: string;
+  range?: SourceRange;
+  hint?: string;
+}
+```
+
+Throwing APIs (`load`, `loadRaw`, `materialize`, `resolveRef`) throw `FixtureError`, whose
+`diagnostic` property carries the record; schema failures throw its subclass
+`FixtureValidationError`, which also carries the validator's `issues`. Report APIs (`validate`,
+`referenceGraph`) return diagnostics instead. Diagnostics identify files by source id plus relative
+path, never by absolute local path.
+
+## Built-in sources
+
+### Memory
+
+```ts
+import { createMemoryFixtureSource } from "@mirk/fixtures/memory";
+
+const pack = createMemoryFixtureSource({
+  id: "test",
+  files: { "prompts/review.json": JSON.stringify({ template: "Review {code}" }) },
+});
+```
 
 ### Filesystem and package resources
 
-Node applications can load an ordinary directory through an explicit Node-only subpath:
+Node applications can load an ordinary directory:
 
 ```ts
 import { createFilesystemFixtureSource } from "@mirk/fixtures/filesystem";
 
-const local = createFilesystemFixtureSource({
-  id: "local",
-  root: "./fixtures",
-});
+const local = createFilesystemFixtureSource({ id: "local", root: "./fixtures" });
 ```
 
 Packages can expose file-backed defaults relative to their own module:
@@ -255,25 +433,24 @@ const defaults = createPackageFixtureSource({
 });
 ```
 
-Both sources resolve and contain real paths beneath one fixed root, list normalized relative paths in
-deterministic order, and reject entries that escape through a symlink. Package resources are
-Node-first in this slice and require a `file:` URL; bundled browser manifests remain a separate
-future contract.
+Both resolve the root's real path once, when the source is created. Every discovered file is
+resolved to its real path and rejected if it lands outside the root, so a symlink pointing outward
+is an error rather than a leak. Listed paths are relative to the root, use `/` separators, and come
+back in deterministic order. Relative paths with `..`, empty segments, backslashes, or an absolute
+prefix are rejected. The package source needs a `file:` root URL; it does not read bundled browser
+manifests.
 
-## Store integration
+### Store
 
-Use `@mirk/fixtures/store` when authored data needs to cross the storage boundary:
-
-- **source:** read fixture documents from a store collection;
-- **sink:** seed validated fixture values into ordinary store collections.
+Use `@mirk/fixtures/store` when authored data crosses the storage boundary: read fixture documents
+from a store collection, or seed validated fixture values into ordinary store collections.
+`@mirk/store` knows nothing about fixtures; the dependency runs one way.
 
 <p align="center">
   <img src="docs/diagrams/store-integration.svg" alt="Fixture sources feed @mirk/fixtures, which can seed validated records into @mirk/store/kv while also reading store-backed fixture packs." width="900" />
 </p>
 
-### Store as source
-
-Fixture documents can live in a store collection:
+**Store as source.** Fixture documents live as items in a collection:
 
 ```ts
 import { createStoreFixtureSource } from "@mirk/fixtures/store";
@@ -282,51 +459,59 @@ const source = createStoreFixtureSource({
   id: "db",
   store: adapter.kv,
   collection: "fixtures",
+  pathPrefix: "themes", // optional
 });
 ```
 
-The loader still validates, layers, patches, and explains them like any other source.
+The store only needs `list(collection)` and `getById(collection, id)`, sync or async, so any
+`@mirk/store/kv` backend works. Each item is:
 
-### Store as sink
+```ts
+interface StoredFixtureItem {
+  id: string;
+  content: string;       // the document text, parsed like a file
+  extension: string;     // e.g. ".json"
+  relativePath?: string;
+  updatedAt?: string;
+  meta?: Record<string, unknown>;
+}
+```
 
-Validated fixtures can seed ordinary store collections:
+The item's path is its `relativePath` when present, otherwise `<pathPrefix>/<id><extension>`. Reads
+go through the item id, never through the path, so ids containing dots, slashes, or extension-like
+suffixes work. Pass `mapItem` to adapt a differently shaped item. The collection layout is yours to
+choose.
+
+The source caches its listing. To pick up writes in a long-running process, call
+`source.invalidate()` to drop the listing and then `loader.invalidate()` to drop values built from
+it.
+
+**Store as sink.** Validated fixtures can seed ordinary collections:
 
 ```ts
 import { seedStoreFromFixtures } from "@mirk/fixtures/store";
 
-await seedStoreFromFixtures({
+const { written, skipped } = await seedStoreFromFixtures({
   loader,
   store: adapter.kv,
-  targets: {
-    theme: "themes",
-    template: "templates",
-  },
+  targets: { theme: "themes", template: "templates" },
   mode: "upsert",
 });
 ```
 
-The store package stays focused on storage ports. Fixture rules live here.
-
-## Code-split imports
-
-Root imports stay dependency-light and runtime-neutral.
-
-| Import                      | What you get                                               | Node-only modules | Status      |
-| --------------------------- | ---------------------------------------------------------- | ----------------- | ----------- |
-| `@mirk/fixtures`            | registry, type definitions, loader, refs, diagnostics      | no                | implemented |
-| `@mirk/fixtures/memory`     | in-memory source                                           | no                | implemented |
-| `@mirk/fixtures/store`      | store source and seeding helpers                           | no                | implemented |
-| `@mirk/fixtures/filesystem` | filesystem source                                          | yes               | implemented |
-| `@mirk/fixtures/package`    | file-backed package/resource source                        | yes               | implemented |
-| `@mirk/fixtures/cli`        | explicit-config CLI helpers and the `mirk-fixtures` binary | yes               | implemented |
-
-The root entry does not pull filesystem APIs, parser bundles, database bindings, or CLI code into a
-browser or edge bundle.
+- `targets` maps fixture type names to collection names explicitly.
+- `mode` is `upsert` (the default) or `insert-only`, which skips ids that already exist and reports
+  them in `skipped`.
+- Each item is `{ id, value }` with `id` equal to the fixture id; `includeProvenance: true` adds
+  `provenance`, and `mapItem(fixture)` replaces the item shape entirely.
+- Every fixture is loaded and validated before the first write. A failure throws
+  `seed-validation-failed` and writes nothing. `validateBeforeWrite: false` skips the full
+  `validate()` pass, though schema validation still runs on load.
+- A write that fails partway through is not rolled back; items already written stay written.
 
 ## CLI
 
-The authoring CLI takes an explicit JavaScript configuration module. It does not discover a project
-directory or parser packages:
+The authoring CLI takes an explicit JavaScript configuration module:
 
 ```text
 mirk-fixtures validate <config>
@@ -337,39 +522,34 @@ mirk-fixtures graph <config> [--format json|dot]
 ```
 
 The supplied path resolves `mirk.fixtures.mjs`, which exports `{ registry, sources, parsers }` or a
-constructed loader. Each command supports deterministic human output and `--json` using the
-`mirk-fixtures-cli/v1` envelope. Exit codes distinguish fixture errors (`1`), CLI/configuration
-errors (`2`), and source or unexpected failures (`3`); `0` means no error diagnostics. Absolute paths
-are hidden unless `--debug-paths` is explicitly requested.
+constructed loader. The CLI discovers nothing on its own: parser packages are imported by the
+configuration module, TypeScript configuration is not supported, and authored content is never
+evaluated as code.
 
-The same implementation is available as `executeFixtureCli()` and `runFixtureCli()` from
-`@mirk/fixtures/cli`, and as the `mirk-fixtures` package binary. The binary imports only the supplied
-configuration module; it does not discover application directories or evaluate authored content.
+Every command prints deterministic human output, or with `--json` this envelope:
 
-## What to care about
+```ts
+interface FixtureCliEnvelope<T> {
+  schema: "mirk-fixtures-cli/v1";
+  command: string;
+  ok: boolean;
+  result?: T;
+  diagnostics: readonly Diagnostic[];
+}
+```
 
-Judge the package by a small set of promises:
+Exit codes: `0` no error diagnostics; `1` fixture, parse, schema, reference, or materialization
+failure; `2` CLI usage or configuration failure; `3` source access or unexpected internal failure.
+Absolute paths are hidden unless `--debug-paths` is passed.
 
-1. **No hidden precedence.** Layer order is explicit and deterministic.
-2. **No unvalidated data.** Fixture values pass through schemas before use or seeding.
-3. **No copy-the-world overrides.** Patch documents let higher layers own small changes.
-4. **No mystery refs.** References can be checked and graphed.
-5. **No unexplainable final values.** Provenance is part of the model.
-6. **No backend lock-in.** The same loader works over memory, filesystem, package-resource, and store
-   sources.
-7. **No storage coupling.** Fixture rules stay in this package; store adapters stay plain.
+The same implementation is available programmatically as `executeFixtureCli()` and `runFixtureCli()`
+from `@mirk/fixtures/cli`.
 
 ## What this is not
 
-`@mirk/fixtures` is not a database, a schema library, a parser bundle, a hot-reload service, a
-migration engine, or a domain framework.
-
-It is the reusable boundary between raw authored data and application state.
-
-## Status
-
-Core, memory, store, references, materialization, filesystem, file-backed package sources, and the
-explicit-config CLI are implemented locally. Publication and consumer adoption need separate
-evidence.
-
-See [`../../docs/fixtures-spec.md`](../../docs/fixtures-spec.md) for the detailed design and remaining slice plan.
+- Not a database or storage port. Persistence rides `@mirk/store/kv`.
+- Not a schema library. It consumes JSON Schema and Standard Schema validators you supply.
+- Not a parser bundle. Formats beyond JSON are injected.
+- Not a hot-reload service. It exposes invalidation; file watching belongs above it.
+- Not a migration engine. It loads current authored data; versioned migrations are separate.
+- Not a domain framework. No kind of content is special to the core.

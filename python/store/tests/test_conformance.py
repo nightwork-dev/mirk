@@ -31,8 +31,8 @@ from mirk.store.conformance import (
     validate_scenarios,
 )
 
-# Ports whose target this checkout cannot build yet. The integrator empties this
-# set once vector, search and graph land; a skip outside it is a failure now.
+# Ports whose target this checkout cannot build yet. This set empties once
+# vector, search and graph land; a skip outside it is a failure now.
 ALLOWED_SKIPPED_PORTS: set[str] = set()
 
 IMPLEMENTED_CAPABILITIES = {"listWhereIn"}
@@ -111,7 +111,7 @@ def test_scenario(scenario: Scenario, backend: str) -> None:
 
 @pytest.mark.skipif(CORPUS_ERROR is not None, reason="corpus missing")
 def test_skipped_ports_are_allowed() -> None:
-    """Every skip names a port the integrator still expects to be missing."""
+    """Every skip names a port this checkout still expects to be missing."""
     skipped_ports = {port for port, _, _ in SKIPPED}
     assert skipped_ports <= ALLOWED_SKIPPED_PORTS, (
         f"skips on ports that should run here: {sorted(skipped_ports - ALLOWED_SKIPPED_PORTS)}"
@@ -168,7 +168,7 @@ def test_hash_port_resolves_via_mirk_store_hash() -> None:
 
 
 def test_a_missing_port_falls_back_from_mirk_store_to_mirk() -> None:
-    """S0 ruling 8: resolution tries `mirk.store.<p>` then `mirk.<p>` before failing."""
+    """Resolution tries `mirk.store.<p>` then `mirk.<p>` before failing."""
     with pytest.raises(TargetUnavailableError) as info:
         resolve_target("definitely_not_a_port", "memory", InMemoryStore())
     assert "mirk.store.definitely_not_a_port" in str(info.value)

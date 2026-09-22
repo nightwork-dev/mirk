@@ -14,6 +14,7 @@ import type {
   WriteArtifactInput,
 } from "./types.js";
 import { ArtifactConflictError, ObjectAlreadyExistsError } from "./memory.js";
+import { ArtifactOperationError, ArtifactValidationError } from "./errors.js";
 import {
   artifactFinalizationDigest,
   assertPortableMetadata,
@@ -25,15 +26,22 @@ import {
 } from "./util.js";
 
 export class ArtifactWriteError extends Error {
+  declare readonly name: "ArtifactWriteError";
   constructor(
     message: string,
     readonly cleanup: "not-needed" | "succeeded" | "failed",
     options?: ErrorOptions
   ) {
     super(message, options);
-    this.name = "ArtifactWriteError";
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(ArtifactWriteError.prototype, "name", {
+  value: "ArtifactWriteError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export interface ArtifactCoordinatorOptions {
   namespace?: string;
@@ -68,7 +76,8 @@ export class ArtifactCoordinator {
       this.#concurrency.mode === "repository-atomic" &&
       !this.isAtomicRepository()
     )
-      throw new TypeError(
+      throw new ArtifactValidationError(
+        "invalid-concurrency-config",
         "repository-atomic concurrency requires AtomicArtifactRepository"
       );
   }
@@ -177,7 +186,7 @@ export class ArtifactCoordinator {
     const prior = await this.#prior(repositoryIdempotencyKey, fingerprint);
     if (prior) {
       const bytes = await this.objects.get(input.objectKey);
-      if (!bytes) throw new Error(`object not found: ${input.objectKey}`);
+      if (!bytes) throw new ArtifactOperationError("object-not-found", `object not found: ${input.objectKey}`);
       const actual = await digestStream(bytes);
       this.#assertFinalizationReplay(
         prior,
@@ -195,7 +204,7 @@ export class ArtifactCoordinator {
     let completed = false;
     try {
       const bytes = await this.objects.get(input.objectKey);
-      if (!bytes) throw new Error(`object not found: ${input.objectKey}`);
+      if (!bytes) throw new ArtifactOperationError("object-not-found", `object not found: ${input.objectKey}`);
       const { digest, sizeBytes } = await digestStream(bytes);
       const record: StoredArtifactRecord = {
         id: this.#idFactory(),
@@ -232,13 +241,13 @@ export class ArtifactCoordinator {
     const record = await this.repository.get(id);
     if (!record) return undefined;
     const bytes = await this.objects.get(record.objectKey);
-    if (!bytes) throw new Error(`artifact object missing: ${id}`);
+    if (!bytes) throw new ArtifactOperationError("artifact-object-missing", `artifact object missing: ${id}`);
     return { artifact: descriptor(record), bytes };
   }
 
   async verify(id: string): Promise<ArtifactVerification> {
     const record = await this.repository.get(id);
-    if (!record) throw new Error(`artifact not found: ${id}`);
+    if (!record) throw new ArtifactOperationError("artifact-not-found", `artifact not found: ${id}`);
     const bytes = await this.objects.get(record.objectKey);
     if (!bytes)
       return {
@@ -277,7 +286,8 @@ export class ArtifactCoordinator {
     if (!(await this.repository.delete(id))) return false;
     if (await this.#hasObjectReference(record.objectKey)) return true;
     if (!(await this.objects.delete(record.objectKey)))
-      throw new Error(
+      throw new ArtifactOperationError(
+        "object-deletion-failed",
         `artifact metadata deleted but object deletion failed: ${id}`
       );
     return true;
@@ -317,7 +327,8 @@ export class ArtifactCoordinator {
           now: this.#now(),
         });
         if (renewed.status !== "acquired")
-          throw new Error(
+          throw new ArtifactOperationError(
+            "lease-lost",
             "artifact object lease was lost before repository commit"
           );
         activeLease = renewed.lease;
@@ -333,7 +344,8 @@ export class ArtifactCoordinator {
           this.isLeaseRepository() &&
           !leaseRepository.createIdempotentWithLease
         )
-          throw new Error(
+          throw new ArtifactOperationError(
+            "lease-commit-unsupported",
             "artifact repository cannot commit while holding an object lease"
           );
         const result =
@@ -351,7 +363,8 @@ export class ArtifactCoordinator {
                 idempotencyKey: repositoryIdempotencyKey,
               });
         if (result.status === "lease-lost")
-          throw new Error(
+          throw new ArtifactOperationError(
+            "lease-lost",
             "artifact object lease was lost before repository commit"
           );
         if (result.status === "conflict")
@@ -374,7 +387,8 @@ export class ArtifactCoordinator {
           const leaseRepository = this.repository as ArtifactRepository &
             ArtifactLeaseRepository;
           if (!leaseRepository.createWithLease)
-            throw new Error(
+            throw new ArtifactOperationError(
+              "lease-commit-unsupported",
               "artifact repository cannot commit while holding an object lease"
             );
           const result = await leaseRepository.createWithLease({
@@ -383,7 +397,8 @@ export class ArtifactCoordinator {
             now: this.#now(),
           });
           if (result.status === "lease-lost")
-            throw new Error(
+            throw new ArtifactOperationError(
+              "lease-lost",
               "artifact object lease was lost before repository commit"
             );
           if (result.status === "conflict")

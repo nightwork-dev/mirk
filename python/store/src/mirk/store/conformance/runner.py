@@ -24,7 +24,8 @@ and artifact ports never edit this module:
 
 If neither module exists, or the one that does exposes no ``conformance_target``,
 the scenario is a recorded skip rather than a failure. Skips are data: the suite
-counts them per port and the integrator makes them fatal.
+counts them per port, and `ALLOWED_SKIPPED_PORTS` in `tests/test_conformance.py`
+lists the ports that may be missing; any other skip fails the run.
 
 ## The `hash` port's wrapper expansion
 
@@ -134,7 +135,7 @@ def scenario_port(scenario: Scenario) -> str:
 def resolve_target(port: str, backend: str, connection: object) -> object:
     """Build the object a scenario's steps are dispatched onto.
 
-    Tries ``mirk.store.<port>`` first, then ``mirk.<port>`` (S0 ruling 8): the
+    Tries ``mirk.store.<port>`` first, then ``mirk.<port>`` : the
     store's own extra ports live in the first, a sibling package's ports (e.g.
     ``mirk.fixtures``, ``mirk.artifact``) in the second.
     """

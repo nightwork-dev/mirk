@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/patch-entry-patches-one-key",
-  "title": "a $patch entry in a higher layer patches only its own key (item 5)",
+  "title": "a $patch entry in a higher layer patches only its own key",
   "ports": [
     "fixtures"
   ],

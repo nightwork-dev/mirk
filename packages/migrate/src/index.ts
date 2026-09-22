@@ -8,6 +8,43 @@ import type {
   VectorDocument,
 } from "@mirk/store";
 
+export type MigrationErrorCode =
+  | "invalid-batch-size"
+  | "invalid-checkpoint"
+  | "invalid-timestamp"
+  | "invalid-plan"
+  | "invalid-upgrade-input"
+  | "invalid-resume"
+  | "mixed-checkpoint-kinds"
+  | "v2-checkpoint-required"
+  | "plan-required"
+  | "plan-identity-mismatch"
+  | "lane-key-mismatch"
+  | "duplicate-checkpoint-lane"
+  | "invalid-options"
+  | "processed-count-overflow"
+  | "invalid-verifier"
+  | "invalid-collections"
+  | "duplicate-collection";
+
+/** Thrown for invalid migration input and checkpoint/resume mismatches. */
+export class MigrationError extends Error {
+  declare readonly name: "MigrationError";
+  readonly code: MigrationErrorCode;
+
+  constructor(code: MigrationErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(MigrationError.prototype, "name", {
+  value: "MigrationError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 /** The unbound checkpoint shape emitted by the original migration API. */
 export interface MigrationCheckpointV1 {
   lane: string;
@@ -105,7 +142,7 @@ export interface ObjectManifestEntry {
 const batchSize = (value: number | undefined): number => {
   if (value === undefined) return 100;
   if (!Number.isSafeInteger(value) || value <= 0)
-    throw new Error("batchSize must be a positive integer");
+    throw new MigrationError("invalid-batch-size", "batchSize must be a positive integer");
   return value;
 };
 
@@ -123,7 +160,7 @@ const isV2Checkpoint = (value: unknown): boolean =>
 
 function validateLane(lane: unknown): asserts lane is string {
   if (typeof lane !== "string" || lane.length === 0)
-    throw new Error("checkpoint lane must be a non-empty string");
+    throw new MigrationError("invalid-checkpoint", "checkpoint lane must be a non-empty string");
 }
 
 function validateProcessed(processed: unknown): asserts processed is number {
@@ -132,7 +169,7 @@ function validateProcessed(processed: unknown): asserts processed is number {
     !Number.isSafeInteger(processed) ||
     processed < 0
   ) {
-    throw new Error("checkpoint processed must be a non-negative safe integer");
+    throw new MigrationError("invalid-checkpoint", "checkpoint processed must be a non-negative safe integer");
   }
 }
 
@@ -145,13 +182,13 @@ function validateTimestamp(
     !Number.isSafeInteger(timestamp) ||
     timestamp < 0
   ) {
-    throw new Error(`${field} must be a non-negative safe integer`);
+    throw new MigrationError("invalid-timestamp", `${field} must be a non-negative safe integer`);
   }
 }
 
 const validatePlan = (plan: MigrationPlanIdentity): void => {
   if (!isRecord(plan) || plan.schema !== "mirk-migration-plan/v1") {
-    throw new Error("migration plan schema must be mirk-migration-plan/v1");
+    throw new MigrationError("invalid-plan", "migration plan schema must be mirk-migration-plan/v1");
   }
   for (const [field, value] of [
     ["planDigest", plan.planDigest],
@@ -159,7 +196,7 @@ const validatePlan = (plan: MigrationPlanIdentity): void => {
     ["destinationIdentity", plan.destinationIdentity],
   ] as const) {
     if (typeof value !== "string" || value.length === 0) {
-      throw new Error(`migration plan ${field} must be a non-empty string`);
+      throw new MigrationError("invalid-plan", `migration plan ${field} must be a non-empty string`);
     }
   }
 };
@@ -167,7 +204,7 @@ const validatePlan = (plan: MigrationPlanIdentity): void => {
 function validateCheckpointV1(
   checkpoint: unknown
 ): asserts checkpoint is MigrationCheckpointV1 {
-  if (!isRecord(checkpoint)) throw new Error("checkpoint must be an object");
+  if (!isRecord(checkpoint)) throw new MigrationError("invalid-checkpoint", "checkpoint must be an object");
   validateLane(checkpoint.lane);
   validateProcessed(checkpoint.processed);
   if (
@@ -175,22 +212,22 @@ function validateCheckpointV1(
     checkpoint.collection !== undefined &&
     typeof checkpoint.collection !== "string"
   ) {
-    throw new Error("checkpoint collection must be a string when provided");
+    throw new MigrationError("invalid-checkpoint", "checkpoint collection must be a string when provided");
   }
   if (
     checkpoint.collection !== undefined &&
     checkpoint.lane !== `collection:${checkpoint.collection}`
   ) {
-    throw new Error("checkpoint collection does not match its lane");
+    throw new MigrationError("invalid-checkpoint", "checkpoint collection does not match its lane");
   }
 }
 
 function validateCheckpointV2(
   checkpoint: unknown
 ): asserts checkpoint is MigrationCheckpointV2 {
-  if (!isRecord(checkpoint)) throw new Error("checkpoint must be an object");
+  if (!isRecord(checkpoint)) throw new MigrationError("invalid-checkpoint", "checkpoint must be an object");
   if (!("plan" in checkpoint) || !("updatedAt" in checkpoint)) {
-    throw new Error("v2 checkpoint must include plan and updatedAt");
+    throw new MigrationError("invalid-checkpoint", "v2 checkpoint must include plan and updatedAt");
   }
   validateLane(checkpoint.lane);
   validateProcessed(checkpoint.processed);
@@ -215,7 +252,7 @@ export function upgradeCheckpointV1(
   input: MigrationCheckpointUpgradeInput
 ): MigrationCheckpointV2 {
   if (!isRecord(input))
-    throw new Error("checkpoint upgrade input must be an object");
+    throw new MigrationError("invalid-upgrade-input", "checkpoint upgrade input must be an object");
   validateCheckpointV1(input.checkpoint);
   validatePlan(input.plan);
   validateTimestamp(input.convertedAt, "convertedAt");
@@ -237,12 +274,12 @@ type ResumeEntry = { key?: string; value: MigrationResumeValue };
 const resumeEntries = (resume: unknown): ResumeEntry[] => {
   if (resume === undefined) return [];
   if (typeof resume === "number")
-    throw new Error("resume must include a lane for numeric checkpoints");
+    throw new MigrationError("invalid-resume", "resume must include a lane for numeric checkpoints");
   if (isCheckpointObject(resume)) return [{ value: resume }];
   if (Array.isArray(resume)) {
     return resume.map((value) => {
       if (typeof value === "number") {
-        throw new Error(
+        throw new MigrationError("invalid-resume", 
           "resume checkpoint lists must contain checkpoint objects"
         );
       }
@@ -250,10 +287,10 @@ const resumeEntries = (resume: unknown): ResumeEntry[] => {
     });
   }
   if (!isRecord(resume))
-    throw new Error("resume must be a checkpoint map or checkpoint list");
+    throw new MigrationError("invalid-resume", "resume must be a checkpoint map or checkpoint list");
   const prototype = Object.getPrototypeOf(resume);
   if (prototype !== Object.prototype && prototype !== null) {
-    throw new Error("resume must be a checkpoint map or checkpoint list");
+    throw new MigrationError("invalid-resume", "resume must be a checkpoint map or checkpoint list");
   }
   return Object.entries(resume).map(([key, value]) => ({
     key,
@@ -291,7 +328,7 @@ const normalizeResume = (
         ? "v2"
         : "v1";
     if (kind !== undefined && kind !== nextKind) {
-      throw new Error(
+      throw new MigrationError("mixed-checkpoint-kinds", 
         "resume checkpoints cannot mix numeric, v1, and v2 checkpoint identities"
       );
     }
@@ -300,11 +337,11 @@ const normalizeResume = (
     let processed: number;
     if (nextKind === "number") {
       if (entry.key === undefined)
-        throw new Error("numeric resume checkpoints require a lane key");
+        throw new MigrationError("invalid-resume", "numeric resume checkpoints require a lane key");
       validateLane(entry.key);
       validateProcessed(value);
       if (plan !== undefined) {
-        throw new Error(
+        throw new MigrationError("v2-checkpoint-required", 
           "plan-bound resume requires v2 checkpoints; convert v1 explicitly first"
         );
       }
@@ -313,17 +350,17 @@ const normalizeResume = (
     } else if (nextKind === "v2") {
       validateCheckpointV2(value);
       if (plan === undefined)
-        throw new Error(
+        throw new MigrationError("plan-required", 
           "resuming from a v2 checkpoint requires an explicit plan"
         );
       if (!planMatches(plan, value.plan))
-        throw new Error("migration resume plan identity mismatch");
+        throw new MigrationError("plan-identity-mismatch", "migration resume plan identity mismatch");
       lane = value.lane;
       processed = value.processed;
     } else {
       validateCheckpointV1(value);
       if (plan !== undefined) {
-        throw new Error(
+        throw new MigrationError("v2-checkpoint-required", 
           "plan-bound resume requires v2 checkpoints; convert v1 explicitly first"
         );
       }
@@ -331,12 +368,12 @@ const normalizeResume = (
       processed = value.processed;
     }
     if (entry.key !== undefined && entry.key !== lane) {
-      throw new Error(
+      throw new MigrationError("lane-key-mismatch", 
         `resume checkpoint lane ${lane} does not match map key ${entry.key}`
       );
     }
     if (normalized.has(lane))
-      throw new Error(`duplicate resume checkpoint lane ${lane}`);
+      throw new MigrationError("duplicate-checkpoint-lane", `duplicate resume checkpoint lane ${lane}`);
     normalized.set(lane, processed);
   }
   return normalized;
@@ -344,12 +381,12 @@ const normalizeResume = (
 
 const prepareMigration = (options: MigrationOptions): PreparedMigration => {
   if (!isRecord(options))
-    throw new Error("migration options must be an object");
+    throw new MigrationError("invalid-options", "migration options must be an object");
   if (
     options.onCheckpoint !== undefined &&
     typeof options.onCheckpoint !== "function"
   ) {
-    throw new Error("onCheckpoint must be a function");
+    throw new MigrationError("invalid-options", "onCheckpoint must be a function");
   }
   let plan: MigrationPlanIdentity | undefined;
   if (options.plan !== undefined) {
@@ -370,7 +407,7 @@ const resumeAt = (prepared: PreparedMigration, lane: string): number =>
 
 const incrementProcessed = (processed: number, amount: number): number => {
   if (processed > Number.MAX_SAFE_INTEGER - amount) {
-    throw new Error("migration processed count exceeds the safe integer range");
+    throw new MigrationError("processed-count-overflow", "migration processed count exceeds the safe integer range");
   }
   return processed + amount;
 };
@@ -407,7 +444,7 @@ export async function runMigrationWithVerification<TResult>(
   verify: MigrationVerifier<TResult>
 ): Promise<MigrationVerificationResult<TResult>> {
   if (typeof verify !== "function")
-    throw new Error("verify must be a function");
+    throw new MigrationError("invalid-verifier", "verify must be a function");
   const result =
     typeof copy === "function"
       ? await (copy as () => TResult | PromiseLike<TResult>)()
@@ -461,13 +498,13 @@ export async function migrateStore(
   options: MigrationOptions = {}
 ): Promise<Record<string, number>> {
   if (!Array.isArray(collections))
-    throw new Error("collections must be an array");
+    throw new MigrationError("invalid-collections", "collections must be an array");
   const seenCollections = new Set<string>();
   for (const collection of collections) {
     if (typeof collection !== "string")
-      throw new Error("collection must be a string");
+      throw new MigrationError("invalid-collections", "collection must be a string");
     if (seenCollections.has(collection))
-      throw new Error(`duplicate migration collection ${collection}`);
+      throw new MigrationError("duplicate-collection", `duplicate migration collection ${collection}`);
     seenCollections.add(collection);
   }
   const prepared = prepareMigration(options);

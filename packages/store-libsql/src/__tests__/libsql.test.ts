@@ -210,6 +210,18 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
     expect(res.map((r) => r.id)).toEqual(["near"]);
   });
 
+  it.each([false, true])(
+    "breaks score ties by code point, not locale collation or UTF-16 code unit (forceJsCosine: %s)",
+    async (forceJsCosine) => {
+      const tied = await LibsqlAdapter.open({ url: ":memory:", dimensions: DIMS, forceJsCosine });
+      const ids = ["a", "B", "_", "é", "Z", "\u{1F600}", "\uFFFD"];
+      await tied.vector.upsertMany("docs", ids.map((id) => ({ id, vector: v(1, 0, 0, 0) })));
+      const res = await tied.vector.search("docs", v(1, 0, 0, 0), { topK: ids.length });
+      expect(res.map((r) => r.id)).toEqual(["B", "Z", "_", "a", "é", "\uFFFD", "\u{1F600}"]);
+      tied.close();
+    },
+  );
+
   it("vectors persist across close + reopen (file: db)", async () => {
     const { url } = fileUrl();
     const a1 = await LibsqlAdapter.open({ url, dimensions: DIMS });
@@ -234,7 +246,7 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
     const a1 = await LibsqlAdapter.open({ url, dimensions: DIMS });
     a1.close();
     await expect(LibsqlAdapter.open({ url, dimensions: DIMS + 1 })).rejects.toThrow(
-      /dimensions/,
+      expect.objectContaining({ name: "LibsqlAdapterError", code: "dimensions-changed" }),
     );
   });
 });
@@ -419,7 +431,7 @@ describe("collision-safe collection tables", () => {
     bump.close();
 
     await expect(LibsqlAdapter.open({ url })).rejects.toThrow(
-      "Mirk SQLite file schema version 3 is newer than this adapter understands (2).",
+      expect.objectContaining({ name: "LibsqlAdapterError", code: "unsupported-schema-version" }),
     );
   });
 });

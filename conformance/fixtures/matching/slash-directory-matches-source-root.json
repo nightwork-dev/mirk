@@ -1,6 +1,6 @@
 {
   "id": "fixtures/matching/slash-directory-matches-source-root",
-  "title": "directory \"/\" also means the source root (item 73)",
+  "title": "directory \"/\" also means the source root",
   "ports": [
     "fixtures"
   ],

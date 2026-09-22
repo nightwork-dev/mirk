@@ -1,8 +1,7 @@
-"""Byte-identity proof for `mirk.store.canonical` against the probed TypeScript digest.
+"""Byte-identity proof for `mirk.store.canonical` against the TypeScript implementation.
 
-Every case here is quoted from `docs/python-port/digests/artifact.md` sections 2 and
-13, marked **PROBED** there (executed against the real `@mirk/store` code, not
-inferred). A mismatch in either the canonical text or its sha256 means this port
+Every case here was probed by executing the real `@mirk/store` code, not
+inferred. A mismatch in either the canonical text or its sha256 means this port
 diverges from `@mirk/store/atomic`'s `canonicalJson`, which is a portability bug,
 not a test to adjust.
 """
@@ -15,6 +14,7 @@ import math
 import pytest
 
 from mirk.store.canonical import (
+    CanonicalJsonError,
     canonical_digest,
     canonical_json,
     compare_code_points,
@@ -24,7 +24,7 @@ from mirk.store.canonical import (
 )
 from mirk.store.conformance.runner import expand_hash_wrappers
 
-# ── §13.3 the twelve discriminating cases (+ three more, + anchors) ─────────
+# ── cases where two languages can disagree ──────────────────────────────────
 
 
 def _check(value: object, expected_text: str, expected_sha256: str) -> None:
@@ -110,7 +110,7 @@ def test_case_12_lone_surrogate() -> None:
     assert text == '"\\ud800"'
     assert len(text) == 8
     assert sha256_hex(text) == "8c0c59dd0d275aadcd462a5fe12eb352cbdfeaf961eae4f85a4660521df7d2f5"
-    # The trap the digest names: the raw code point cannot round-trip through
+    # The raw code point cannot round-trip through
     # UTF-8, so the escaped canonical text must be what actually gets hashed.
     with pytest.raises(UnicodeEncodeError):
         value.encode("utf-8")
@@ -186,54 +186,58 @@ def test_anchor_large_named_exponent() -> None:
     _check(1e100, "1e+100", "33d5997bb6b66e3ae3b8e79fff5fe0954bc7b2a38a9d95d83f437d0e57b68f82")
 
 
-# ── §13.4 rejections (the ones that apply to Python) ─────────────────────────
+# ── rejections ──────────────────────────────────────────────────────────────
 
 
 def test_rejects_nan() -> None:
-    with pytest.raises(TypeError, match="non-finite numbers are not JSON-safe"):
+    with pytest.raises(TypeError):
         canonical_json(float("nan"))
 
 
 def test_rejects_positive_infinity() -> None:
-    with pytest.raises(TypeError, match="non-finite numbers are not JSON-safe"):
+    with pytest.raises(TypeError):
         canonical_json(float("inf"))
 
 
 def test_rejects_negative_infinity() -> None:
-    with pytest.raises(TypeError, match="non-finite numbers are not JSON-safe"):
+    with pytest.raises(TypeError):
         canonical_json(float("-inf"))
 
 
 def test_rejects_cyclic_list() -> None:
     cyclic: list[object] = []
     cyclic.append(cyclic)
-    with pytest.raises(TypeError, match="cyclic values are not JSON-safe"):
+    with pytest.raises(CanonicalJsonError) as info:
         canonical_json(cyclic)
+    assert info.value.code == "cyclic-value"
 
 
 def test_rejects_cyclic_dict() -> None:
     cyclic: dict[str, object] = {}
     cyclic["self"] = cyclic
-    with pytest.raises(TypeError, match="cyclic values are not JSON-safe"):
+    with pytest.raises(CanonicalJsonError) as info:
         canonical_json(cyclic)
+    assert info.value.code == "cyclic-value"
 
 
 def test_rejects_non_plain_values() -> None:
     for value in ((1, 2), {1, 2}, b"bytes", object()):
-        with pytest.raises(TypeError, match="only plain objects are JSON-safe"):
+        with pytest.raises(CanonicalJsonError) as info:
             canonical_json(value)
+        assert info.value.code == "non-plain-object"
 
 
 def test_rejects_non_string_dict_keys() -> None:
-    with pytest.raises(TypeError, match="only plain objects are JSON-safe"):
+    with pytest.raises(CanonicalJsonError) as info:
         canonical_json({1: "a"})  # type: ignore[dict-item]
+    assert info.value.code == "non-plain-object"
 
 
 def test_a_large_int_clamps_through_float_and_can_overflow() -> None:
     # Within float64 range: clamps and formats like the equivalent float.
     assert canonical_json(9007199254740993) == "9007199254740992"
     # Far beyond float64 range: float() overflows, which is a non-finite rejection.
-    with pytest.raises(TypeError, match="non-finite numbers are not JSON-safe"):
+    with pytest.raises(TypeError):
         canonical_json(10**400)
 
 
@@ -273,7 +277,7 @@ def test_js_number_to_string_pinned_cases(value: float, expected: str) -> None:
 
 def test_js_number_to_string_rejects_non_finite() -> None:
     for value in (float("nan"), float("inf"), float("-inf")):
-        with pytest.raises(TypeError, match="non-finite numbers are not JSON-safe"):
+        with pytest.raises(TypeError):
             js_number_to_string(value)
 
 

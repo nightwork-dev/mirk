@@ -55,10 +55,31 @@ export function isUsableVector(v: Vector): boolean {
   return nonZero;
 }
 
+export type VectorInputErrorCode =
+  | "dimension-mismatch"
+  | "invalid-dimensions"
+  | "dimensions-changed"
+  | "dimensions-unknown";
+
+/** Thrown when a vector or a store's dimensionality is invalid. */
+export class VectorInputError extends Error {
+  declare readonly name: "VectorInputError";
+  constructor(readonly code: VectorInputErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(VectorInputError.prototype, "name", {
+  value: "VectorInputError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 /** Throw if a vector's length doesn't match the store's configured dimensions.
  *  Shared by every backend so the check and its message live in one place. */
 export function assertDimensions(vector: Vector, dimensions: number): void {
   if (vector.length !== dimensions) {
-    throw new Error(`Vector dimension mismatch: expected ${dimensions}, got ${vector.length}`);
+    throw new VectorInputError("dimension-mismatch", `Vector dimension mismatch: expected ${dimensions}, got ${vector.length}`);
   }
 }

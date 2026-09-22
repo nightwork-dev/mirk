@@ -1,10 +1,9 @@
 """Conformance target for the `hash` port: `mirk.store.canonical` over the wire.
 
-`hash` is a zero-native, backend-independent target (S0 ruling, `docs/python-port/
-plan-phase2.md`): the corpus dispatches `canonicalJson`, `sha256Hex`, `sha256Bytes`
-and `canonicalDigest` onto it, spelled exactly as the TypeScript target spells them
-so the runner's generic step dispatch (`getattr(target, op)`) needs no port-specific
-branching.
+`hash` is a zero-native, backend-independent target: the corpus dispatches
+`canonicalJson`, `sha256Hex`, `sha256Bytes` and `canonicalDigest` onto it,
+spelled exactly as the TypeScript target spells them so the runner's generic
+step dispatch (`getattr(target, op)`) needs no port-specific branching.
 """
 
 from __future__ import annotations

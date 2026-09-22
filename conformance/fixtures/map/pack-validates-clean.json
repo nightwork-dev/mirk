@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/pack-validates-clean",
-  "title": "a well-formed map pack validates with no diagnostics (item 7)",
+  "title": "a well-formed map pack validates with no diagnostics",
   "ports": [
     "fixtures"
   ],

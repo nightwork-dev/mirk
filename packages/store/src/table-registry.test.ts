@@ -270,7 +270,7 @@ describe("schema version", () => {
     db.close();
 
     expect(() => new SqliteAdapter({ path })).toThrow(
-      "Mirk SQLite file schema version 3 is newer than this adapter understands (2).",
+      expect.objectContaining({ name: "SqliteAdapterError", code: "unsupported-schema-version" }),
     );
   });
 });

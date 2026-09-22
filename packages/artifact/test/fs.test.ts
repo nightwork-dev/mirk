@@ -70,11 +70,12 @@ describe("FileObjectStore", () => {
   });
 
   it("F2: a failed ifAbsent put does not poison the key", async () => {
+    const sourceError = new Error("source blew up mid-stream");
     async function* failing(): AsyncIterable<Uint8Array> {
       yield new Uint8Array([1, 2]);
-      throw new Error("source blew up mid-stream");
+      throw sourceError;
     }
-    await expect(store.put("k", failing(), { ifAbsent: true })).rejects.toThrow(/blew up/);
+    await expect(store.put("k", failing(), { ifAbsent: true })).rejects.toBe(sourceError);
     // The partial .bin must be gone, so the retry succeeds instead of EEXIST.
     const info = await store.put("k", new Uint8Array([9]), { ifAbsent: true });
     expect(info.sizeBytes).toBe(1);

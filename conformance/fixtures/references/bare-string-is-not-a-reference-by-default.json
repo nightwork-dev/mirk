@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/bare-string-is-not-a-reference-by-default",
-  "title": "under the default mode a canonical-looking string produces no edge (item 25)",
+  "title": "under the default mode a canonical-looking string produces no edge",
   "ports": [
     "fixtures"
   ],

@@ -10,6 +10,28 @@ import type {
 import { assertObjectKey, chunks, digestStream } from "@mirk/artifact";
 import type { Metadata, Operator } from "opendal";
 
+export type OpenDalObjectStoreErrorCode =
+  | "missing-required-capability"
+  | "unsupported-if-absent"
+  | "unsupported-content-type"
+  | "unsupported-user-metadata"
+  | "unsupported-recursive-list"
+  | "invalid-backend-key";
+
+export class OpenDalObjectStoreError extends Error {
+  declare readonly name: "OpenDalObjectStoreError";
+  constructor(readonly code: OpenDalObjectStoreErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(OpenDalObjectStoreError.prototype, "name", {
+  value: "OpenDalObjectStoreError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export interface OpenDalObjectStoreOptions {
   /** Optional SHA-256 metadata key written alongside objects. Enabling this
    * opt-in buffers the source once because OpenDAL metadata is fixed at writer
@@ -36,7 +58,8 @@ export class OpenDalObjectStore implements ListableObjectStore {
       !capability.stat ||
       !capability.delete
     ) {
-      throw new Error(
+      throw new OpenDalObjectStoreError(
+        "missing-required-capability",
         "OpenDAL operator must support read, write, stat, and delete"
       );
     }
@@ -50,18 +73,25 @@ export class OpenDalObjectStore implements ListableObjectStore {
     assertObjectKey(key);
     const capability = this.operator.capability();
     if (options.ifAbsent && !capability.writeWithIfNotExists) {
-      throw new Error(
+      throw new OpenDalObjectStoreError(
+        "unsupported-if-absent",
         "OpenDAL backend does not support atomic ifAbsent writes"
       );
     }
     if (options.mediaType && !capability.writeWithContentType) {
-      throw new Error("OpenDAL backend does not support content type metadata");
+      throw new OpenDalObjectStoreError(
+        "unsupported-content-type",
+        "OpenDAL backend does not support content type metadata"
+      );
     }
     if (
       (options.metadata || this.#digestMetadataKey) &&
       !capability.writeWithUserMetadata
     ) {
-      throw new Error("OpenDAL backend does not support user metadata");
+      throw new OpenDalObjectStoreError(
+        "unsupported-user-metadata",
+        "OpenDAL backend does not support user metadata"
+      );
     }
     let writeSource = source;
     let digestValue: string | undefined;
@@ -162,22 +192,16 @@ export class OpenDalObjectStore implements ListableObjectStore {
     if (prefix) assertObjectKey(prefix);
     const capability = this.operator.capability();
     if (!capability.list || !capability.listWithRecursive)
-      throw new Error(
+      throw new OpenDalObjectStoreError(
+        "unsupported-recursive-list",
         "OpenDAL backend does not support recursive object listing"
       );
-    const entries = await this.operator.list(
-      prefix ? (prefix.endsWith("/") ? prefix : `${prefix}/`) : "",
-      { recursive: true }
-    );
+    // A prefix is a string prefix, not a directory: "objects/a" matches
+    // "objects/a", "objects/a/b", and "objects/ab". List the directory that
+    // contains it and filter; directory entries are never object keys.
+    const directory = prefix.slice(0, prefix.lastIndexOf("/") + 1);
+    const entries = await this.operator.list(directory, { recursive: true });
     const results: ObjectInfo[] = [];
-    if (prefix && (await this.operator.exists(prefix)))
-      results.push(
-        metadataToInfo(
-          prefix,
-          await this.operator.stat(prefix),
-          this.#digestMetadataKey
-        )
-      );
     for (const entry of entries) {
       const metadata = entry.metadata();
       if (!metadata.isFile()) continue;
@@ -185,13 +209,32 @@ export class OpenDalObjectStore implements ListableObjectStore {
       try {
         assertObjectKey(key);
       } catch {
-        throw new Error("OpenDAL backend returned an invalid object key");
+        throw new OpenDalObjectStoreError(
+          "invalid-backend-key",
+          "OpenDAL backend returned an invalid object key"
+        );
       }
       if (!key.startsWith(prefix)) continue;
       results.push(metadataToInfo(key, metadata, this.#digestMetadataKey));
     }
-    return results.sort((a, b) => a.key.localeCompare(b.key));
+    return results.sort((a, b) => compareCodePoints(a.key, b.key));
   }
+}
+
+// Mirrors `compareCodePoints` in @mirk/store's order.ts (this package does not
+// depend on @mirk/store): Unicode code point order, the order every Mirk port
+// lists in. Neither `localeCompare` (ICU collation) nor `<` (UTF-16 code units).
+function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0;
+  const left = Array.from(a);
+  const right = Array.from(b);
+  const shared = Math.min(left.length, right.length);
+  for (let i = 0; i < shared; i += 1) {
+    const x = left[i]!.codePointAt(0)!;
+    const y = right[i]!.codePointAt(0)!;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return left.length < right.length ? -1 : left.length > right.length ? 1 : 0;
 }
 
 function metadataToInfo(

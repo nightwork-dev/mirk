@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/ref-object-content-is-not-walked",
-  "title": "nested content under a $ref object is invisible to the walk (item 82)",
+  "title": "nested content under a $ref object is invisible to the walk",
   "ports": [
     "fixtures"
   ],

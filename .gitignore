@@ -35,17 +35,12 @@ yarn-error.log*
 playwright-report/
 test-results/
 
-# Agent and orchestration runtime state
-.omc/
-.omx/
-.gonk/
-traces/
+# Agent tooling state: only the shared orientation file is tracked
 .agents/*
 !.agents/index.md
-!.agents/skills/
-!.agents/skills/**
-
 # Local working docs and scratch
-docs.local/
 *.local/
 *.local.*
+
+# Vitest browser-mode failure captures
+__screenshots__/

@@ -17,7 +17,14 @@ from .atomic import (
     target_key,
     validate_atomic_request,
 )
-from .filter import IN_SCALAR_MESSAGE, apply_filter, dumps_json, is_scalar, json_equal
+from .filter import (
+    IN_SCALAR_MESSAGE,
+    StoreFilterError,
+    apply_filter,
+    dumps_json,
+    is_scalar,
+    json_equal,
+)
 from .types import JsonObject, StoreFilter, StoreMeta
 
 __all__ = ["InMemoryStore", "copy_json"]
@@ -278,7 +285,7 @@ class InMemoryStore:
             return []
         for value in values:
             if not is_scalar(value):
-                raise ValueError(IN_SCALAR_MESSAGE)
+                raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
         items = list(self._collection(collection).values())
         matched = [item for item in items if _field_in(item, field, values)]
         return [copy_json(item) for item in apply_filter(matched, filter)]

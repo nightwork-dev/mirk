@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/patches-without-a-base-are-rejected",
-  "title": "a pack of patches with no full document throws patch-without-base (item 15)",
+  "title": "a pack of patches with no full document throws patch-without-base",
   "ports": [
     "fixtures"
   ],

@@ -110,19 +110,19 @@ function suite(name: string, make: () => Promise<Made>): void {
 
     it("rejects documents whose field schema differs from the collection", () => {
       store.index("pages", { id: "a", fields: { title: "one", body: "two" } });
-      expect(() => store.index("pages", { id: "b", fields: { title: "one" } })).toThrow(/fields/);
-      expect(() => store.index("pages", { id: "c", text: "one" })).toThrow(/fields/);
+      expect(() => store.index("pages", { id: "b", fields: { title: "one" } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "field-set-mismatch" }));
+      expect(() => store.index("pages", { id: "c", text: "one" })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "field-set-mismatch" }));
     });
 
     it("rejects invalid or unknown fieldWeights", () => {
       store.index("pages", { id: "a", fields: { title: "opal", body: "plain" } });
-      expect(() => store.search("pages", "opal", { fieldWeights: { title: -1 } })).toThrow(/weight/);
-      expect(() => store.search("pages", "opal", { fieldWeights: { title: Number.NaN } })).toThrow(/weight/);
-      expect(() => store.search("pages", "opal", { fieldWeights: { heading: 2 } })).toThrow(/Unknown/);
+      expect(() => store.search("pages", "opal", { fieldWeights: { title: -1 } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "invalid-weight" }));
+      expect(() => store.search("pages", "opal", { fieldWeights: { title: Number.NaN } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "invalid-weight" }));
+      expect(() => store.search("pages", "opal", { fieldWeights: { heading: 2 } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "unknown-weight-field" }));
     });
 
     it("validates bad fieldWeights even when the collection does not exist", () => {
-      expect(() => store.search("missing", "opal", { fieldWeights: { title: -1 } })).toThrow(/weight/);
+      expect(() => store.search("missing", "opal", { fieldWeights: { title: -1 } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "invalid-weight" }));
       expect(store.search("missing", "opal", { fieldWeights: { title: 2 } })).toEqual([]);
     });
 
@@ -311,7 +311,7 @@ function asyncSuite(name: string, make: () => Promise<MadeAsync>): void {
       await store.index("pages", { id: "a", fields: { title: "opal", body: "plain" } });
       await expect(
         store.search("pages", "opal", { fieldWeights: { heading: 2 } }),
-      ).rejects.toThrow(/Unknown/);
+      ).rejects.toThrow(expect.objectContaining({ name: "SearchInputError", code: "unknown-weight-field" }));
     });
   });
 }
@@ -363,7 +363,7 @@ describe("SqliteAdapter.search — persistence", () => {
 
       const b = new SqliteAdapter({ path });
       expect(b.search.search("pages", "ruby", { fieldWeights: { title: 4, body: 1 } }).map((r) => r.id)).toEqual(["x"]);
-      expect(() => b.search.index("pages", { id: "bad", text: "ruby" })).toThrow(/fields/);
+      expect(() => b.search.index("pages", { id: "bad", text: "ruby" })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "field-set-mismatch" }));
       b.close();
     } finally {
       rmSync(path, { force: true });
@@ -393,7 +393,7 @@ describe("SqliteAdapter.search — persistence", () => {
 
       const adapter = new SqliteAdapter({ path });
       expect(adapter.search.search("legacy", "moon").map((r) => r.id)).toEqual(["old"]);
-      expect(() => adapter.search.index("legacy", { id: "fielded", fields: { title: "moon" } })).toThrow(/fields/);
+      expect(() => adapter.search.index("legacy", { id: "fielded", fields: { title: "moon" } })).toThrow(expect.objectContaining({ name: "SearchInputError", code: "field-set-mismatch" }));
       adapter.search.index("legacy", { id: "new", text: "legacy sun" });
       expect(adapter.search.search("legacy", "sun").map((r) => r.id)).toEqual(["new"]);
       adapter.close();
