@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
+import { runSqliteBusyRetry } from "./sqlite-busy.js";
 
 /** The minimal signal surface used by the coordinator. */
 export interface CoordinationAbortSignal {
@@ -53,7 +54,7 @@ export interface SqliteCoordinatorOptions {
 }
 
 export class CoordinationTimeoutError extends Error {
-  readonly name = "CoordinationTimeoutError";
+  declare readonly name: "CoordinationTimeoutError";
 
   constructor(
     readonly key: string,
@@ -63,19 +64,33 @@ export class CoordinationTimeoutError extends Error {
     super(
       `Timed out waiting ${waitMs}ms to acquire coordination key "${key}" in namespace "${namespace}".`
     );
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(CoordinationTimeoutError.prototype, "name", {
+  value: "CoordinationTimeoutError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class CoordinationAbortedError extends Error {
-  readonly name = "CoordinationAbortedError";
+  declare readonly name: "CoordinationAbortedError";
 
   constructor(readonly key: string, cause?: unknown) {
     super(`Aborted while waiting for coordination key "${key}".`, { cause });
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(CoordinationAbortedError.prototype, "name", {
+  value: "CoordinationAbortedError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class CoordinationOwnershipLostError extends Error {
-  readonly name = "CoordinationOwnershipLostError";
+  declare readonly name: "CoordinationOwnershipLostError";
 
   constructor(
     readonly key: string,
@@ -86,8 +101,15 @@ export class CoordinationOwnershipLostError extends Error {
     super(
       `Lost ownership of coordination key "${key}" in namespace "${namespace}" for generation ${fencingGeneration}.`
     );
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(CoordinationOwnershipLostError.prototype, "name", {
+  value: "CoordinationOwnershipLostError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 interface LeaseRow {
   owner_token: string;
@@ -132,9 +154,10 @@ export class SqliteCoordinator implements AsyncCoordinator {
     const busyTimeoutMs = options.busyTimeoutMs ?? 30_000;
     this.#db = new Database(options.path, { timeout: busyTimeoutMs });
     this.#db.pragma(`busy_timeout = ${busyTimeoutMs}`);
-    runWithBusyRetry(() => {
-      this.#db.pragma("journal_mode = WAL");
-      this.#db.exec(`
+    runSqliteBusyRetry(
+      () => {
+        this.#db.pragma("journal_mode = WAL");
+        this.#db.exec(`
         CREATE TABLE IF NOT EXISTS _mirk_coordination_generations (
           namespace TEXT NOT NULL,
           key TEXT NOT NULL,
@@ -153,7 +176,11 @@ export class SqliteCoordinator implements AsyncCoordinator {
           PRIMARY KEY (namespace, key)
         )
       `);
-    }, busyTimeoutMs);
+      },
+      busyTimeoutMs,
+      MIN_RETRY_MS,
+      MAX_RETRY_MS
+    );
   }
 
   async runExclusive<T>(
@@ -591,21 +618,6 @@ function trySqliteBusyAsMiss<T>(work: () => T): T | undefined {
   }
 }
 
-function runWithBusyRetry(work: () => void, waitMs: number): void {
-  const deadline = Date.now() + waitMs;
-  while (true) {
-    try {
-      work();
-      return;
-    } catch (err) {
-      if (!isSqliteBusy(err) || Date.now() >= deadline) throw err;
-      syncSleep(
-        Math.min(MAX_RETRY_MS, Math.max(MIN_RETRY_MS, deadline - Date.now()))
-      );
-    }
-  }
-}
-
 function isSqliteBusy(err: unknown): boolean {
   return (
     typeof err === "object" &&
@@ -613,8 +625,4 @@ function isSqliteBusy(err: unknown): boolean {
     "code" in err &&
     err.code === "SQLITE_BUSY"
   );
-}
-
-function syncSleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }

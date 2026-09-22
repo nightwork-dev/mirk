@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/seed-can-carry-provenance",
-  "title": "includeProvenance stores the layer stack alongside the value (item 41)",
+  "title": "includeProvenance stores the layer stack alongside the value",
   "ports": [
     "fixtures"
   ],

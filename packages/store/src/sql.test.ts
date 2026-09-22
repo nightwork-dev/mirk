@@ -46,10 +46,10 @@ describe("buildWhereClause", () => {
   });
   it("rejects a non-scalar value instead of binding it", () => {
     expect(() => buildWhereClause({ where: { v: { a: 1 } } })).toThrow(
-      "Store filters only support JSON scalar values.",
+      expect.objectContaining({ name: "StoreFilterError", code: "non-scalar-filter" }),
     );
     expect(() => buildWhereClause({ where: { v: [1, 2] } })).toThrow(
-      "Store filters only support JSON scalar values.",
+      expect.objectContaining({ name: "StoreFilterError", code: "non-scalar-filter" }),
     );
   });
 });

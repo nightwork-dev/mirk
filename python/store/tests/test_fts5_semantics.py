@@ -1,8 +1,7 @@
 """The probe that settled what SQLite's `bm25()` actually computes.
 
-Both the plan brief and `docs/python-port/digests/store-vector-search.md` section
-B.5 described FTS5's ranking in ways real FTS5 contradicts. This file is the
-probe that found that, promoted from a scratchpad script into the suite so the
+FTS5's ranking was first described from documentation in ways real FTS5
+contradicts. This file is the probe that found that, kept in the suite so the
 finding is re-checked on every run rather than remembered.
 
 It talks to `sqlite3` directly rather than through `SqliteSearchFacet`, building
@@ -12,9 +11,7 @@ facet's own layout is checked against a hand-built one here, so neither test can
 launder an error in the other.
 
 Each fact is asserted twice: the candidate formula reproduces FTS5's score, and
-the rejected alternative does not. A probe that cannot fail proves nothing.
-
-Reference: `docs/evidence/python-port/2026-09-01-fts5-bm25-probe.md`.
+the rejected alternative does not.
 """
 
 from __future__ import annotations
@@ -113,7 +110,7 @@ def _whole_document(
 def _per_column(
     docs: list[Doc], columns: list[str], terms: list[str], weights: list[float]
 ) -> list[tuple[str, float]]:
-    """The candidate the brief described: per-column tf and per-column average length."""
+    """Candidate formula: per-column tf, per-column average length."""
     n = len(docs)
     tokens = {doc_id: [_tokens(value) for value in values] for doc_id, values in docs}
     column_avg = [
@@ -159,10 +156,10 @@ def _assert_scores(actual: list[tuple[str, float]], expected: list[tuple[str, fl
 def test_length_normalization_is_over_the_whole_document() -> None:
     """FTS5's `D` is the row's total token count across columns, not per column.
 
-    The digest and the brief both said per column. A two-column corpus where the
-    hit sits in the short column of one document and the long column of the other
-    separates the two: whole-document normalization scores them equally, per
-    column does not.
+    Per-column normalization is the natural reading of the FTS5 docs; FTS5 does
+    not do it. A two-column corpus where the hit sits in the short column of one
+    document and the long column of the other separates the two: whole-document
+    normalization scores them equally, per column does not.
     """
     docs: list[Doc] = [("s", ["fox", LONG]), ("l", [LONG, "fox"]), *FILLER_2]
     columns = ["a", "b"]

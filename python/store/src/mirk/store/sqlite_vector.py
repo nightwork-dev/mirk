@@ -6,9 +6,7 @@ metadata commit together.
 
 One search path: the base table is scanned and scored in float64 Python cosine.
 ``meta["accelerated"]`` is therefore always False. A ``sqlite-vec`` (vec0) path
-used to sit beside this one and never executed once; it was deleted under
-roadmap MR-22, with the reasoning in
-``docs/evidence/python-port/2026-09-02-vec0-branch-dead.md``. Legacy
+used to sit beside this one, was shown never to execute, and was deleted. Legacy
 ``vectors_vec_*`` shadow tables in older files are left in place; they are inert.
 """
 
@@ -24,6 +22,7 @@ from .filter import dumps_json
 from .sqlite import connection_of
 from .vector import (
     VectorDocument,
+    VectorInputError,
     VectorSearchOptions,
     VectorSearchResult,
     VectorSearchResultList,
@@ -90,7 +89,10 @@ class SqliteVectorFacet:
         if row is not None:
             self._dimensions = int(row[0])
             if dimensions is not None and dimensions != self._dimensions:
-                raise ValueError(dimensions_conflict_message(path, self._dimensions, dimensions))
+                raise VectorInputError(
+                    "dimensions-changed",
+                    dimensions_conflict_message(path, self._dimensions, dimensions),
+                )
         elif dimensions is not None:
             self.configure_dimensions(dimensions)
 
@@ -98,11 +100,12 @@ class SqliteVectorFacet:
     def configure_dimensions(self, dimensions: int) -> None:
         """Establish dimensions, persisting them. A conflicting value raises."""
         if dimensions <= 0 or dimensions != int(dimensions):
-            raise ValueError(positive_dimensions_message(dimensions))
+            raise VectorInputError("invalid-dimensions", positive_dimensions_message(dimensions))
         if self._dimensions >= 0:
             if dimensions != self._dimensions:
-                raise ValueError(
-                    dimensions_conflict_message(self._path, self._dimensions, dimensions)
+                raise VectorInputError(
+                    "dimensions-changed",
+                    dimensions_conflict_message(self._path, self._dimensions, dimensions),
                 )
             return
         self._dimensions = dimensions
@@ -127,7 +130,7 @@ class SqliteVectorFacet:
 
     def _require_known_dims(self, vector: list[float]) -> None:
         if self._dimensions < 0:
-            raise ValueError(NO_DIMENSIONS_MESSAGE)
+            raise VectorInputError("dimensions-unknown", NO_DIMENSIONS_MESSAGE)
         assert_dimensions(vector, self._dimensions)
 
     def _ensure_dims_for_write(self, vector: list[float]) -> None:
@@ -174,7 +177,7 @@ class SqliteVectorFacet:
             return
         dimensions = self._dimensions if self._dimensions >= 0 else len(docs[0]["vector"])
         if dimensions <= 0:
-            raise ValueError(positive_dimensions_message(dimensions))
+            raise VectorInputError("invalid-dimensions", positive_dimensions_message(dimensions))
         # Validate everything before establishing lazy dimensions, so a mid-array
         # mismatch leaves neither rows nor a dimension behind.
         for doc in docs:

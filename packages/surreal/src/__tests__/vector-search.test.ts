@@ -3,8 +3,8 @@ import { createNodeEngines } from "@surrealdb/node";
 import { Surreal, createRemoteEngines } from "surrealdb";
 
 import { SurrealConnection as SharedSurrealConnection } from "../index.js";
-import { SurrealSearchAdapter } from "../search.js";
-import { SurrealVectorAdapter, type SurrealConnection } from "../vector.js";
+import { SurrealSearchAdapter, SurrealUnsupportedError } from "../search.js";
+import { SurrealVectorAdapter, SurrealVectorError, type SurrealConnection } from "../vector.js";
 
 function v(...values: number[]): Float32Array {
   return Float32Array.from(values);
@@ -95,10 +95,48 @@ describe("SurrealVectorAdapter", () => {
   });
 });
 
+describe("SurrealVectorError", () => {
+  async function caught(promise: Promise<unknown>): Promise<SurrealVectorError> {
+    const error = await promise.then(() => undefined, (reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(SurrealVectorError);
+    return error as SurrealVectorError;
+  }
+
+  it("codes invalid open options, search input and vectors", async () => {
+    expect((await caught(SurrealVectorAdapter.open(new RecordingConnection(), { dimensions: -1 }))).code).toBe("invalid-dimensions");
+    expect((await caught(SurrealVectorAdapter.open(new RecordingConnection(), { documentsTable: "bad-name" }))).code).toBe("invalid-identifier");
+
+    const adapter = await SurrealVectorAdapter.open(new RecordingConnection());
+    expect((await caught(adapter.search("empty", v(1, 0)))).code).toBe("dimensions-unknown");
+    expect((await caught(adapter.upsert("docs", { id: "z", vector: v(0, 0) }))).code).toBe("invalid-vector");
+    await adapter.upsert("docs", { id: "a", vector: v(1, 0) });
+    expect((await caught(adapter.search("docs", v(1, 0), { topK: -1 }))).code).toBe("invalid-top-k");
+  });
+
+  it("codes a collection reopened at different dimensions", async () => {
+    const connection = new RecordingConnection();
+    connection.dimensions.set("docs", 3);
+    const adapter = await SurrealVectorAdapter.open(connection, { dimensions: 4 });
+    expect((await caught(adapter.search("docs", v(1, 0, 0, 0)))).code).toBe("dimensions-changed");
+  });
+
+  it("keeps name on the prototype, like built-in errors", async () => {
+    const error = await caught(SurrealVectorAdapter.open(new RecordingConnection(), { dimensions: 1.5 }));
+    expect(error.name).toBe("SurrealVectorError");
+    expect(Object.keys(error)).not.toContain("name");
+    expect(error.message).toBe("Vector dimensions must be a non-negative integer; got 1.5.");
+  });
+});
+
 describe("SurrealSearchAdapter", () => {
   it("fails closed until the weighted search contract is proven", async () => {
     const adapter = await SurrealSearchAdapter.open(new RecordingConnection());
 
-    await expect(adapter.search("docs", "opal")).rejects.toThrow("intentionally unsupported");
+    const rejection = expect(adapter.search("docs", "opal")).rejects;
+    await rejection.toThrow(SurrealUnsupportedError);
+    await rejection.toMatchObject({ code: "unsupported-capability", name: "SurrealUnsupportedError" });
+    const error = await adapter.search("docs", "opal").catch((reason: unknown) => reason);
+    expect(Object.keys(error as object)).not.toContain("name");
   });
 });

@@ -22,40 +22,40 @@ function nodeSha256(text: string): string {
 describe("canonicalJson rejections with no JSON representation", () => {
   it("rejects a sparse array", () => {
     const sparse = [1, , 3] as unknown[];
-    expect(() => canonicalJson(sparse)).toThrow("sparse arrays are not JSON-safe");
+    expect(() => canonicalJson(sparse)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "sparse-array" }));
   });
 
   it("rejects an array carrying an extra enumerable property", () => {
     const value = [1, 2] as unknown as Record<string, unknown>;
     value.label = "extra";
-    expect(() => canonicalJson(value)).toThrow("array properties are not JSON-safe");
+    expect(() => canonicalJson(value)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "array-property" }));
   });
 
   it("rejects an index alias that JSON.stringify would silently drop", () => {
     const value = [1] as unknown as Record<string, unknown>;
     value["01"] = "alias";
-    expect(() => canonicalJson(value)).toThrow("array properties are not JSON-safe");
+    expect(() => canonicalJson(value)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "array-property" }));
   });
 
   it("rejects a symbol-keyed property", () => {
     expect(() => canonicalJson({ a: 1, [Symbol("s")]: 2 })).toThrow(
-      "symbol keys are not JSON-safe",
+      expect.objectContaining({ name: "CanonicalJsonError", code: "symbol-key" })
     );
   });
 
   it("rejects undefined and functions", () => {
-    expect(() => canonicalJson(undefined)).toThrow("value is not JSON-safe");
-    expect(() => canonicalJson(() => 1)).toThrow("value is not JSON-safe");
-    expect(() => canonicalJson({ a: undefined })).toThrow("value is not JSON-safe");
+    expect(() => canonicalJson(undefined)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "not-json-safe" }));
+    expect(() => canonicalJson(() => 1)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "not-json-safe" }));
+    expect(() => canonicalJson({ a: undefined })).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "not-json-safe" }));
   });
 
   it("rejects a Date, a Map and a class instance rather than coercing them", () => {
     class Thing {
       value = 1;
     }
-    expect(() => canonicalJson(new Date(0))).toThrow("only plain objects are JSON-safe");
-    expect(() => canonicalJson(new Map())).toThrow("only plain objects are JSON-safe");
-    expect(() => canonicalJson(new Thing())).toThrow("only plain objects are JSON-safe");
+    expect(() => canonicalJson(new Date(0))).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "non-plain-object" }));
+    expect(() => canonicalJson(new Map())).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "non-plain-object" }));
+    expect(() => canonicalJson(new Thing())).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "non-plain-object" }));
   });
 
   it("accepts a null-prototype object", () => {
@@ -67,11 +67,11 @@ describe("canonicalJson rejections with no JSON representation", () => {
   it("rejects a cycle through an object and through an array", () => {
     const object: Record<string, unknown> = {};
     object.self = object;
-    expect(() => canonicalJson(object)).toThrow("cyclic values are not JSON-safe");
+    expect(() => canonicalJson(object)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "cyclic-value" }));
 
     const array: unknown[] = [];
     array.push(array);
-    expect(() => canonicalJson(array)).toThrow("cyclic values are not JSON-safe");
+    expect(() => canonicalJson(array)).toThrow(expect.objectContaining({ name: "CanonicalJsonError", code: "cyclic-value" }));
   });
 
   it("accepts the same object appearing twice without a cycle", () => {
@@ -133,7 +133,8 @@ describe("canonicalDigest", () => {
 
   it("throws the canonicalization error rather than digesting a rejected value", () => {
     expect(() => canonicalDigest(Number.NaN)).toThrow(
-      "non-finite numbers are not JSON-safe",
+      expect.objectContaining({ name: "CanonicalJsonError", code: "non-finite-number" })
     );
+    expect(() => canonicalDigest(Number.NaN)).toThrow(TypeError);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { SurrealConnectionError } from "./index.js";
 import { createNodeSurrealConnection } from "./node.js";
 import { SurrealStoreAdapter } from "./store.js";
 
@@ -15,6 +16,8 @@ describe("createNodeSurrealConnection", () => {
     await first.set("shared", { ok: true });
     expect(await second.get("shared")).toEqual({ ok: true });
     await connection.close();
-    await expect(connection.query("RETURN true")).rejects.toThrow("closed");
+    const rejection = expect(connection.query("RETURN true")).rejects;
+    await rejection.toThrow(SurrealConnectionError);
+    await rejection.toMatchObject({ code: "connection-closed" });
   });
 });

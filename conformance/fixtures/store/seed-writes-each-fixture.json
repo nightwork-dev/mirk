@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/seed-writes-each-fixture",
-  "title": "seedStoreFromFixtures writes every fixture of every target into its collection (item 41)",
+  "title": "seedStoreFromFixtures writes every fixture of every target into its collection",
   "ports": [
     "fixtures"
   ],

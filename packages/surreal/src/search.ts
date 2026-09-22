@@ -8,6 +8,22 @@ export interface SurrealSearchOptions {
   unsupportedReason?: string;
 }
 
+export type SurrealUnsupportedErrorCode = "unsupported-capability";
+
+export class SurrealUnsupportedError extends Error {
+  declare readonly name: "SurrealUnsupportedError";
+  constructor(readonly code: SurrealUnsupportedErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealUnsupportedError.prototype, "name", {
+  value: "SurrealUnsupportedError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 const UNSUPPORTED_REASON =
   "SurrealSearchAdapter is intentionally unsupported until the Surreal package shell can prove Mirk's weighted multi-field BM25 contract without client-side full scans. SurrealDB full-text indexes are single-field indexes; Mirk search requires stable collection schemas plus query-time field weights across fields.";
 
@@ -22,18 +38,18 @@ export class SurrealSearchAdapter implements AsyncSearchStore {
     _collection: string,
     _doc: SearchDocument<M>,
   ): Promise<void> {
-    throw new Error(this.reason);
+    throw new SurrealUnsupportedError("unsupported-capability", this.reason);
   }
 
   async indexMany<M extends Record<string, unknown> = Record<string, unknown>>(
     _collection: string,
     _docs: ReadonlyArray<SearchDocument<M>>,
   ): Promise<void> {
-    throw new Error(this.reason);
+    throw new SurrealUnsupportedError("unsupported-capability", this.reason);
   }
 
   async remove(_collection: string, _id: string): Promise<boolean> {
-    throw new Error(this.reason);
+    throw new SurrealUnsupportedError("unsupported-capability", this.reason);
   }
 
   async search<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -41,6 +57,6 @@ export class SurrealSearchAdapter implements AsyncSearchStore {
     _query: string,
     _opts?: SearchOptions,
   ): Promise<SearchResult<M>[]> {
-    throw new Error(this.reason);
+    throw new SurrealUnsupportedError("unsupported-capability", this.reason);
   }
 }

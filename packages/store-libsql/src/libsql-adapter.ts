@@ -23,6 +23,7 @@ import type {
   Vector,
 } from "@mirk/store";
 import {
+  compareCodePoints,
   cosineSimilarity,
   vectorToBuffer,
   bufferToVector,
@@ -65,7 +66,7 @@ async function ensureMirkRegistry(client: Client): Promise<void> {
     const rs = await client.execute(SELECT_SCHEMA_VERSION_SQL);
     const found = rs.rows[0]?.value as string | undefined;
     if (found !== undefined && isSchemaVersionTooNew(found)) {
-      throw new Error(schemaVersionTooNewMessage(found, MIRK_SCHEMA_VERSION));
+      throw new LibsqlAdapterError("unsupported-schema-version", schemaVersionTooNewMessage(found, MIRK_SCHEMA_VERSION));
     }
   }
   // `execute` is one statement per call; the shared DDL holds two.
@@ -142,6 +143,30 @@ async function resolveTableOnce(
   }
   return step.value;
 }
+
+export type LibsqlAdapterErrorCode =
+  | "unsupported-schema-version"
+  | "invalid-collection-name"
+  | "dimensions-changed"
+  | "dimensions-unknown";
+
+/** Thrown for invalid adapter input and incompatible on-disk state. */
+export class LibsqlAdapterError extends Error {
+  declare readonly name: "LibsqlAdapterError";
+  readonly code: LibsqlAdapterErrorCode;
+
+  constructor(code: LibsqlAdapterErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(LibsqlAdapterError.prototype, "name", {
+  value: "LibsqlAdapterError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export interface LibsqlAdapterOptions {
   /** libSQL connection URL: `libsql://…` (remote/Turso), `file:./db.sqlite`, or `:memory:`. */
@@ -240,7 +265,7 @@ class LibsqlKvFacet implements AsyncStore {
    *  already claimed by a different collection gets `_2`, `_3`, … so two names
    *  that sanitize and hash alike never share one table. */
   private async tableName(collection: string): Promise<string> {
-    if (collection.length === 0) throw new Error("Invalid collection name");
+    if (collection.length === 0) throw new LibsqlAdapterError("invalid-collection-name", "Invalid collection name");
     const cached = this.resolvedTables.get(collection);
     if (cached !== undefined) return cached;
     const table = await runTableResolution(
@@ -414,7 +439,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
     if (stored) {
       const persisted = Number(stored.value as string);
       if (this.dimensions >= 0 && this.dimensions !== persisted) {
-        throw new Error(
+        throw new LibsqlAdapterError("dimensions-changed", 
           `Vector store at ${this.url} was created with ${persisted} dimensions, opened with ${this.dimensions}.`,
         );
       }
@@ -455,7 +480,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
 
   private assertReady(v: Vector): void {
     if (this.dimensions < 0) {
-      throw new Error(
+      throw new LibsqlAdapterError("dimensions-unknown", 
         "LibsqlAdapter.vector requires `dimensions` — pass { dimensions } when opening.",
       );
     }
@@ -607,7 +632,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
         metadata: r.metadata === null ? undefined : (JSON.parse(r.metadata as string) as M),
       });
     }
-    out.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    out.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
     return out.slice(0, topK);
   }
 
@@ -637,7 +662,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
       if (minScore !== undefined && score < minScore) continue;
       scored.push({ id: row.id as string, score, metadata: meta });
     }
-    scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    scored.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
     return scored.slice(0, topK);
   }
 }

@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/locator-is-never-parsed",
-  "title": "a store item is matched by relativePath; its id is an opaque locator (item 35)",
+  "title": "a store item is matched by relativePath; its id is an opaque locator",
   "ports": [
     "fixtures"
   ],

@@ -100,7 +100,11 @@ describe("the layer stack", () => {
           { source: higher, layer: "app", priority: 10 },
         ],
       }),
-    ).toThrow('Duplicate fixture source id "pack".');
+    ).toThrowError(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({ code: "duplicate-source", source: "pack" }),
+      }),
+    );
   });
 
   it("keys the parsed-document cache by the matched extension", async () => {

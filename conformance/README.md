@@ -34,8 +34,9 @@ firing cannot quietly become an expectation.
 
 ## Writing a scenario while someone else is writing one
 
-**Only the integrator runs the plain `pnpm conformance:gen`.** It rewrites the
-whole shared corpus, so two authors running it at once overwrite each other.
+**Run the plain `pnpm conformance:gen` once per change, not per author.** It
+rewrites the whole shared corpus, so two authors running it at once overwrite
+each other.
 
 While drafting a scenario, generate somewhere else and read the result:
 
@@ -44,8 +45,8 @@ pnpm --filter @mirk/store conformance:gen --out /tmp/my-corpus
 ```
 
 That runs every check the real generation runs — both backends, both refusals —
-and writes nothing here. Hand the scenario input to the integrator; the shared
-corpus is regenerated once, from all the inputs together.
+and writes nothing here. Commit the scenario input; the shared corpus is
+regenerated once, from all the inputs together.
 
 ## Layout
 
@@ -173,9 +174,9 @@ corpus exists to prevent.
   declares, per backend, which capabilities that backend has **right now**,
   detected for real rather than assumed:
   - `listWhereIn` — the method both store backends implement, in both languages.
-  - There is no `vec0` capability. The sqlite-vec path was removed under
-    roadmap MR-22 after it was shown never to have executed; the SQLite vector
-    facet is the exact float64 cosine path in both languages.
+  - There is no `vec0` capability. The sqlite-vec branch was removed after it
+    was shown never to execute; the SQLite vector facet is the exact float64
+    cosine path in both languages.
 - A scenario declaring a capability a backend lacks is a failure naming the
   backend and the capability: `<id>: <backend> lacks capability(ies) <names>`.
   The one exception is the empty case: if no scenario in the corpus declares a
@@ -336,7 +337,7 @@ scenario raises a message Mirk itself writes, so those stay exact-message
 
 None yet.
 
-## Scope of the evidence
+## What conformance does not prove
 
 **Green conformance proves agreement on the corpus, not on every input
 boundary.** Malformed and out-of-contract inputs only become contractual when

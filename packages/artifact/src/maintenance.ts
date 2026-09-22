@@ -627,6 +627,9 @@ export class ArtifactMaintenance {
   }
 }
 
+export { ArtifactOperationError } from "./errors.js";
+export type { ArtifactOperationErrorCode } from "./errors.js";
+
 export async function auditArtifacts(
   objects: ObjectStore,
   repository: ArtifactRepository,

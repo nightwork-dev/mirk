@@ -21,6 +21,8 @@ import {
 } from "../src/index.js";
 import type { MigrationCheckpointV2 } from "../src/index.js";
 
+const interruption = new Error("interrupted");
+
 async function* manifest<T>(items: readonly T[]): AsyncIterable<T> {
   for (const item of items) yield item;
 }
@@ -69,14 +71,14 @@ describe("@mirk/migrate", () => {
         plan,
         convertedAt: 123,
       })
-    ).toThrow("lane");
+    ).toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-checkpoint" }));
     expect(() =>
       upgradeCheckpointV1({
         checkpoint: { lane: "items", processed: -1 },
         plan,
         convertedAt: 123,
       })
-    ).toThrow("processed");
+    ).toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-checkpoint" }));
     expect(() =>
       upgradeCheckpointV1({
         checkpoint: {
@@ -87,7 +89,7 @@ describe("@mirk/migrate", () => {
         plan,
         convertedAt: 123,
       })
-    ).toThrow("collection");
+    ).toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-checkpoint" }));
   });
 
   it("normalizes resume checkpoints strictly and rejects duplicates or mixed lanes", async () => {
@@ -99,12 +101,12 @@ describe("@mirk/migrate", () => {
       copyCollection(source, destination, "items", {
         resume: [checkpoint, { ...checkpoint }],
       })
-    ).rejects.toThrow("duplicate resume checkpoint lane");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "duplicate-checkpoint-lane" }));
     await expect(
       copyCollection(source, destination, "items", {
         resume: [1] as never,
       })
-    ).rejects.toThrow("checkpoint lists must contain checkpoint objects");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-resume" }));
     await expect(
       copyCollection(source, destination, "items", {
         resume: {
@@ -112,19 +114,19 @@ describe("@mirk/migrate", () => {
           second: { lane: "other", processed: 1 },
         },
       })
-    ).rejects.toThrow("cannot mix");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "mixed-checkpoint-kinds" }));
     await expect(
       copyCollection(source, destination, "items", {
         resume: {
           [checkpoint.lane]: { lane: checkpoint.lane, processed: 1, plan },
         },
       })
-    ).rejects.toThrow("v2 checkpoint must include plan and updatedAt");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-checkpoint" }));
     await expect(
       copyCollection(source, destination, "items", {
         resume: new Map([[checkpoint.lane, 1]]) as never,
       })
-    ).rejects.toThrow("checkpoint map or checkpoint list");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-resume" }));
   });
 
   it("matches every plan identity field and snapshots plan data for checkpoints", async () => {
@@ -153,7 +155,7 @@ describe("@mirk/migrate", () => {
         plan: { ...plan, sourceIdentity: "source:other" },
         resume: { [emitted[0]!.lane]: emitted[0]! },
       })
-    ).rejects.toThrow("plan identity mismatch");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "plan-identity-mismatch" }));
   });
 
   it("rejects a v2 resume checkpoint from a different plan before copying", async () => {
@@ -174,7 +176,7 @@ describe("@mirk/migrate", () => {
         plan: { ...plan, planDigest: "sha256:plan-b" },
         resume: { [checkpoint.lane]: checkpoint },
       })
-    ).rejects.toThrow("plan identity mismatch");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "plan-identity-mismatch" }));
   });
 
   it("resumes from an explicitly upgraded v1 checkpoint", async () => {
@@ -232,21 +234,22 @@ describe("@mirk/migrate", () => {
 
   it("does not invoke verification after a failed copy and rejects malformed callbacks", async () => {
     let verified = false;
+    const copyFailure = new Error("copy failed");
     await expect(
       runMigrationWithVerification(
         async () => {
-          throw new Error("copy failed");
+          throw copyFailure;
         },
         () => {
           verified = true;
           return { ok: true, checked: 0, diagnostics: [] };
         }
       )
-    ).rejects.toThrow("copy failed");
+    ).rejects.toBe(copyFailure);
     expect(verified).toBe(false);
     await expect(
       runMigrationWithVerification(1, null as never)
-    ).rejects.toThrow("verify must be a function");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "invalid-verifier" }));
   });
 
   it("rejects duplicate collections before any migration and safely returns prototype-named lanes", async () => {
@@ -254,7 +257,7 @@ describe("@mirk/migrate", () => {
     const destination = toAsync(new InMemoryKv());
     await expect(
       migrateStore(source, destination, ["items", "items"], {})
-    ).rejects.toThrow("duplicate migration collection");
+    ).rejects.toThrow(expect.objectContaining({ name: "MigrationError", code: "duplicate-collection" }));
     const result = await migrateStore(source, destination, ["__proto__"]);
     expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(
       true
@@ -274,10 +277,10 @@ describe("@mirk/migrate", () => {
         batchSize: 1,
         onCheckpoint(value) {
           last = value.processed;
-          if (last === 2) throw new Error("interrupted");
+          if (last === 2) throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted");
+    ).rejects.toBe(interruption);
 
     await copyCollection(source, destination, "items", {
       resume: { "collection:items": last },
@@ -358,10 +361,10 @@ describe("@mirk/migrate", () => {
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
           if (value.lane === "collection:documents" && value.processed === 2)
-            throw new Error("interrupted collections");
+            throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted collections");
+    ).rejects.toBe(interruption);
 
     await migrateStore(source, destination, ["documents", "runs"], {
       batchSize: 2,
@@ -402,10 +405,10 @@ describe("@mirk/migrate", () => {
         batchSize: 2,
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
-          if (value.processed === 2) throw new Error("interrupted vector");
+          if (value.processed === 2) throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted vector");
+    ).rejects.toBe(interruption);
     await copyVectorManifest(manifest(vectorEntries), vector, {
       resume: checkpoints,
       onCheckpoint(value) {
@@ -447,10 +450,10 @@ describe("@mirk/migrate", () => {
         batchSize: 2,
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
-          if (value.processed === 2) throw new Error("interrupted search");
+          if (value.processed === 2) throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted search");
+    ).rejects.toBe(interruption);
     await copySearchManifest(manifest(searchEntries), search, {
       resume: checkpoints,
       onCheckpoint(value) {
@@ -495,10 +498,10 @@ describe("@mirk/migrate", () => {
         batchSize: 2,
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
-          if (value.processed === 2) throw new Error("interrupted graph");
+          if (value.processed === 2) throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted graph");
+    ).rejects.toBe(interruption);
     await copyGraphManifest(manifest(graphEntries), destination, {
       resume: checkpoints,
       onCheckpoint(value) {
@@ -531,10 +534,10 @@ describe("@mirk/migrate", () => {
         batchSize: 2,
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
-          if (value.processed === 2) throw new Error("interrupted object");
+          if (value.processed === 2) throw interruption;
         },
       })
-    ).rejects.toThrow("interrupted object");
+    ).rejects.toBe(interruption);
     await copyObjectManifest(manifest(objectEntries), objects, {
       resume: checkpoints,
       onCheckpoint(value) {

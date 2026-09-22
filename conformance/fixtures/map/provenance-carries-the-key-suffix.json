@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/provenance-carries-the-key-suffix",
-  "title": "provenance paths for a map fixture are <file>#<key>, in layer order (item 6)",
+  "title": "provenance paths for a map fixture are <file>#<key>, in layer order",
   "ports": [
     "fixtures"
   ],

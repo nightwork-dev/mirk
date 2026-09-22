@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mirk.store import InMemoryStore, namespace_store
+from mirk.store import InMemoryStore, NamespaceError, namespace_store
 from mirk.store.namespace import SEPARATOR
 
 
@@ -57,11 +57,9 @@ def test_namespace_isolates_keys_and_collections() -> None:
 
 @pytest.mark.parametrize("namespace", ["", f"a{SEPARATOR}b"])
 def test_invalid_namespace_raises(namespace: str) -> None:
-    with pytest.raises(ValueError) as info:
+    with pytest.raises(NamespaceError) as info:
         namespace_store(InMemoryStore(), namespace)
-    assert str(info.value) == (
-        "namespace must be non-empty and must not contain the unit separator"
-    )
+    assert info.value.code == "invalid-namespace"
 
 
 def test_default_version_identity_is_a_per_process_serial() -> None:

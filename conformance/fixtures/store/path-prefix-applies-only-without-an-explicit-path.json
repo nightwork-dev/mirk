@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/path-prefix-applies-only-without-an-explicit-path",
-  "title": "an explicit relativePath ignores pathPrefix; without one the path is <prefix>/<id><ext> (item 36)",
+  "title": "an explicit relativePath ignores pathPrefix; without one the path is <prefix>/<id><ext>",
   "ports": [
     "fixtures"
   ],

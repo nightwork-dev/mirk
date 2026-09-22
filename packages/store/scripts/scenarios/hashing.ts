@@ -6,9 +6,9 @@
 // surrogates, `ensure_ascii`. Each canonical-json scenario pins the TEXT and the
 // DIGEST, because the text localizes a failure the digest only detects.
 //
-// The values are cross-checked: `docs/python-port/digests/artifact.md` §2 and
-// §13.3 probed them independently of this corpus. A generated value that
-// disagrees with that document is a finding, not a refresh.
+// The values were probed against the real TypeScript implementation
+// independently of this corpus. A generated value that changes is a finding,
+// not a refresh.
 //
 // Inputs JSON cannot express are wrapped: `{$num}` (parsed as float64 from
 // decimal text), `{$codepoints}` (a string built from code points, lone

@@ -9,7 +9,11 @@ override a shipped one, validates the result against a JSON Schema, and tells
 you which files contributed to the value you got.
 
 The TypeScript package and this one replay the same conformance corpus, so a
-Python process and a Node process read the same fixture pack the same way.
+Python process and a Node process read the same fixture pack the same way. The
+loading rules, merge strategies, provenance kinds, and diagnostic shape are
+described in the [`@mirk/fixtures` README](../../packages/fixtures/README.md);
+this page covers what is specific to Python. The Python port ships memory,
+filesystem, and store sources. It has no package-resource source and no CLI.
 
 ## Install
 
@@ -68,8 +72,8 @@ with the matched extension removed.
 
 `jsonschema` is a suggestion, not a requirement. Any callable that takes a
 schema document and returns a validator works. `mirk.fixtures.conformance`
-exports `json_schema_validator_factory`, the one the test suite injects, if you
-want a working default rather than the six lines above.
+exports `json_schema_validator_factory` if you want a working default rather
+than the six lines above.
 
 **An injected engine owns regex dialect parity.** JSON Schema says a `pattern`
 is an ECMAScript regular expression, and Python's `re` is a different dialect
@@ -130,8 +134,10 @@ loader.loadRaw("theme:dark")["provenance"]["layers"]
 #  {... "path": "themes/dark.json", "kind": "patch"}]
 ```
 
-`mergeStrategy` is `replace` (the default), `deep`, or `array-replace`. A patch
-can add and overwrite; it can never delete a key. Provenance names the documents
+`mergeStrategy` is `replace` (the default), `deep`, or `array-replace`. There is
+no deletion marker: under `deep` and `array-replace` a patch can add and
+overwrite keys but never remove one, and under `replace` the patch body becomes
+the whole value. Provenance names the documents
 that contributed and in what order, which is what `explain` reports.
 
 ## Sources
@@ -211,9 +217,10 @@ explicit one to reach the same answer.
 
 ## The contract
 
-The corpus at `conformance/` in the repository root is the contract. Both the
-TypeScript suite and this package replay every `fixtures/` scenario against both
-backends. A behavior that is not in the corpus is not contractual.
+The corpus at `conformance/` in the repository root is the contract (format:
+[`conformance/README.md`](../../conformance/README.md)). Both the TypeScript
+suite and this package replay every `fixtures/` scenario against both backends.
+A behavior that is not in the corpus is not contractual.
 
 Two things the corpus deliberately does not own. **Schema messages**: Ajv and
 `jsonschema` word every failure differently, so a validation scenario compares

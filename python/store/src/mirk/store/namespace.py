@@ -2,18 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from .types import JsonObject, StoreFilter, StoreMeta, SyncStore
 
-__all__ = ["SEPARATOR", "NamespacedStore", "namespace_store"]
+__all__ = [
+    "SEPARATOR",
+    "NamespaceError",
+    "NamespaceErrorCode",
+    "NamespacedStore",
+    "namespace_store",
+]
 
 SEPARATOR = "\u001f"
+
+NamespaceErrorCode = Literal["invalid-namespace"]
+
+
+class NamespaceError(ValueError):
+    """Raised for an empty namespace or one containing the unit separator."""
+
+    def __init__(self, code: NamespaceErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: NamespaceErrorCode = code
 
 
 def _assert_namespace(namespace: str) -> None:
     if len(namespace) == 0 or SEPARATOR in namespace:
-        raise ValueError("namespace must be non-empty and must not contain the unit separator")
+        raise NamespaceError(
+            "invalid-namespace",
+            "namespace must be non-empty and must not contain the unit separator",
+        )
 
 
 class NamespacedStore:

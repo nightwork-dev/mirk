@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/prose-containing-a-ref-is-not-a-reference",
-  "title": "bare-ref detection checks the WHOLE string, so prose is never a reference (item 29)",
+  "title": "bare-ref detection checks the WHOLE string, so prose is never a reference",
   "ports": [
     "fixtures"
   ],

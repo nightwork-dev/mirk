@@ -73,17 +73,29 @@ console.log((await artifacts.verify(artifact.id)).ok); // true
 
 ## Backend Capabilities
 
-`OpenDalObjectStore` checks the injected operator capabilities before using optional object-store features:
+The constructor throws unless the operator supports `read`, `write`, `stat`, and `delete`. Each `put` then checks the operator capabilities for the options it was given:
 
-| `ObjectStore` option | OpenDAL capability required |
-| -------------------- | --------------------------- |
-| `ifAbsent`           | `writeWithIfNotExists`      |
-| `mediaType`          | `writeWithContentType`      |
-| `metadata`           | `writeWithUserMetadata`     |
+| `ObjectStore` option | OpenDAL capability required | `code` when missing           |
+| -------------------- | --------------------------- | ----------------------------- |
+| `ifAbsent`           | `writeWithIfNotExists`      | `unsupported-if-absent`       |
+| `mediaType`          | `writeWithContentType`      | `unsupported-content-type`    |
+| `metadata`           | `writeWithUserMetadata`     | `unsupported-user-metadata`   |
 
-If a backend cannot perform a requested feature atomically or natively, the adapter throws instead of emulating weaker behavior.
+If a backend cannot perform a requested feature atomically or natively, the adapter throws instead of emulating weaker behavior. These throws are `OpenDalObjectStoreError` instances with a stable `code`; the constructor uses `missing-required-capability`, `list()` uses `unsupported-recursive-list`, and a key the backend returns that fails validation uses `invalid-backend-key`. `ArtifactCoordinator.write()` always passes `ifAbsent` and `mediaType`, so a backend used behind the coordinator needs both `writeWithIfNotExists` and `writeWithContentType`.
 
-When OpenDAL exposes recursive listing, `list()` implements the optional `ListableObjectStore` capability used by `@mirk/artifact/maintenance`; backends without listing remain valid object stores but produce partial audits.
+A failed `ifAbsent` write never deletes an object that already existed at that key. A failed unconditional write removes its partial object.
+
+Keys are validated with `assertObjectKey()` from `@mirk/artifact` on every call.
+
+When OpenDAL exposes recursive listing (`list` and `listWithRecursive`), `list()` implements the optional `ListableObjectStore` capability used by `@mirk/artifact/maintenance`; backends without listing remain valid object stores but produce partial audits.
+
+## Options
+
+```ts
+new OpenDalObjectStore(operator, { digestMetadataKey: "sha256" });
+```
+
+`digestMetadataKey` writes the object's SHA-256 into OpenDAL user metadata under that key and reports it as `ObjectInfo.digest`. It requires `writeWithUserMetadata`, and it buffers each object in memory once, because OpenDAL fixes metadata when the writer opens. Leave it unset to keep writes fully streaming. The stored digest is advisory: `ArtifactCoordinator` still verifies bytes with its own hash.
 
 ## Contract Boundaries
 

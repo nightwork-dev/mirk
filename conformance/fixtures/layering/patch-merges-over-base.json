@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/patch-merges-over-base",
-  "title": "a base in a low layer plus a $patch in a high layer produces the merged value (item 10)",
+  "title": "a base in a low layer plus a $patch in a high layer produces the merged value",
   "ports": [
     "fixtures"
   ],

@@ -7,6 +7,66 @@ import type {
   StoreMeta,
 } from "@mirk/store";
 
+export type PostgresAdapterErrorCode = "conflicting-pool-options" | "empty-schema";
+
+/** Thrown when `PostgresAdapter.open` receives invalid options. */
+export class PostgresAdapterError extends Error {
+  declare readonly name: "PostgresAdapterError";
+  readonly code: PostgresAdapterErrorCode;
+
+  constructor(code: PostgresAdapterErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(PostgresAdapterError.prototype, "name", {
+  value: "PostgresAdapterError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
+export type PostgresValueErrorCode = "not-json-serializable";
+
+/** Thrown when a stored value cannot be encoded as JSON. */
+export class PostgresValueError extends TypeError {
+  declare readonly name: "PostgresValueError";
+  readonly code: PostgresValueErrorCode;
+
+  constructor(code: PostgresValueErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(PostgresValueError.prototype, "name", {
+  value: "PostgresValueError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
+export type PostgresRangeErrorCode = "invalid-integer";
+
+/** Thrown when a pagination argument is not a non-negative integer. */
+export class PostgresRangeError extends RangeError {
+  declare readonly name: "PostgresRangeError";
+  readonly code: PostgresRangeErrorCode;
+
+  constructor(code: PostgresRangeErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.code = code;
+  }
+}
+Object.defineProperty(PostgresRangeError.prototype, "name", {
+  value: "PostgresRangeError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export interface PostgresAdapterOptions {
   /** PostgreSQL connection string used when the adapter owns its pool. */
   connectionString?: string;
@@ -41,10 +101,10 @@ export class PostgresAdapter {
 
   static async open(options: PostgresAdapterOptions = {}): Promise<PostgresAdapter> {
     if (options.pool && (options.connectionString !== undefined || options.poolConfig !== undefined)) {
-      throw new Error("Pass either `pool` or owned-pool connection options, not both.");
+      throw new PostgresAdapterError("conflicting-pool-options", "Pass either `pool` or owned-pool connection options, not both.");
     }
     const schema = options.schema ?? "mirk";
-    if (schema.length === 0) throw new Error("PostgreSQL schema must not be empty.");
+    if (schema.length === 0) throw new PostgresAdapterError("empty-schema", "PostgreSQL schema must not be empty.");
     const ownsPool = options.pool === undefined;
     const pool = options.pool ?? new Pool({ ...options.poolConfig, connectionString: options.connectionString });
     const adapter = new PostgresAdapter(pool, ownsPool, schema);
@@ -262,11 +322,11 @@ function encodeJson(value: unknown): string {
       typeof nested === "bigint" ||
       (typeof nested === "number" && !Number.isFinite(nested))
     ) {
-      throw new TypeError("Postgres store values must be JSON-serializable.");
+      throw new PostgresValueError("not-json-serializable", "Postgres store values must be JSON-serializable.");
     }
     return nested;
   });
-  if (encoded === undefined) throw new TypeError("Postgres store values must be JSON-serializable.");
+  if (encoded === undefined) throw new PostgresValueError("not-json-serializable", "Postgres store values must be JSON-serializable.");
   return encoded;
 }
 
@@ -276,6 +336,6 @@ function quoteIdentifier(identifier: string): string {
 
 function assertNonNegativeInteger(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 0) {
-    throw new RangeError(`${name} must be a non-negative integer.`);
+    throw new PostgresRangeError("invalid-integer", `${name} must be a non-negative integer.`);
   }
 }

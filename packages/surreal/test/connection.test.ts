@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Surreal, createRemoteEngines } from "surrealdb";
 import { createNodeEngines } from "@surrealdb/node";
 
-import { SurrealConnection, type SurrealClientLike } from "../src/index.js";
+import { SurrealConnection, SurrealConnectionError, type SurrealClientLike } from "../src/index.js";
 
 function createEmbeddedClient(): Surreal {
   return new Surreal({
@@ -60,7 +60,11 @@ describe("SurrealConnection", () => {
     });
 
     await connection.close();
-    await expect(connection.query("SELECT 1")).rejects.toThrow("closed");
+    const error = await connection.query("SELECT 1").catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(SurrealConnectionError);
+    expect(error).toMatchObject({ code: "connection-closed", name: "SurrealConnectionError" });
+    expect(Object.keys(error as object)).not.toContain("name");
     await client.close();
   });
 });

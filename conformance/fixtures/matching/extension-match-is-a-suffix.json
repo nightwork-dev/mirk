@@ -1,6 +1,6 @@
 {
   "id": "fixtures/matching/extension-match-is-a-suffix",
-  "title": "extension matching is endsWith, so a.min.json under [.json] is the fixture a.min (item 72)",
+  "title": "extension matching is endsWith, so a.min.json under [.json] is the fixture a.min",
   "ports": [
     "fixtures"
   ],

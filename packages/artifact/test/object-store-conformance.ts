@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ByteStream, ObjectStore } from "../src/types.js";
+import type { ByteStream, ListableObjectStore, ObjectStore } from "../src/types.js";
 
 export interface ObjectStoreConformanceOptions {
   createStore: () => Promise<ObjectStore> | ObjectStore;
@@ -87,7 +87,31 @@ export function objectStoreConformance(name: string, options: ObjectStoreConform
 
     it("refuses invalid object keys", async () => {
       const store = await options.createStore();
-      await expect(store.put("../escape", new Uint8Array([1]))).rejects.toThrow(/invalid object key/);
+      const rejection = expect(store.put("../escape", new Uint8Array([1]))).rejects;
+      await rejection.toThrow(TypeError);
+      await rejection.toMatchObject({ code: "invalid-object-key" });
+    });
+
+    it("lists exactly the stored object keys under a prefix, in code point order", async (context) => {
+      const store = await options.createStore();
+      if (!("list" in store) || typeof store.list !== "function") return context.skip();
+      const listable = store as ListableObjectStore;
+      const keysOf = async (prefix?: string) =>
+        (await listable.list(prefix)).map((info) => info.key);
+      for (const key of ["objects/b", "objects/a", "objects/ab", "objects/Z", "objects/nested/c", "other/d"]) {
+        await listable.put(key, new Uint8Array([1]));
+      }
+      expect(await keysOf("objects/")).toEqual([
+        "objects/Z",
+        "objects/a",
+        "objects/ab",
+        "objects/b",
+        "objects/nested/c",
+      ]);
+      expect(await keysOf("objects/a")).toEqual(["objects/a", "objects/ab"]);
+      expect(await keysOf("objects/n")).toEqual(["objects/nested/c"]);
+      expect(await keysOf("oth")).toEqual(["other/d"]);
+      expect(await keysOf()).toContain("other/d");
     });
 
     if (supportsIfAbsent) {

@@ -34,7 +34,7 @@ export type StepOutcome =
  *  A scenario naming anything else is a corpus error, not a capability gap:
  *  runners FAIL on it and name the port. Skipping would let a typo in `ports`
  *  silently retire a scenario from every backend at once. */
-export const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
+const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
   memory: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures"],
   sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures"],
 };
@@ -74,7 +74,7 @@ export function targetKindFor(ports: readonly string[]): TargetKind {
   return kind as TargetKind;
 }
 
-export function isNumberArray(value: unknown): value is number[] {
+function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.length > 0 && value.every((n) => typeof n === "number");
 }
 
@@ -123,7 +123,7 @@ function hashWrapperKey(value: object): (typeof HASH_WRAPPER_KEYS)[number] | nul
 
 /** Expand hash wrappers recursively. An object with exactly one key from the
  *  wrapper set IS a wrapper; anything else is ordinary data and means itself. */
-export function expandHashArg(value: unknown): unknown {
+function expandHashArg(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(expandHashArg);
   if (value === null || typeof value !== "object") return value;
   const wrapper = hashWrapperKey(value);
@@ -187,7 +187,7 @@ function toJsonReady(value: unknown): unknown {
 
 /** Normalize a live result to JSON: Float32Array becomes number[], `undefined`
  *  object properties are stripped, and a `void` return becomes null. */
-export function normalizeResult(value: unknown): unknown {
+function normalizeResult(value: unknown): unknown {
   const ready = toJsonReady(value);
   if (ready === undefined) return null;
   return JSON.parse(JSON.stringify(ready)) as unknown;

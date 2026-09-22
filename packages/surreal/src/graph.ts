@@ -28,6 +28,22 @@ interface GraphConfig {
   relationTable: string;
 }
 
+export type SurrealGraphErrorCode = "graph-not-configured" | "invalid-identifier" | "invalid-edge-record";
+
+export class SurrealGraphError extends Error {
+  declare readonly name: "SurrealGraphError";
+  constructor(readonly code: SurrealGraphErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealGraphError.prototype, "name", {
+  value: "SurrealGraphError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const MAX_RECURSIVE_DEPTH = 256;
 
@@ -221,7 +237,7 @@ RELATE $fromRecord->${graph.relationTable}:[$edgeId]->$toRecord CONTENT $content
   async traverseGraph(collection: string, options: GraphTraversalOptions): Promise<GraphTraversalResult> {
     const graph = this.graphFor(collection);
     if (!graph) {
-      throw new Error(`Graph collection is not configured: ${collection}`);
+      throw new SurrealGraphError("graph-not-configured", `Graph collection is not configured: ${collection}`);
     }
     if (!Number.isFinite(options.depth) || options.depth <= 0) {
       return { nodes: [], edges: [] };
@@ -284,13 +300,13 @@ interface RelationRecord {
 
 function assertIdentifier(identifier: string, label: string): void {
   if (!IDENTIFIER.test(identifier)) {
-    throw new Error(`Invalid Surreal ${label}: ${identifier}`);
+    throw new SurrealGraphError("invalid-identifier", `Invalid Surreal ${label}: ${identifier}`);
   }
 }
 
 function toEdge(item: { id: string } & Record<string, unknown>): Edge {
   if (typeof item.from !== "string" || typeof item.to !== "string" || typeof item.type !== "string") {
-    throw new Error("Graph edge records must include string from, to, and type fields");
+    throw new SurrealGraphError("invalid-edge-record", "Graph edge records must include string from, to, and type fields");
   }
   return item as Edge;
 }

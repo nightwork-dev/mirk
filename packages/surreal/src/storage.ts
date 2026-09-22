@@ -1,5 +1,6 @@
 import { ObjectAlreadyExistsError, type ByteSource, type ByteStream, type ObjectInfo, type ObjectPutOptions, type ObjectStore } from "@mirk/artifact";
 
+import { cloneJson } from "./internal/clone-json.js";
 import { firstStatement } from "./internal/query-result.js";
 
 export interface SurrealConnectionLike {
@@ -17,9 +18,60 @@ export interface SurrealStorageOptions {
   tokenFactory?: () => string;
 }
 
+export type SurrealObjectStoreGenerationErrorCode =
+  | "upload-lease-lost"
+  | "upload-finalize-failed"
+  | "generation-chunks-missing"
+  | "generation-chunk-order"
+  | "generation-size-changed";
+
 export class SurrealObjectStoreGenerationError extends Error {
-  constructor(message: string) { super(message); this.name = "SurrealObjectStoreGenerationError"; }
+  declare readonly name: "SurrealObjectStoreGenerationError";
+  constructor(readonly code: SurrealObjectStoreGenerationErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
 }
+Object.defineProperty(SurrealObjectStoreGenerationError.prototype, "name", {
+  value: "SurrealObjectStoreGenerationError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
+/** `invalid-object-key` and `invalid-byte-chunk` name the same conditions as
+ *  `@mirk/artifact`'s `ArtifactValidationError`. */
+export type SurrealObjectStoreValidationErrorCode = "invalid-object-key" | "invalid-byte-chunk" | "invalid-identifier";
+
+export class SurrealObjectStoreValidationError extends TypeError {
+  declare readonly name: "SurrealObjectStoreValidationError";
+  constructor(readonly code: SurrealObjectStoreValidationErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealObjectStoreValidationError.prototype, "name", {
+  value: "SurrealObjectStoreValidationError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
+export type SurrealObjectStoreOptionErrorCode = "invalid-option";
+
+export class SurrealObjectStoreOptionError extends RangeError {
+  declare readonly name: "SurrealObjectStoreOptionError";
+  constructor(readonly code: SurrealObjectStoreOptionErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealObjectStoreOptionError.prototype, "name", {
+  value: "SurrealObjectStoreOptionError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 type UploadStatus = "ok" | "missing" | "expired" | "complete";
 
@@ -116,7 +168,7 @@ export class SurrealObjectStore implements ObjectStore {
             now: writeNow,
             expiresAt: writeNow + this.#options.leaseMs,
           });
-          if (!renewed) throw new SurrealObjectStoreGenerationError(`upload lease is no longer owned: ${generationId}`);
+          if (!renewed) throw new SurrealObjectStoreGenerationError("upload-lease-lost", `upload lease is no longer owned: ${generationId}`);
           nextRenewalAt = writeNow + this.#options.renewEveryMs;
         }
         await this.#operation("insertChunk", { generationId, uploadToken, index: chunkCount, bytes: chunk });
@@ -137,7 +189,7 @@ export class SurrealObjectStore implements ObjectStore {
       }));
 
       if (result.status === "exists") throw new ObjectAlreadyExistsError(key);
-      if (result.status !== "ok" || !result.info) throw new SurrealObjectStoreGenerationError(`upload finalization failed: ${result.status}`);
+      if (result.status !== "ok" || !result.info) throw new SurrealObjectStoreGenerationError("upload-finalize-failed", `upload finalization failed: ${result.status}`);
       if (result.supersededGenerationId) await this.#gcGeneration(result.supersededGenerationId);
       return cloneJson(result.info);
     } catch (error) {
@@ -155,15 +207,15 @@ export class SurrealObjectStore implements ObjectStore {
     return (async function* (store: SurrealObjectStore) {
       try {
         const chunks = await store.#operation<readonly ChunkRecord[]>("listChunks", { generationId });
-        if (chunks.length === 0 && pointer.sizeBytes > 0) throw new SurrealObjectStoreGenerationError(`generation chunks missing: ${generationId}`);
+        if (chunks.length === 0 && pointer.sizeBytes > 0) throw new SurrealObjectStoreGenerationError("generation-chunks-missing", `generation chunks missing: ${generationId}`);
         let sizeBytes = 0;
         for (let index = 0; index < chunks.length; index += 1) {
           const chunk = chunks[index];
-          if (!chunk || chunk.index !== index) throw new SurrealObjectStoreGenerationError(`generation chunk order broken: ${generationId}`);
+          if (!chunk || chunk.index !== index) throw new SurrealObjectStoreGenerationError("generation-chunk-order", `generation chunk order broken: ${generationId}`);
           sizeBytes += chunk.bytes.byteLength;
           yield chunk.bytes.slice();
         }
-        if (sizeBytes !== pointer.sizeBytes) throw new SurrealObjectStoreGenerationError(`generation size changed while reading: ${generationId}`);
+        if (sizeBytes !== pointer.sizeBytes) throw new SurrealObjectStoreGenerationError("generation-size-changed", `generation size changed while reading: ${generationId}`);
       } finally {
         await store.#releaseGeneration(generationId);
       }
@@ -264,7 +316,7 @@ export class SurrealObjectStore implements ObjectStore {
         const rows = firstStatement<StoredUpload[]>(
           await this.#connection.query("SELECT generationId FROM type::record($uploadTable, $generationId) WHERE uploadToken = $uploadToken", allBindings),
         );
-        if (rows.length === 0) throw new SurrealObjectStoreGenerationError(`upload lease is no longer owned: ${String(bindings.generationId)}`);
+        if (rows.length === 0) throw new SurrealObjectStoreGenerationError("upload-lease-lost", `upload lease is no longer owned: ${String(bindings.generationId)}`);
         await this.#connection.query(
           "UPSERT type::record($chunkTable, $chunkId) CONTENT { generationId: $generationId, index: $index, bytes: $bytes }",
           { ...allBindings, chunkId: `${String(bindings.generationId)}:${String(bindings.index)}` },
@@ -377,7 +429,7 @@ async function* chunks(source: ByteSource): ByteStream {
     return;
   }
   for await (const chunk of source) {
-    if (!(chunk instanceof Uint8Array)) throw new TypeError("object byte sources must yield Uint8Array chunks");
+    if (!(chunk instanceof Uint8Array)) throw new SurrealObjectStoreValidationError("invalid-byte-chunk", "object byte sources must yield Uint8Array chunks");
     yield chunk;
   }
 }
@@ -400,16 +452,16 @@ function cleanPointer(pointer: StoredPointer | undefined): StoredPointer | undef
 
 function assertObjectKey(key: string): void {
   if (!key || key.includes("\0") || key.startsWith("/") || key.split("/").some((part) => part === ".." || part === ".")) {
-    throw new TypeError(`invalid object key: ${JSON.stringify(key)}`);
+    throw new SurrealObjectStoreValidationError("invalid-object-key", `invalid object key: ${JSON.stringify(key)}`);
   }
 }
 
 function assertIdentifier(value: string, label: string): void {
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(value)) throw new TypeError(`${label} must be a SurrealDB-safe identifier`);
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(value)) throw new SurrealObjectStoreValidationError("invalid-identifier", `${label} must be a SurrealDB-safe identifier`);
 }
 
 function positiveInteger(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value <= 0) throw new RangeError(`${label} must be a positive integer`);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new SurrealObjectStoreOptionError("invalid-option", `${label} must be a positive integer`);
   return value;
 }
 
@@ -419,8 +471,4 @@ function randomId(): string {
   if (!cryptoApi?.getRandomValues) throw new Error("SurrealObjectStore requires Web Crypto or an injected idFactory/tokenFactory");
   const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }

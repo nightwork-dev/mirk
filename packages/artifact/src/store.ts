@@ -35,6 +35,18 @@ import {
   assertBoundedJson,
   cloneJson,
 } from "./util.js";
+import { ArtifactOperationError } from "./errors.js";
+
+export {
+  ArtifactLimitError,
+  ArtifactOperationError,
+  ArtifactValidationError,
+} from "./errors.js";
+export type {
+  ArtifactLimitErrorCode,
+  ArtifactOperationErrorCode,
+  ArtifactValidationErrorCode,
+} from "./errors.js";
 
 export interface StoreArtifactRepositoryOptions {
   namespace?: string;
@@ -136,7 +148,7 @@ export class StoreArtifactRepository
     patch: Record<string, JsonValue | undefined>
   ): Promise<StoredArtifactRecord> {
     const record = await this.get(id);
-    if (!record) throw new Error(`artifact not found: ${id}`);
+    if (!record) throw new ArtifactOperationError("artifact-not-found", `artifact not found: ${id}`);
     const annotations = { ...(record.annotations ?? {}) };
     for (const [key, value] of Object.entries(patch))
       value === undefined
@@ -167,7 +179,10 @@ export class StoreArtifactRepository
       !(await this.get(edge.sourceArtifactId)) ||
       !(await this.get(edge.resultArtifactId))
     )
-      throw new Error("lineage endpoints must exist");
+      throw new ArtifactOperationError(
+        "missing-lineage-endpoint",
+        "lineage endpoints must exist"
+      );
     if (
       edge.sourceArtifactId === edge.resultArtifactId ||
       (await this.#reaches(edge.resultArtifactId, edge.sourceArtifactId))
@@ -660,7 +675,8 @@ export class StoreArtifactRepository
 
   #atomic(): AsyncStore & AsyncAtomicMutationStore {
     if (!supportsAsyncAtomicMutation(this.store))
-      throw new Error(
+      throw new ArtifactOperationError(
+        "atomic-mutation-unavailable",
         "artifact repository atomic mutation is unavailable; use single-writer mode"
       );
     return this.store;
