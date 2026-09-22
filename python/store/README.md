@@ -14,6 +14,9 @@ bookkeeping rows on every write.
 uv add mirk-store
 ```
 
+The import package is `mirk.store`, inside the shared `mirk` namespace. The unrelated `mirk`
+distribution on PyPI uses the same top-level name, so do not install it in the same environment.
+
 Zero runtime dependencies. Every port, the vector one included, needs nothing
 beyond the standard library.
 
