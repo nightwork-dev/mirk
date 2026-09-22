@@ -13,10 +13,11 @@ import { canonicalJson, isPlainObject, sha256Hex } from "./canonical.js";
  *  published `@mirk/store/atomic` surface. */
 export { compareCodePoints as compareCodePoint } from "./order.js";
 
-/** Canonical JSON used by request digests and bounded payload checks.
- *  Implemented in `./canonical.js`; re-exported here because
- *  `@mirk/store/atomic` and the package root are its published homes. */
-export { canonicalJson } from "./canonical.js";
+/** Canonical JSON used by request digests and bounded payload checks, and its
+ *  SHA-256 digest. Implemented in `./canonical.js`; re-exported here because
+ *  `@mirk/store/atomic` and the package root are their published homes. */
+export { canonicalDigest, canonicalJson, CanonicalJsonError } from "./canonical.js";
+export type { CanonicalJsonErrorCode } from "./canonical.js";
 
 export type JsonValue =
   | null
@@ -106,15 +107,21 @@ export type AtomicMutationRejectionCode =
   | "outcome-size-exceeded";
 
 export class AtomicMutationRejectedError extends Error {
-  readonly name = "AtomicMutationRejectedError";
+  declare readonly name: "AtomicMutationRejectedError";
   constructor(readonly code: AtomicMutationRejectionCode, message: string) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(AtomicMutationRejectedError.prototype, "name", {
+  value: "AtomicMutationRejectedError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class AtomicMutationBackendError extends Error {
-  readonly name = "AtomicMutationBackendError";
+  declare readonly name: "AtomicMutationBackendError";
   constructor(
     readonly code: "unavailable" | "serialization-failure",
     readonly retryable: boolean,
@@ -124,9 +131,15 @@ export class AtomicMutationBackendError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(AtomicMutationBackendError.prototype, "name", {
+  value: "AtomicMutationBackendError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class AtomicMutationIndeterminateError extends Error {
-  readonly name = "AtomicMutationIndeterminateError";
+  declare readonly name: "AtomicMutationIndeterminateError";
   constructor(
     readonly requestDigest: string,
     readonly idempotencyKey: string | undefined,
@@ -137,6 +150,12 @@ export class AtomicMutationIndeterminateError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(AtomicMutationIndeterminateError.prototype, "name", {
+  value: "AtomicMutationIndeterminateError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 /** The request bounds one store applies before its atomic decision point.
  *

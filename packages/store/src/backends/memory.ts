@@ -27,7 +27,7 @@ import {
   validateAtomicRequest,
 } from "../atomic.js";
 import { compareCodePoints } from "../order.js";
-import { NON_SCALAR_FILTER_MESSAGE } from "../sql.js";
+import { NON_SCALAR_FILTER_MESSAGE, StoreFilterError } from "../sql.js";
 
 /** The message the SQLite adapter already raises for a non-scalar `listWhereIn`
  *  value. The reference raises the same one so the two backends agree. */
@@ -48,13 +48,13 @@ function isJsonScalar(value: unknown): boolean {
  *  used to return `[]` and silently mean "no match". */
 function assertScalarWhere(where: Record<string, unknown>): void {
   for (const value of Object.values(where)) {
-    if (!isJsonScalar(value)) throw new Error(NON_SCALAR_FILTER_MESSAGE);
+    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
   }
 }
 
 function assertScalarInValues(values: readonly unknown[]): void {
   for (const value of values) {
-    if (!isJsonScalar(value)) throw new Error(NON_SCALAR_IN_MESSAGE);
+    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
   }
 }
 

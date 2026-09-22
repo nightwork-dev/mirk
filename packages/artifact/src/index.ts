@@ -1,6 +1,16 @@
 export type { ArtifactCoordinatorOptions } from "./coordinator.js";
 export { ArtifactCoordinator, ArtifactWriteError } from "./coordinator.js";
 export {
+  ArtifactLimitError,
+  ArtifactOperationError,
+  ArtifactValidationError,
+} from "./errors.js";
+export type {
+  ArtifactLimitErrorCode,
+  ArtifactOperationErrorCode,
+  ArtifactValidationErrorCode,
+} from "./errors.js";
+export {
   ArtifactConflictError,
   InMemoryArtifactRepository,
   InMemoryObjectStore,

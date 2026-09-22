@@ -1,6 +1,6 @@
 {
   "id": "fixtures/merge/deep",
-  "title": "deep merges nested objects, replaces arrays, retains omitted keys (item 19)",
+  "title": "deep merges nested objects, replaces arrays, retains omitted keys",
   "ports": [
     "fixtures"
   ],

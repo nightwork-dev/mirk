@@ -12,8 +12,7 @@
 // better-sqlite3 is the ONLY native reference in @mirk/store, reachable solely
 // through this subpath. Vector search is exact float64 JS cosine, and only that:
 // `meta.accelerated` is always false here. A sqlite-vec (vec0) branch used to
-// sit alongside it and never once executed; it is deleted, and the reasoning is
-// in docs/evidence/python-port/2026-09-02-vec0-branch-dead.md (roadmap MR-22).
+// sit alongside it and never once executed; it is deleted.
 // Legacy `vectors_vec_*` shadow tables in older files are left in place; they are
 // inert.
 
@@ -52,12 +51,14 @@ import type {
 } from "../vector/types.js";
 import { matchesWhere } from "../vector/filter.js";
 import { compareCodePoints } from "../order.js";
+import { runSqliteBusyRetry } from "../sqlite-busy.js";
 import {
   cosineSimilarity,
   vectorToBuffer,
   bufferToVector,
   assertDimensions,
   isUsableVector,
+  VectorInputError,
 } from "../vector/cosine.js";
 import type {
   SearchStore,
@@ -91,6 +92,7 @@ import {
   MIRK_REGISTRY_DDL,
   MIRK_SCHEMA_VERSION,
   schemaVersionTooNewMessage,
+  StoreFilterError,
   SEARCH_DOCS_TABLE_PREFIX,
   SEARCH_TABLE_KIND,
   SELECT_REGISTERED_TABLE_SQL,
@@ -103,9 +105,29 @@ import {
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 
+export type SqliteAdapterErrorCode =
+  | "unsupported-schema-version"
+  | "invalid-busy-timeout";
+
+/** Thrown when a SQLite file or adapter option cannot be used. */
+export class SqliteAdapterError extends Error {
+  declare readonly name: "SqliteAdapterError";
+  constructor(readonly code: SqliteAdapterErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SqliteAdapterError.prototype, "name", {
+  value: "SqliteAdapterError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 function assertPositiveDimensions(dimensions: number): void {
   if (!Number.isInteger(dimensions) || dimensions <= 0) {
-    throw new Error(
+    throw new VectorInputError(
+      "invalid-dimensions",
       `Vector dimensions must be a positive integer; got ${dimensions}.`
     );
   }
@@ -126,7 +148,8 @@ function ensureMirkRegistry(db: Database.Database): void {
       | { value: string }
       | undefined;
     if (row !== undefined && isSchemaVersionTooNew(row.value)) {
-      throw new Error(
+      throw new SqliteAdapterError(
+        "unsupported-schema-version",
         schemaVersionTooNewMessage(row.value, MIRK_SCHEMA_VERSION)
       );
     }
@@ -230,7 +253,7 @@ function buildJsonInWhere(
       );
       params.push(path, path, value);
     } else {
-      throw new Error(NON_SCALAR_IN_MESSAGE);
+      throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
     }
   }
 
@@ -310,7 +333,8 @@ export class SqliteAdapter {
       opts.busyTimeoutMs !== undefined &&
       (!Number.isSafeInteger(opts.busyTimeoutMs) || opts.busyTimeoutMs < 0)
     ) {
-      throw new Error(
+      throw new SqliteAdapterError(
+        "invalid-busy-timeout",
         `busyTimeoutMs must be a non-negative safe integer; got ${opts.busyTimeoutMs}.`
       );
     }
@@ -327,17 +351,22 @@ export class SqliteAdapter {
       let kv: SqliteKvFacet | undefined;
       let vector: SqliteVectorFacet | undefined;
       let search: SqliteSearchFacet | undefined;
-      runSqliteBusyRetry(() => {
-        this.db.pragma("journal_mode = WAL");
-        ensureMirkRegistry(this.db);
-        kv = new SqliteKvFacet(
-          this.db,
-          resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS),
-          opts.versionIdentity
-        );
-        vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
-        search = new SqliteSearchFacet(this.db);
-      }, busyTimeoutMs);
+      runSqliteBusyRetry(
+        () => {
+          this.db.pragma("journal_mode = WAL");
+          ensureMirkRegistry(this.db);
+          kv = new SqliteKvFacet(
+            this.db,
+            resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS),
+            opts.versionIdentity
+          );
+          vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
+          search = new SqliteSearchFacet(this.db);
+        },
+        busyTimeoutMs,
+        1,
+        50
+      );
       this.kv = kv!;
       this.vector = vector!;
       this.search = search!;
@@ -972,32 +1001,6 @@ function conditionMatches(
   return observed !== null && observed.version === condition.version;
 }
 
-function runSqliteBusyRetry<T>(work: () => T, waitMs: number): T {
-  const deadline = Date.now() + waitMs;
-  while (true) {
-    try {
-      return work();
-    } catch (error) {
-      const code = (error as { code?: unknown }).code;
-      if (
-        typeof code !== "string" ||
-        (!code.startsWith("SQLITE_BUSY") &&
-          !code.startsWith("SQLITE_LOCKED")) ||
-        Date.now() >= deadline
-      ) {
-        throw error;
-      }
-      const remaining = Math.max(1, deadline - Date.now());
-      Atomics.wait(
-        new Int32Array(new SharedArrayBuffer(4)),
-        0,
-        0,
-        Math.min(50, remaining)
-      );
-    }
-  }
-}
-
 // ─── Vector facet (VectorStore) ──────────────────────────────────────────────
 
 interface VectorRow {
@@ -1038,7 +1041,8 @@ class SqliteVectorFacet implements VectorStore {
     if (stored) {
       this.dimensions = Number(stored.value);
       if (dimensions !== undefined && dimensions !== this.dimensions) {
-        throw new Error(
+        throw new VectorInputError(
+          "dimensions-changed",
           `Vector store at ${path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`
         );
       }
@@ -1052,7 +1056,8 @@ class SqliteVectorFacet implements VectorStore {
     assertPositiveDimensions(dimensions);
     if (this.dimensions >= 0) {
       if (dimensions !== this.dimensions) {
-        throw new Error(
+        throw new VectorInputError(
+          "dimensions-changed",
           `Vector store at ${this.path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`
         );
       }
@@ -1074,7 +1079,8 @@ class SqliteVectorFacet implements VectorStore {
 
   private requireKnownDims(v: Vector): void {
     if (this.dimensions < 0) {
-      throw new Error(
+      throw new VectorInputError(
+        "dimensions-unknown",
         "SqliteAdapter.vector has no dimensions yet — pass { dimensions } when opening or upsert a vector first."
       );
     }

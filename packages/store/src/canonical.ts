@@ -11,6 +11,30 @@ import { compareCodePoints } from "./order.js";
 
 const encoder = new TextEncoder();
 
+export type CanonicalJsonErrorCode =
+  | "non-finite-number"
+  | "not-json-safe"
+  | "cyclic-value"
+  | "symbol-key"
+  | "sparse-array"
+  | "array-property"
+  | "non-plain-object";
+
+/** Thrown when a value has no canonical JSON form. Still a `TypeError`. */
+export class CanonicalJsonError extends TypeError {
+  declare readonly name: "CanonicalJsonError";
+  constructor(readonly code: CanonicalJsonErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(CanonicalJsonError.prototype, "name", {
+  value: "CanonicalJsonError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null) return false;
   const prototype = Object.getPrototypeOf(value);
@@ -23,27 +47,27 @@ function canonicalValue(value: unknown, stack: Set<object>): string {
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
     if (!Number.isFinite(value))
-      throw new TypeError("non-finite numbers are not JSON-safe");
+      throw new CanonicalJsonError("non-finite-number", "non-finite numbers are not JSON-safe");
     return JSON.stringify(value);
   }
-  if (typeof value !== "object") throw new TypeError("value is not JSON-safe");
-  if (stack.has(value)) throw new TypeError("cyclic values are not JSON-safe");
+  if (typeof value !== "object") throw new CanonicalJsonError("not-json-safe", "value is not JSON-safe");
+  if (stack.has(value)) throw new CanonicalJsonError("cyclic-value", "cyclic values are not JSON-safe");
   if (Object.getOwnPropertySymbols(value).length > 0)
-    throw new TypeError("symbol keys are not JSON-safe");
+    throw new CanonicalJsonError("symbol-key", "symbol keys are not JSON-safe");
   stack.add(value);
   try {
     if (Array.isArray(value)) {
       const keys = Object.keys(value);
       for (let i = 0; i < value.length; i += 1) {
         if (!(i in value))
-          throw new TypeError("sparse arrays are not JSON-safe");
+          throw new CanonicalJsonError("sparse-array", "sparse arrays are not JSON-safe");
       }
       for (const key of keys) {
         // JSON arrays contain only their canonical integer indices. Reject
         // enumerable extras (including aliases such as `01`) instead of
         // silently dropping them from the digest.
         if (!/^(0|[1-9]\d*)$/.test(key) || Number(key) >= value.length) {
-          throw new TypeError("array properties are not JSON-safe");
+          throw new CanonicalJsonError("array-property", "array properties are not JSON-safe");
         }
       }
       return `[${value
@@ -51,7 +75,7 @@ function canonicalValue(value: unknown, stack: Set<object>): string {
         .join(",")}]`;
     }
     if (!isPlainObject(value))
-      throw new TypeError("only plain objects are JSON-safe");
+      throw new CanonicalJsonError("non-plain-object", "only plain objects are JSON-safe");
     const keys = Object.keys(value).sort(compareCodePoints);
     return `{${keys
       .map(

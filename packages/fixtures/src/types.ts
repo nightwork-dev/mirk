@@ -1,5 +1,3 @@
-// ─── @mirk/fixtures — public types ───────────────────────────────────────
-
 import type { StandardSchemaV1 as StandardSchema } from "@standard-schema/spec";
 
 export type FixtureRef = string;

@@ -46,10 +46,10 @@ describe("namespaceStore", () => {
   it("rejects namespaces that could collide with the physical encoding", () => {
     const backing = new InMemoryStore();
     expect(() => namespaceStore(backing, "")).toThrow(
-      "namespace must be non-empty"
+      expect.objectContaining({ name: "NamespaceError", code: "invalid-namespace" })
     );
     expect(() => namespaceStore(backing, "bad\u001fnamespace")).toThrow(
-      "unit separator"
+      expect.objectContaining({ name: "NamespaceError", code: "invalid-namespace" })
     );
   });
 

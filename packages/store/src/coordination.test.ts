@@ -1,11 +1,11 @@
-import { execFileSync, fork } from "node:child_process";
+import { fork } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import Database from "better-sqlite3";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   CoordinationAbortedError,
@@ -16,7 +16,6 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, "..");
-const repoRoot = resolve(packageRoot, "../..");
 const delay = (ms: number) =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
@@ -305,13 +304,6 @@ describe("SqliteCoordinator", () => {
 });
 
 describe("SqliteCoordinator two-process behavior", () => {
-  beforeAll(() => {
-    execFileSync("pnpm", ["--filter", "@mirk/store", "build"], {
-      cwd: repoRoot,
-      stdio: "inherit",
-    });
-  }, 60_000);
-
   it("excludes another process until release, then admits it", async () => {
     const root = tempPath("process-release");
     mkdirSync(root, { recursive: true });

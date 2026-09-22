@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { MarkdownStore, MarkdownStoreCorruptionError } from "../src/index.js";
+import { MarkdownStore, MarkdownStoreCorruptionError, MarkdownStoreError } from "../src/index.js";
 
 let root: string;
 
@@ -40,6 +40,18 @@ describe("MarkdownStore contract", () => {
     expect(store.remove("projects", "p3")).toBe(false);
     expect(store.delete("settings/theme")).toBe(true);
     expect(store.get("settings/theme")).toBeNull();
+  });
+
+  it("orders keys and records by code point, not locale collation or UTF-16 code unit", () => {
+    const store = new MarkdownStore({ rootDir: root });
+    const ids = ["a", "B", "_", "é", "Z", "\u{1F600}", "\uFFFD"];
+    const expected = ["B", "Z", "_", "a", "é", "\uFFFD", "\u{1F600}"];
+    for (const id of ids) {
+      store.set(id, id);
+      store.put("things", { id });
+    }
+    expect(store.keys()).toEqual(expected);
+    expect(store.list<{ id: string }>("things").map((item) => item.id)).toEqual(expected);
   });
 });
 
@@ -118,10 +130,12 @@ describe("roadmap-shaped human round-trip", () => {
   it("rejects a custom filename collision instead of overwriting another record", () => {
     const store = roadmapStore(false);
     store.put("stories", story("todo"));
-    expect(() => store.put("stories", {
+    const collide = () => store.put("stories", {
       ...story("todo"),
       id: "DOC-102",
-    })).toThrow(/filename collision/i);
+    });
+    expect(collide).toThrow(MarkdownStoreError);
+    expect(collide).toThrow(expect.objectContaining({ code: "filename-collision" }));
     expect(store.getById<Story>("stories", "DOC-101")?.id).toBe("DOC-101");
   });
 });

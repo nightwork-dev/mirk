@@ -114,8 +114,8 @@ export const scenarios = [
     id: "store/kv-keys-all",
     title: "keys with no prefix returns every key",
     ports: ["kv"],
-    // Inserted out of order on purpose: the returned order is the ruling (code
-    // point ascending), not the insertion order the Map happens to keep.
+    // Inserted out of order: the returned order is code point ascending, not
+    // the insertion order the Map happens to keep.
     steps: [
       { op: "set", args: ["gamma", 3] },
       { op: "set", args: ["alpha", 1] },
@@ -289,7 +289,7 @@ export const scenarios = [
     ],
   }),
 
-  // ── KV: rulings and previously untested contract ────────────────────────
+  // ── KV: code point ordering and edge cases ───────────────────────────────
   defineScenario({
     id: "store/kv-keys-code-point-order",
     title: "keys returns code point ascending order, not insertion order",
@@ -843,7 +843,7 @@ export const scenarios = [
   // Raw identifiers (KV keys, record ids, collection names) and filter
   // comparands are bound as TEXT, not JSON, and better-sqlite3 replaces a lone
   // surrogate with U+FFFD on the way in while the memory backend keeps it. That
-  // is a known divergence outside the corpus (docs/python-port-spec.md);
+  // is a known divergence outside the corpus;
   // identifiers here are ASCII and nothing filters on the surrogate.
   defineScenario({
     id: "store/lone-surrogate-values-are-storable",

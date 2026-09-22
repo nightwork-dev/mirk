@@ -35,6 +35,32 @@ interface VectorSearchRow<M extends Record<string, unknown> = Record<string, unk
   metadata?: M;
 }
 
+export type SurrealVectorErrorCode =
+  | "invalid-dimensions"
+  | "dimensions-unknown"
+  | "dimensions-changed"
+  | "invalid-top-k"
+  | "invalid-vector"
+  | "invalid-identifier";
+
+/** Thrown for invalid vector input or configuration. Codes shared with
+ *  `@mirk/store`'s `VectorInputError` name the same conditions. Dimension
+ *  mismatches on a vector itself still throw `VectorInputError`
+ *  (`dimension-mismatch`) from the shared `assertDimensions`. */
+export class SurrealVectorError extends Error {
+  declare readonly name: "SurrealVectorError";
+  constructor(readonly code: SurrealVectorErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(SurrealVectorError.prototype, "name", {
+  value: "SurrealVectorError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 const DEFAULT_DOCUMENTS_TABLE = "mirk_vector_documents";
 const DEFAULT_DIMENSIONS_TABLE = "mirk_vector_dimensions";
 
@@ -55,7 +81,7 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
     const dimensionsTable = tableName(options.dimensionsTable ?? DEFAULT_DIMENSIONS_TABLE);
     const dimensions = options.dimensions ?? 0;
     if (dimensions < 0 || !Number.isInteger(dimensions)) {
-      throw new Error(`Vector dimensions must be a non-negative integer; got ${dimensions}.`);
+      throw new SurrealVectorError("invalid-dimensions", `Vector dimensions must be a non-negative integer; got ${dimensions}.`);
     }
 
     const adapter = new SurrealVectorAdapter(connection, documentsTable, dimensionsTable, dimensions);
@@ -148,13 +174,13 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
   ): Promise<VectorSearchResult<M>[]> {
     const dimensions = await this.dimensionsFor(collection);
     if (dimensions === 0) {
-      throw new Error(`Vector collection "${collection}" has no configured dimensions.`);
+      throw new SurrealVectorError("dimensions-unknown", `Vector collection "${collection}" has no configured dimensions.`);
     }
     assertDimensions(query, dimensions);
     if (!isUsableVector(query)) return [];
 
     const topK = opts.topK ?? 10;
-    if (!Number.isInteger(topK) || topK < 0) throw new Error(`topK must be a non-negative integer; got ${topK}.`);
+    if (!Number.isInteger(topK) || topK < 0) throw new SurrealVectorError("invalid-top-k", `topK must be a non-negative integer; got ${topK}.`);
     if (topK === 0) return [];
 
     const { clause, bindings } = metadataFilter(opts);
@@ -198,7 +224,7 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
 
   private async ensureDimensions(collection: string, vector: Vector): Promise<void> {
     if (!isUsableVector(vector)) {
-      throw new Error("Vector must contain only finite numbers and have non-zero magnitude.");
+      throw new SurrealVectorError("invalid-vector", "Vector must contain only finite numbers and have non-zero magnitude.");
     }
     const existing = await this.dimensionsFor(collection);
     if (existing === 0) {
@@ -225,7 +251,8 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
     );
     const persisted = rows[0]?.dimensions ?? 0;
     if (this.meta.dimensions !== 0 && persisted !== 0 && this.meta.dimensions !== persisted) {
-      throw new Error(
+      throw new SurrealVectorError(
+        "dimensions-changed",
         `Vector collection "${collection}" was created with ${persisted} dimensions, opened with ${this.meta.dimensions}.`,
       );
     }
@@ -282,7 +309,7 @@ function isQueryEnvelope(value: unknown): value is { result: unknown } {
 
 function tableName(value: string): string {
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(value)) {
-    throw new Error(`Invalid SurrealDB table identifier "${value}".`);
+    throw new SurrealVectorError("invalid-identifier", `Invalid SurrealDB table identifier "${value}".`);
   }
   return value;
 }

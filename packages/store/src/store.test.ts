@@ -473,20 +473,25 @@ describe('SqliteAdapter — one connection serves kv + vector', () => {
 
   it('rejects invalid busy timeouts before opening the database', () => {
     expect(() => new SqliteAdapter({ path: ':memory:', busyTimeoutMs: -1 })).toThrow(
-      'busyTimeoutMs must be a non-negative safe integer',
+      expect.objectContaining({ name: "SqliteAdapterError", code: "invalid-busy-timeout" }),
     );
   });
 
   it('exposes atomic synchronous transactions without exposing the database handle', () => {
     const adapter = new SqliteAdapter({ path: ':memory:' });
+    const rollback = new Error('rollback');
     try {
-      expect(() =>
+      let thrown: unknown;
+      try {
         adapter.transaction(() => {
           adapter.kv.set('first', 1);
           adapter.kv.set('second', 2);
-          throw new Error('rollback');
-        }, 'immediate'),
-      ).toThrow('rollback');
+          throw rollback;
+        }, 'immediate');
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(rollback);
       expect(adapter.kv.get('first')).toBeNull();
       expect(adapter.kv.get('second')).toBeNull();
 
@@ -521,7 +526,7 @@ describe('SqliteAdapter — one connection serves kv + vector', () => {
     // Seed dimensions=4 on the handle, then reopen the SAME handle as 3 -> throws.
     new SqliteAdapter({ path: ':memory:', db: raw, dimensions: 4 });
     expect(() => new SqliteAdapter({ path: ':memory:', db: raw, dimensions: 3 })).toThrow(
-      /dimension/i,
+      expect.objectContaining({ name: "VectorInputError", code: "dimensions-changed" }),
     );
     // The caller's handle must NOT have been closed by the failed construction.
     expect(() => raw.prepare('SELECT 1').get()).not.toThrow();

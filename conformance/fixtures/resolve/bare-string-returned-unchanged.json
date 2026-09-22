@@ -1,6 +1,6 @@
 {
   "id": "fixtures/resolve/bare-string-returned-unchanged",
-  "title": "resolveRef returns a canonical string unchanged under the default mode (item 27)",
+  "title": "resolveRef returns a canonical string unchanged under the default mode",
   "ports": [
     "fixtures"
   ],

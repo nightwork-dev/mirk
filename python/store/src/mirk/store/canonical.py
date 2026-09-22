@@ -1,10 +1,9 @@
 """Canonical JSON and SHA-256 digests, byte-identical to `@mirk/store/atomic`.
 
-Ports `canonicalValue`/`canonicalJson` from `packages/store/src/atomic.ts:206-256` and
+Ports `canonicalValue`/`canonicalJson` from `packages/store/src/canonical.ts` and
 the ECMAScript `Number::toString` algorithm those functions rely on (`JSON.stringify`
-on a JS number). The exact rules are pinned in
-`docs/python-port/digests/artifact.md` sections 2 and 13; this module and its test
-suite are the byte-identity proof for the Python port.
+on a JS number). This module and its test suite are the byte-identity proof for
+the Python port.
 
 No dependency beyond the standard library: this stays importable from anywhere
 `@mirk/store/atomic` is importable in TypeScript (root and browser-facing ports).
@@ -16,9 +15,11 @@ import hashlib
 import json
 import math
 from decimal import Decimal
-from typing import cast
+from typing import Literal, cast
 
 __all__ = [
+    "CanonicalJsonError",
+    "CanonicalJsonErrorCode",
     "canonical_digest",
     "canonical_json",
     "compare_code_points",
@@ -30,6 +31,25 @@ __all__ = [
 _NON_FINITE_MESSAGE = "non-finite numbers are not JSON-safe"
 _NOT_SAFE_MESSAGE = "only plain objects are JSON-safe"
 _CYCLIC_MESSAGE = "cyclic values are not JSON-safe"
+
+CanonicalJsonErrorCode = Literal[
+    "non-finite-number",
+    "not-json-safe",
+    "cyclic-value",
+    "symbol-key",
+    "sparse-array",
+    "array-property",
+    "non-plain-object",
+]
+
+
+class CanonicalJsonError(TypeError):
+    """Raised when a value has no canonical JSON form. Still a `TypeError`."""
+
+    def __init__(self, code: CanonicalJsonErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: CanonicalJsonErrorCode = code
+
 
 _SURROGATE_LOW = 0xD800
 _SURROGATE_HIGH = 0xDFFF
@@ -51,7 +71,7 @@ def js_number_to_string(value: float) -> str:
     `-0.0` prints as `"0"`. Non-finite values raise `TypeError`.
     """
     if math.isnan(value) or math.isinf(value):
-        raise TypeError(_NON_FINITE_MESSAGE)
+        raise CanonicalJsonError("non-finite-number", _NON_FINITE_MESSAGE)
     if value == 0:
         return "0"
 
@@ -91,7 +111,7 @@ def _canonical_string(value: str) -> str:
     """ECMAScript `QuoteJSONString`, including lone-surrogate escaping.
 
     `json.dumps(s, ensure_ascii=False)` already reproduces every row of the
-    digest's string-escaping table (short forms, lowercase `\\u00XX` for other C0
+    ECMAScript string-escaping rules (short forms, lowercase `\\u00XX` for other C0
     controls, DEL/U+2028/U+2029 and every non-ASCII character left raw) except
     lone surrogates: a Python `str` can hold an unpaired surrogate code point
     (there is no UTF-16 storage to forbid it), and `json.dumps` passes it through
@@ -104,7 +124,7 @@ def _canonical_string(value: str) -> str:
 def _canonical_list(value: list[object], stack: set[int]) -> str:
     marker = id(value)
     if marker in stack:
-        raise TypeError(_CYCLIC_MESSAGE)
+        raise CanonicalJsonError("cyclic-value", _CYCLIC_MESSAGE)
     stack.add(marker)
     try:
         return "[" + ",".join(_canonical_value(item, stack) for item in value) + "]"
@@ -115,10 +135,10 @@ def _canonical_list(value: list[object], stack: set[int]) -> str:
 def _canonical_dict(value: dict[object, object], stack: set[int]) -> str:
     marker = id(value)
     if marker in stack:
-        raise TypeError(_CYCLIC_MESSAGE)
+        raise CanonicalJsonError("cyclic-value", _CYCLIC_MESSAGE)
     for key in value:
         if not isinstance(key, str):
-            raise TypeError(_NOT_SAFE_MESSAGE)
+            raise CanonicalJsonError("non-plain-object", _NOT_SAFE_MESSAGE)
     stack.add(marker)
     try:
         keys: list[str] = sorted(cast(str, key) for key in value)
@@ -138,7 +158,7 @@ def _canonical_value(value: object, stack: set[int]) -> str:
         try:
             value = float(value)
         except OverflowError as exc:
-            raise TypeError(_NON_FINITE_MESSAGE) from exc
+            raise CanonicalJsonError("non-finite-number", _NON_FINITE_MESSAGE) from exc
     if isinstance(value, float):
         return js_number_to_string(value)
     if isinstance(value, str):
@@ -147,11 +167,11 @@ def _canonical_value(value: object, stack: set[int]) -> str:
         return _canonical_list(cast("list[object]", value), stack)
     if isinstance(value, dict):
         return _canonical_dict(cast("dict[object, object]", value), stack)
-    raise TypeError(_NOT_SAFE_MESSAGE)
+    raise CanonicalJsonError("non-plain-object", _NOT_SAFE_MESSAGE)
 
 
 def canonical_json(value: object) -> str:
-    """Port of `canonicalJson` (`packages/store/src/atomic.ts:254-256`).
+    """Port of `canonicalJson` (`packages/store/src/canonical.ts`).
 
     Accepts `None`, `bool`, `int` (clamped through `float()` so values above
     2^53 round exactly as float64; an `OverflowError` from that clamp is a

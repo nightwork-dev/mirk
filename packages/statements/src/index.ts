@@ -1,4 +1,9 @@
-export { createSqliteStatementStore, SqliteStatementStore } from "./sqlite.js";
+export {
+  createSqliteStatementStore,
+  SqliteStatementStore,
+  StatementStoreError,
+} from "./sqlite.js";
+export type { StatementStoreErrorCode } from "./sqlite.js";
 export { compareLegacySurface } from "./testing.js";
 export type {
   AuthorizationInputs,

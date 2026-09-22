@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/patch-id-mismatch-rejected",
-  "title": "a PATCH map entry whose explicit id disagrees with its key throws map-id-mismatch (item 9)",
+  "title": "a PATCH map entry whose explicit id disagrees with its key throws map-id-mismatch",
   "ports": [
     "fixtures"
   ],

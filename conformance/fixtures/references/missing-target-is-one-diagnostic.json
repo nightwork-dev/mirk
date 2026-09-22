@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/missing-target-is-one-diagnostic",
-  "title": "a $ref to a fixture nothing carries yields one missing-reference diagnostic (items 24, 26)",
+  "title": "a $ref to a fixture nothing carries yields one missing-reference diagnostic",
   "ports": [
     "fixtures"
   ],

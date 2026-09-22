@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ArtifactCoordinator,
   ArtifactMaintenance,
+  ArtifactOperationError,
   InMemoryArtifactRepository,
   InMemoryObjectStore,
 } from "../src/index.js";
@@ -34,7 +35,7 @@ class OwnerCapturingRepository extends InMemoryArtifactRepository {
   }
 }
 
-describe("§14.1 / §14.4 ruling 5 — code point order, not locale order", () => {
+describe("code point order, not locale order", () => {
   it("InMemoryObjectStore.list sorts keys by Unicode code point", async () => {
     const store = new InMemoryObjectStore();
     for (const key of DISCRIMINATING_KEYS) await store.put(key, bytes("x"));
@@ -103,7 +104,7 @@ describe("§14.1 / §14.4 ruling 5 — code point order, not locale order", () =
   });
 });
 
-describe("§14.4 ruling — addLineage validation order (endpoints before cycle)", () => {
+describe("addLineage validation order (endpoints before cycle)", () => {
   it("reports missing endpoints, not a cycle, for a self-edge with no record on either repository", async () => {
     const memory = new InMemoryArtifactRepository();
     const storeBacked = new StoreArtifactRepository(toAsync(new InMemoryKv()));
@@ -114,20 +115,19 @@ describe("§14.4 ruling — addLineage validation order (endpoints before cycle)
       operation: "noop",
       createdAt: 1,
     };
-    // Self-edge (source === result) is a cycle by definition (§5.4), AND
+    // Self-edge (source === result) is a cycle by definition, AND
     // neither endpoint exists as a record. The store order (duplicate ->
     // endpoints -> cycle) reports the endpoints error first; that is the
     // order memory must now match too.
-    await expect(memory.addLineage(edge)).rejects.toThrow(
-      "lineage endpoints must exist"
-    );
-    await expect(storeBacked.addLineage(edge)).rejects.toThrow(
-      "lineage endpoints must exist"
-    );
+    for (const repository of [memory, storeBacked]) {
+      const rejection = expect(repository.addLineage(edge)).rejects;
+      await rejection.toThrow(ArtifactOperationError);
+      await rejection.toMatchObject({ code: "missing-lineage-endpoint" });
+    }
   });
 });
 
-describe("§10 injection points — table verification", () => {
+describe("injection points", () => {
   it("coordinator: createdAt (options.now) appears on the record and its lineage edge", async () => {
     let n = 0;
     const repository = new InMemoryArtifactRepository();

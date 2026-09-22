@@ -28,20 +28,35 @@ import {
   cloneJson,
 } from "./util.js";
 import { compareCodePoints } from "@mirk/store";
+import { ArtifactOperationError } from "./errors.js";
 
 export class ObjectAlreadyExistsError extends Error {
+  declare readonly name: "ObjectAlreadyExistsError";
   constructor(key: string) {
     super(`object already exists: ${key}`);
-    this.name = "ObjectAlreadyExistsError";
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(ObjectAlreadyExistsError.prototype, "name", {
+  value: "ObjectAlreadyExistsError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class ArtifactConflictError extends Error {
+  declare readonly name: "ArtifactConflictError";
   constructor(message: string) {
     super(message);
-    this.name = "ArtifactConflictError";
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(ArtifactConflictError.prototype, "name", {
+  value: "ArtifactConflictError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 export class InMemoryObjectStore implements ListableObjectStore {
   readonly #objects = new Map<
@@ -185,7 +200,7 @@ export class InMemoryArtifactRepository
     patch: Record<string, JsonValue | undefined>
   ): Promise<StoredArtifactRecord> {
     const record = this.#records.get(id);
-    if (!record) throw new Error(`artifact not found: ${id}`);
+    if (!record) throw new ArtifactOperationError("artifact-not-found", `artifact not found: ${id}`);
     const annotations = { ...(record.annotations ?? {}) };
     for (const [key, value] of Object.entries(patch))
       value === undefined
@@ -434,7 +449,10 @@ export class InMemoryArtifactRepository
       !(await this.get(edge.sourceArtifactId)) ||
       !(await this.get(edge.resultArtifactId))
     )
-      throw new Error("lineage endpoints must exist");
+      throw new ArtifactOperationError(
+        "missing-lineage-endpoint",
+        "lineage endpoints must exist"
+      );
     if (
       edge.sourceArtifactId === edge.resultArtifactId ||
       (await reaches(this, edge.resultArtifactId, edge.sourceArtifactId))
@@ -471,7 +489,7 @@ export function cursorOffset(
 ): number {
   if (!cursor) return 0;
   const index = records.findIndex((record) => encodeCursor(record) === cursor);
-  if (index < 0) throw new Error("invalid artifact cursor");
+  if (index < 0) throw new ArtifactOperationError("invalid-cursor", "invalid artifact cursor");
   return index + 1;
 }
 export function matches(

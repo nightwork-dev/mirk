@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
+import { compareCodePoints } from "@mirk/store";
 import type { StoreFilter, StoreMeta, SyncStore } from "@mirk/store/kv";
 import { Document, isMap, parseDocument } from "yaml";
 
@@ -59,15 +60,47 @@ export interface MarkdownStoreOptions {
   git?: boolean | MarkdownGitConfig;
 }
 
+export type MarkdownStoreErrorCode =
+  | "filename-collision"
+  | "unsafe-filename"
+  | "path-escapes-root"
+  | "invalid-record-id"
+  | "non-string-body"
+  | "missing-record-id"
+  | "missing-frontmatter-open"
+  | "missing-frontmatter-close"
+  | "invalid-frontmatter";
+
+export class MarkdownStoreError extends Error {
+  declare readonly name: "MarkdownStoreError";
+  constructor(readonly code: MarkdownStoreErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(MarkdownStoreError.prototype, "name", {
+  value: "MarkdownStoreError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export class MarkdownStoreCorruptionError extends Error {
+  declare readonly name: "MarkdownStoreCorruptionError";
   readonly errors: readonly Error[];
 
   constructor(errors: readonly Error[]) {
     super(`Markdown store contains ${errors.length} corrupt record${errors.length === 1 ? "" : "s"}: ${errors.map((error) => error.message).join("; ")}`);
-    this.name = "MarkdownStoreCorruptionError";
     this.errors = errors;
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+Object.defineProperty(MarkdownStoreCorruptionError.prototype, "name", {
+  value: "MarkdownStoreCorruptionError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
 
 interface ParsedRecord {
   item: Record<string, unknown>;
@@ -129,7 +162,7 @@ export class MarkdownStore implements SyncStore {
     return records
       .map((record) => String(record.item.id))
       .filter((key) => prefix === undefined || key.startsWith(prefix))
-      .sort((left, right) => left.localeCompare(right));
+      .sort(compareCodePoints);
   }
 
   list<T>(collection: string, filter?: StoreFilter): T[] {
@@ -158,7 +191,7 @@ export class MarkdownStore implements SyncStore {
     const path = existing?.path ?? join(directory, this.newFileName(item, config));
     if (existing === undefined && existsSync(path)) {
       const occupant = this.parseRecord(path, config);
-      throw new Error(`Markdown filename collision: ${path} already belongs to record ${String(occupant.item.id)}.`);
+      throw new MarkdownStoreError("filename-collision", `Markdown filename collision: ${path} already belongs to record ${String(occupant.item.id)}.`);
     }
     this.writeRecord(path, item as Record<string, unknown>, config, existing?.raw);
     this.regenerateIndex(collection, config);
@@ -214,7 +247,7 @@ export class MarkdownStore implements SyncStore {
       }
     }
     if (errors.length > 0) throw new MarkdownStoreCorruptionError(errors);
-    return records.sort((left, right) => String(left.item.id).localeCompare(String(right.item.id)));
+    return records.sort((left, right) => compareCodePoints(String(left.item.id), String(right.item.id)));
   }
 
   private parseRecord(path: string, config: MarkdownCollectionConfig): ParsedRecord {
@@ -222,7 +255,7 @@ export class MarkdownStore implements SyncStore {
     const parsed = parseFrontmatter(raw, path);
     const data = parsed.document.toJS() as unknown;
     if (!isPlainRecord(data) || typeof data.id !== "string" || data.id.length === 0) {
-      throw new Error(`${path}: frontmatter must contain a non-empty string id`);
+      throw new MarkdownStoreError("missing-record-id", `${path}: frontmatter must contain a non-empty string id`);
     }
     const item: Record<string, unknown> = { ...data };
     const body = config.body;
@@ -278,7 +311,7 @@ export class MarkdownStore implements SyncStore {
   private newFileName(item: Record<string, unknown>, config: MarkdownCollectionConfig): string {
     const candidate = config.fileName?.(item) ?? `${encodeName(String(item.id))}.md`;
     if (basename(candidate) !== candidate || !candidate.endsWith(".md") || candidate === "INDEX.md") {
-      throw new Error(`Unsafe markdown record filename: ${JSON.stringify(candidate)}`);
+      throw new MarkdownStoreError("unsafe-filename", `Unsafe markdown record filename: ${JSON.stringify(candidate)}`);
     }
     return candidate;
   }
@@ -336,11 +369,11 @@ function defaultConfig(): MarkdownCollectionConfig {
 }
 
 function parseFrontmatter(raw: string, path: string): { document: Document; body: string } {
-  if (!raw.startsWith("---\n")) throw new Error(`${path}: missing YAML frontmatter opening delimiter`);
+  if (!raw.startsWith("---\n")) throw new MarkdownStoreError("missing-frontmatter-open", `${path}: missing YAML frontmatter opening delimiter`);
   const end = raw.indexOf("\n---", 4);
-  if (end === -1) throw new Error(`${path}: missing YAML frontmatter closing delimiter`);
+  if (end === -1) throw new MarkdownStoreError("missing-frontmatter-close", `${path}: missing YAML frontmatter closing delimiter`);
   const document = parseDocument(raw.slice(4, end), { keepSourceTokens: true, prettyErrors: true });
-  if (document.errors.length > 0) throw new Error(`${path}: ${document.errors.map((error) => error.message).join("; ")}`);
+  if (document.errors.length > 0) throw new MarkdownStoreError("invalid-frontmatter", `${path}: ${document.errors.map((error) => error.message).join("; ")}`);
   return { document, body: raw.slice(end + 4).replace(/^\n/, "") };
 }
 
@@ -351,12 +384,12 @@ function encodeName(value: string): string {
 
 function joinWithin(root: string, relative: string): string {
   const path = resolve(root, relative);
-  if (path !== root && !path.startsWith(`${root}/`)) throw new Error(`Path escapes markdown store root: ${relative}`);
+  if (path !== root && !path.startsWith(`${root}/`)) throw new MarkdownStoreError("path-escapes-root", `Path escapes markdown store root: ${relative}`);
   return path;
 }
 
 function assertRecordId(id: string): void {
-  if (typeof id !== "string" || id.length === 0 || id.includes("\0")) throw new Error("Markdown record id must be a non-empty string.");
+  if (typeof id !== "string" || id.length === 0 || id.includes("\0")) throw new MarkdownStoreError("invalid-record-id", "Markdown record id must be a non-empty string.");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -365,7 +398,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function stringifyBody(value: unknown): string {
   if (value === undefined || value === null) return "";
-  if (typeof value !== "string") throw new Error("Markdown body fields must serialize to strings unless a section stringify function is configured.");
+  if (typeof value !== "string") throw new MarkdownStoreError("non-string-body", "Markdown body fields must serialize to strings unless a section stringify function is configured.");
   return value.trim();
 }
 

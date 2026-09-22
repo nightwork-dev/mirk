@@ -10,15 +10,15 @@ ESM-only (the package exposes an `import` entry point; there is no CommonJS buil
 
 ## Why a separate adapter (and not `@mirk/store/sqlite`)
 
-`@mirk/store/sqlite` is the **synchronous** better-sqlite3 adapter, and its vector
-search relies on the optional `sqlite-vec` (vec0) extension. vec0 **cannot load
-over a remote libSQL connection**, so it's a non-starter for Turso.
+`@mirk/store/sqlite` is the **synchronous** better-sqlite3 adapter: it opens a local
+file and ranks vectors by exact cosine in JavaScript. It cannot talk to a remote
+libSQL server or Turso.
 
 This adapter implements the **async** ports natively (every call is a `Promise`,
 because libSQL is a network/file client) and uses libSQL's **native vector search**
 — `F32_BLOB(N)` columns, `vector32()`, `vector_distance_cos()`, and the
 `vector_top_k('idx', vec, k)` table-valued function over a `libsql_vector_idx`
-index. No extension to load, no `createRequire`; it works everywhere libSQL runs.
+index. No extension to load; it works everywhere libSQL runs.
 
 ## Install
 
@@ -100,11 +100,15 @@ and `close(): void`.
 - **Any `where` / `whereNot`** → the exact JS path: rows for the collection are
   fetched, **filtered first**, then scored and cut to `topK`. This guarantees
   `topK` is the true nearest **within the filtered set** — the same semantics as
-  `@mirk/store`'s in-memory and sqlite backends. Verified by the
-  filter-before-KNN and parity tests.
+  `@mirk/store`'s in-memory and sqlite backends.
 
 Dimensionality is persisted in a `_vec_meta` row and enforced on reopen; opening a
 store at a different dimension than it was created with throws.
+
+## Not supported
+
+- The optional atomic mutation capability from `@mirk/store/atomic`.
+- A search facet; use `@mirk/store/sqlite` or another `AsyncSearchStore` backend.
 
 ## License
 

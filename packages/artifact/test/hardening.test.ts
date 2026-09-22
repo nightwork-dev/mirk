@@ -1,3 +1,6 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { canonicalDigest, canonicalJson } from "@mirk/store";
 import { InMemoryKv, toAsync } from "@mirk/store/kv";
 import { describe, expect, it } from "vitest";
 import {
@@ -257,9 +260,10 @@ describe("artifact finalization hardening", () => {
   });
 
   it("does not disguise object-store failures as repair conflicts", async () => {
+    const unavailable = new Error("object store unavailable");
     class FailingDeleteObjects extends InMemoryObjectStore {
       override async delete(): Promise<boolean> {
-        throw new Error("object store unavailable");
+        throw unavailable;
       }
     }
 
@@ -270,8 +274,23 @@ describe("artifact finalization hardening", () => {
     const report = await maintenance.audit();
     const plan = await maintenance.planRepair(report);
 
-    await expect(maintenance.applyRepair(plan)).rejects.toThrow(
-      "object store unavailable"
-    );
+    await expect(maintenance.applyRepair(plan)).rejects.toBe(unavailable);
+  });
+});
+
+describe("canonicalDigest", () => {
+  it("matches the noble SHA-256 of canonical JSON, including non-ASCII and lone surrogates", () => {
+    const inputs: unknown[] = [
+      null,
+      { b: 1, a: [true, "x"] },
+      { name: "caf\u00e9 \u2615 \u65e5\u672c\u8a9e \u{1F600}" },
+      { lone: "\uD800", trailing: "a\uDFFF", reversed: "\uDC00\uD800" },
+      { long: "y".repeat(10_000) },
+    ];
+    for (const input of inputs) {
+      expect(canonicalDigest(input)).toBe(
+        bytesToHex(sha256(utf8ToBytes(canonicalJson(input))))
+      );
+    }
   });
 });

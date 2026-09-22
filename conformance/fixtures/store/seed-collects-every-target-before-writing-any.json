@@ -1,6 +1,6 @@
 {
   "id": "fixtures/store/seed-collects-every-target-before-writing-any",
-  "title": "a later target's failure stops an earlier target's valid fixture from being written (item 43)",
+  "title": "a later target's failure stops an earlier target's valid fixture from being written",
   "ports": [
     "fixtures"
   ],

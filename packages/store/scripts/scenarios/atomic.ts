@@ -282,6 +282,29 @@ export const scenarios = [
   }),
 
   defineScenario({
+    id: "store/atomic/plain-set-invalidates-an-earlier-version",
+    title:
+      "a version read before a plain set no longer satisfies a condition, so the plain write is never lost",
+    ports: ["atomic", "kv"],
+    steps: [
+      { op: "set", args: ["a", 1] },
+      { op: "getVersioned", args: [KEY_A], expect: { value: true } },
+      { op: "set", args: ["a", 2] },
+      {
+        op: "mutateAtomically",
+        args: [
+          {
+            conditions: [{ target: KEY_A, expected: "version", version: "conformance-v1" }],
+            operations: [{ op: "set", key: "a", value: 3 }],
+          },
+        ],
+        expect: { value: true },
+      },
+      { op: "get", args: ["a"], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
     id: "store/atomic/conflict-reports-the-first-condition-in-sorted-order",
     title:
       "with two failing conditions authored out of order, the conflict names the one that sorts first",

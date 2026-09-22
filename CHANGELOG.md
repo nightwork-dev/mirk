@@ -13,10 +13,10 @@ versioning.
 
 ### Documentation
 
-- Reconciled public package, specification, and roadmap statuses with the released package train.
-- Split the shared-store concurrency roadmap into the shipped MR-15 foundation, proposed MR-16
-  atomic mutation contract, and proposed MR-17 coordinated writer profile.
-- Added an automated public-documentation integrity and privacy check.
+- Package READMEs are now the specification for each package; the separate design specs, planning
+  notes, and evidence logs were removed from the repository.
+- Added `CONTRIBUTING.md` for the development, conformance, and release workflow.
+- Added an automated public-documentation integrity and privacy check (`pnpm docs:check`).
 
 ## 2026-07-28
 

@@ -79,21 +79,18 @@ const connection = await createWasmSurrealConnection({
 The helper defaults to `mem://`, owns the WASM client it creates, and accepts
 `engineOptions` for SurrealDB WASM engine configuration. Vite applications must exclude
 `@surrealdb/wasm` from dependency optimization so its sibling `.wasm` binary retains a valid URL.
-Mirk's browser test enforces that bundler configuration in real headless Chromium.
 
-### IndexedDB status
+### IndexedDB is not supported
 
-Published `@surrealdb/wasm` versions 3.0.0–3.0.3 run the in-memory engine but contain a confirmed
-upstream IndexedDB transaction bug. After `db.connect("indxdb://...")`, selecting a namespace and
-database through `db.use()`, connection options, or `USE NS ... DB ...` fails with an `idb error`.
-This is tracked as [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) and
-[indxdb#9](https://github.com/surrealdb/indxdb/issues/9), and is not caused by Mirk's adapters or
-browser test harness.
+Published `@surrealdb/wasm` versions up to 3.0.3 fail on `indxdb://` connections as soon as a
+namespace and database are selected (upstream
+[surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571)). Use `mem://` in the
+browser, or a remote SurrealDB server.
 
-SurrealDB merged [surrealdb.js#600](https://github.com/surrealdb/surrealdb.js/pull/600), which moves
-the WASM package from IndxDB 0.11 to 0.12 and prepares `@surrealdb/wasm@3.0.4`. That fixed package
-has not yet been published. Until it is available and Mirk's real-browser write/reopen/read test
-passes, use `mem://` or a remote SurrealDB connection; do not advertise or rely on `indxdb://`.
+### Several processes
+
+An embedded engine (`mem://`, `surrealkv://`) belongs to one process. For several processes or
+hosts sharing data, connect each to a SurrealDB server endpoint.
 
 ## Store
 
@@ -119,8 +116,8 @@ Collection names are encoded into deterministic safe Surreal table names, so nam
 object keys; dotted names are not interpreted as paths. The adapter stores user records under a data
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
 
-The store adapter is tested against the real SurrealDB Node embedded engine. Vector, graph, search,
-and object-storage subpaths are separate adapter entry points and are not re-exported from the root.
+Vector, graph, search, and object-storage subpaths are separate adapter entry points and are not
+re-exported from the root. The store adapter does not implement `@mirk/store/atomic` mutation.
 
 ## Support matrix
 
@@ -131,19 +128,13 @@ and object-storage subpaths are separate adapter entry points and are not re-exp
 | `@mirk/surreal/vector` | supported | async cosine vector operations |
 | `@mirk/surreal/storage` | supported | chunked `ObjectStore` with renewable upload leases |
 | `@mirk/surreal/search` | unsupported by design | fails closed; Surreal's current single-field FTS cannot satisfy Mirk's weighted multi-field search contract |
-| `@mirk/surreal/node` | supported | owned Node embedded connection; compiled SurrealKV persistence is tested across process reopen |
-| `@mirk/surreal/wasm` | supported for `mem://` | owned browser WASM connection, exercised through the Mirk store adapter in real Chromium; `indxdb://` is blocked by [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571) until the merged fix is published and passes Mirk's reopen test |
+| `@mirk/surreal/node` | supported | owned Node embedded connection; `surrealkv://` data persists across reopen |
+| `@mirk/surreal/wasm` | supported for `mem://` | owned browser WASM connection; `indxdb://` is not supported (see above) |
 
-`SurrealStoreAdapter` and `SurrealObjectStore` are integration-tested together through one
-connection with `StoreArtifactRepository` and `ArtifactCoordinator`. Persistent connection reopen
-is separately proven by the packaged `/node` build smoke test across two processes.
+`SurrealStoreAdapter` and `SurrealObjectStore` can share one connection as the backing for
+`@mirk/artifact`'s `StoreArtifactRepository` and `ArtifactCoordinator`.
 
-Store, vector, graph relation CRUD, native recursive traversal, object storage, and artifact
-composition are exercised against the current real Node embedded engine. Query-recorder tests
-remain as additional assertions about bounded query count and capability dispatch, not as a
-substitute for engine execution.
-
-The same store, vector, graph, and object-storage smoke can run against a real server after build:
+To run the store, vector, graph, and object-storage smoke against a real server after build:
 
 ```bash
 MIRK_SURREAL_REMOTE_URL=ws://127.0.0.1:8000/rpc pnpm --filter @mirk/surreal test:remote

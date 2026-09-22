@@ -50,7 +50,7 @@ jobs:
         run: pnpm -r typecheck
 
       - name: Test
-        run: pnpm -r test --reporter=verbose
+        run: pnpm -r --workspace-concurrency=1 test --reporter=verbose
 
       # The corpus is generated. This regenerates into a temporary tree and
       # diffs, so a hand-edited or stale scenario fails here rather than being

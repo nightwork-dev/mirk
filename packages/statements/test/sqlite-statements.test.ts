@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { describe, expect, it, afterEach } from "vitest";
 
 import {
@@ -78,6 +80,7 @@ describe("@mirk/statements sqlite adapter", () => {
     );
 
     expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error("expected admission");
     expect(replay.ok).toBe(true);
     expect(replay.replay).toBe(true);
     expect(conflict.ok).toBe(false);
@@ -99,6 +102,68 @@ describe("@mirk/statements sqlite adapter", () => {
     expect(reopenedConflictReplay.receipt).toEqual(conflict.receipt);
     expect(reopened.getHead(ref("s1"))).toEqual(first.statement);
     expect(reopened.getHead(ref("other"))).toBeNull();
+    reopened.close();
+  });
+
+  it("fingerprints a request identically whatever the runtime's collation", async () => {
+    const store = testStore(new AllowAuthority());
+    const request = admission({ idempotencyKey: "collation", qualifiers: caseAndAccentKeys });
+    const first = await store.admit(request);
+    const upperFirst = new Intl.Collator("en", { caseFirst: "upper" });
+    const original = String.prototype.localeCompare;
+    String.prototype.localeCompare = function (this: string, that: string) {
+      return upperFirst.compare(this, that);
+    };
+    try {
+      const replay = await store.admit(request);
+      expect(replay.replay).toBe(true);
+      expect(replay.ok).toBe(true);
+      if (!first.ok || !replay.ok) throw new Error("expected commit");
+      expect(replay.receipt.fingerprint).toBe(first.receipt.fingerprint);
+    } finally {
+      String.prototype.localeCompare = original;
+    }
+    store.close();
+  });
+
+  it("replays receipts and conflicts stored with the pre-code-point fingerprint", async () => {
+    const path = testStorePath();
+    const request = admission({ idempotencyKey: "legacy", qualifiers: caseAndAccentKeys });
+    const conflicting = admission({
+      idempotencyKey: "legacy",
+      statementId: "other",
+      qualifiers: caseAndAccentKeys,
+    });
+    const store = testStore(new AllowAuthority(), path);
+    const first = await store.admit(request);
+    const conflict = await store.admit(conflicting);
+    store.close();
+    if (!first.ok || conflict.ok) throw new Error("expected commit then conflict");
+
+    const legacy = legacyFingerprint({ operationKind: "admit", envelope: request });
+    const legacyConflict = legacyFingerprint({ operationKind: "admit", envelope: conflicting });
+    expect(legacy).not.toBe(first.receipt.fingerprint);
+    expect(legacyConflict).not.toBe(conflict.receipt.fingerprint);
+    const db = new Database(path);
+    db.prepare(
+      "UPDATE mirk_statement_receipts SET fingerprint = ? WHERE idempotency_key = ?"
+    ).run(legacy, "legacy");
+    db.prepare(
+      "UPDATE mirk_statement_idempotency_conflicts SET fingerprint = ? WHERE idempotency_key = ?"
+    ).run(legacyConflict, "legacy");
+    db.close();
+
+    const reopened = testStore(new AllowAuthority(), path);
+    const replay = await reopened.admit(request);
+    expect(replay.ok).toBe(true);
+    expect(replay.replay).toBe(true);
+    if (!replay.ok) throw new Error("expected replayed commit");
+    expect(replay.receipt).toEqual(first.receipt);
+    const conflictReplay = await reopened.admit(conflicting);
+    expect(conflictReplay.ok).toBe(false);
+    expect(conflictReplay.replay).toBe(true);
+    if (conflictReplay.ok) throw new Error("expected replayed refusal");
+    expect(conflictReplay.receipt).toEqual(conflict.receipt);
     reopened.close();
   });
 
@@ -216,7 +281,9 @@ describe("@mirk/statements sqlite adapter", () => {
           branchId: "other",
         },
       })
-    ).rejects.toThrow("context.branchId must match");
+    ).rejects.toThrow(
+      expect.objectContaining({ name: "StatementStoreError", code: "branch-mismatch" })
+    );
     expect(store.query({ worldId: "example-world", branchId: "main" })).toEqual(
       []
     );
@@ -292,6 +359,24 @@ describe("@mirk/statements sqlite adapter", () => {
     store.close();
   });
 });
+
+// Keys that differ only by case or accent: every collation orders them
+// differently from code point order, and collations disagree with each other.
+const caseAndAccentKeys = { b: 1, B: 2, e: 3, "é": 4, E: 5 };
+
+// The fingerprint as 0.2.0 computed it, object keys ordered by localeCompare.
+function legacyFingerprint(request: StatementAdmissionRequest): string {
+  const stringify = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(stringify).join(",")}]`;
+    if (value && typeof value === "object")
+      return `{${Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, val]) => `${JSON.stringify(key)}:${stringify(val)}`)
+        .join(",")}}`;
+    return JSON.stringify(value);
+  };
+  return createHash("sha256").update(stringify(request)).digest("hex");
+}
 
 function testStorePath() {
   const dir = mkdtempSync(join(tmpdir(), "mirk-statements-"));

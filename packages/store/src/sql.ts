@@ -30,6 +30,23 @@ export function jsonPath(field: string): string {
  *  a caller error rather than a filter that matches nothing. */
 export const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
 
+export type StoreFilterErrorCode = "non-scalar-filter" | "non-scalar-in-value";
+
+/** Thrown for a `where` or IN value that is not a JSON scalar. */
+export class StoreFilterError extends Error {
+  declare readonly name: "StoreFilterError";
+  constructor(readonly code: StoreFilterErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(StoreFilterError.prototype, "name", {
+  value: "StoreFilterError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
 export function buildWhereClause(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
   if (!filter?.where || Object.keys(filter.where).length === 0) {
     return { clause: "", params: [] };
@@ -60,7 +77,7 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
       );
       params.push(path, path, value);
     } else {
-      throw new Error(NON_SCALAR_FILTER_MESSAGE);
+      throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
     }
   }
   return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
@@ -207,8 +224,7 @@ export type TableRegistryQuery =
 export type TableRegistryAnswer = string | undefined | boolean | void;
 
 /**
- * Resolve the physical table for one logical name. Three steps, per the port
- * ruling:
+ * Resolve the physical table for one logical name. Three steps:
  *
  *   1. Registry hit — use the recorded `table_name`.
  *   2. Miss, and the legacy `<prefix><sanitized>_<fnv32>` table is unclaimed —

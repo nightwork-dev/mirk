@@ -67,11 +67,21 @@ describePostgres("PostgresAdapter", () => {
   });
 
   it("rejects non-JSON values and invalid pagination", async () => {
-    await expect(adapter.kv.set("undefined", undefined)).rejects.toThrow(/JSON-serializable/);
-    await expect(adapter.kv.set("nested", { lost: undefined })).rejects.toThrow(/JSON-serializable/);
-    await expect(adapter.kv.set("nan", Number.NaN)).rejects.toThrow(/JSON-serializable/);
-    await expect(adapter.kv.list("items", { limit: -1 })).rejects.toThrow(/non-negative integer/);
-    await expect(adapter.kv.list("items", { offset: 1.5 })).rejects.toThrow(/non-negative integer/);
+    await expect(adapter.kv.set("undefined", undefined)).rejects.toThrow(
+      expect.objectContaining({ name: "PostgresValueError", code: "not-json-serializable" }),
+    );
+    await expect(adapter.kv.set("nested", { lost: undefined })).rejects.toThrow(
+      expect.objectContaining({ name: "PostgresValueError", code: "not-json-serializable" }),
+    );
+    await expect(adapter.kv.set("nan", Number.NaN)).rejects.toThrow(
+      expect.objectContaining({ name: "PostgresValueError", code: "not-json-serializable" }),
+    );
+    await expect(adapter.kv.list("items", { limit: -1 })).rejects.toThrow(
+      expect.objectContaining({ name: "PostgresRangeError", code: "invalid-integer" }),
+    );
+    await expect(adapter.kv.list("items", { offset: 1.5 })).rejects.toThrow(
+      expect.objectContaining({ name: "PostgresRangeError", code: "invalid-integer" }),
+    );
   });
 
   it("persists across independently owned pools", async () => {

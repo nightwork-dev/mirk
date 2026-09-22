@@ -1,4 +1,3 @@
-// ─── @mirk/fixtures ───────────────────────────────────────────────────────
 // Core authored-data loader. Source helpers live in explicit subpaths so the
 // root import stays free of Node-only modules and backend-specific code.
 

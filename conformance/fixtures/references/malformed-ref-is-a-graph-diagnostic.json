@@ -1,6 +1,6 @@
 {
   "id": "fixtures/references/malformed-ref-is-a-graph-diagnostic",
-  "title": "a $ref whose value is not a valid ref becomes an invalid-ref diagnostic on the graph (item 31)",
+  "title": "a $ref whose value is not a valid ref becomes an invalid-ref diagnostic on the graph",
   "ports": [
     "fixtures"
   ],

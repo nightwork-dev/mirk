@@ -23,13 +23,18 @@ function clean(path: string): void {
 describe("SQLite operational inspection", () => {
   it("does not cache a collection table that an outer transaction rolls back", () => {
     const adapter = new SqliteAdapter({ path: ":memory:" });
+    const rollback = new Error("rollback");
     try {
-      expect(() =>
+      let thrown: unknown;
+      try {
         adapter.transaction(() => {
           adapter.kv.put("rolled-back", { id: "x", value: 1 });
-          throw new Error("rollback");
-        }, "immediate")
-      ).toThrow("rollback");
+          throw rollback;
+        }, "immediate");
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(rollback);
 
       expect(adapter.kv.getById("rolled-back", "x")).toBeNull();
       expect(() =>

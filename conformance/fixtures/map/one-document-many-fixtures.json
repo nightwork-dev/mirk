@@ -1,6 +1,6 @@
 {
   "id": "fixtures/map/one-document-many-fixtures",
-  "title": "a map document yields one independently addressable fixture per top-level key (item 3)",
+  "title": "a map document yields one independently addressable fixture per top-level key",
   "ports": [
     "fixtures"
   ],

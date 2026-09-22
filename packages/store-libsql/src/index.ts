@@ -8,4 +8,9 @@
 // over a libsql_vector_idx index. No native extension to load (sqlite-vec / vec0
 // can't load over a remote libSQL connection); this works everywhere libSQL runs.
 
-export { LibsqlAdapter, type LibsqlAdapterOptions } from "./libsql-adapter.js";
+export {
+  LibsqlAdapter,
+  LibsqlAdapterError,
+  type LibsqlAdapterErrorCode,
+  type LibsqlAdapterOptions,
+} from "./libsql-adapter.js";

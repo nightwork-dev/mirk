@@ -1,6 +1,6 @@
 {
   "id": "fixtures/matching/root-directory-matches-source-root",
-  "title": "directory \"\" matches files at the source root (item 73)",
+  "title": "directory \"\" matches files at the source root",
   "ports": [
     "fixtures"
   ],

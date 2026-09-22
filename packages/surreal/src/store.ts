@@ -1,8 +1,13 @@
+import { compareCodePoints } from "@mirk/store";
 import type { AsyncStore, AsyncStoreInQuery, StoreFilter, StoreMeta } from "@mirk/store/kv";
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
+import { cloneJson } from "./internal/clone-json.js";
 import { firstStatement } from "./internal/query-result.js";
 import type { SurrealConnection } from "./index.js";
+
+export { SurrealIdentifierError, type SurrealIdentifierErrorCode } from "./internal/identifiers.js";
+export { SurrealValueError, type SurrealValueErrorCode } from "./internal/clone-json.js";
 
 export interface SurrealStoreOptions {
   namespace?: string;
@@ -73,7 +78,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
     );
     return rows
       .filter((key) => prefix === undefined || key.startsWith(prefix))
-      .sort((a, b) => a.localeCompare(b));
+      .sort(compareCodePoints);
   }
 
   async list<T>(collection: string, filter?: StoreFilter): Promise<T[]> {
@@ -115,7 +120,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
 
   async put<T extends { id: string }>(collection: string, item: T): Promise<T> {
     const table = await this.ensureCollection(collection);
-    const data = cloneJson(item);
+    const data = cloneJson(item, "SurrealStoreAdapter values must be JSON-safe.");
     await this.connection.query(
       "UPSERT type::record($table, $id) CONTENT { mirk_id: $id, data: $data }",
       { table, id: item.id, data },
@@ -244,12 +249,4 @@ function comparePresentValues(a: unknown, b: unknown): number {
 
 function hasOwn(value: unknown, field: string): boolean {
   return typeof value === "object" && value !== null && Object.hasOwn(value, field);
-}
-
-function cloneJson<T>(value: T): T {
-  const serialized = JSON.stringify(value);
-  if (serialized === undefined) {
-    throw new TypeError("SurrealStoreAdapter values must be JSON-safe.");
-  }
-  return JSON.parse(serialized) as T;
 }

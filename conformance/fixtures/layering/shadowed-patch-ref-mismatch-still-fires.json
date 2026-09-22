@@ -1,6 +1,6 @@
 {
   "id": "fixtures/layering/shadowed-patch-ref-mismatch-still-fires",
-  "title": "a $patch naming another ref throws even when it sits below the selected base (item 12)",
+  "title": "a $patch naming another ref throws even when it sits below the selected base",
   "ports": [
     "fixtures"
   ],

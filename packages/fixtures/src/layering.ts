@@ -11,7 +11,7 @@ export interface NormalizedLayeredSource extends LayeredSource {
   order: number;
 }
 
-export function isLayeredSource(source: FixtureSource | LayeredSource): source is LayeredSource {
+function isLayeredSource(source: FixtureSource | LayeredSource): source is LayeredSource {
   return "source" in source && typeof source.source === "object";
 }
 
