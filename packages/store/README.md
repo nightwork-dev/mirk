@@ -72,8 +72,9 @@ remain the right choice for different trust, retention, backup, or lifecycle bou
 ## Base store contract
 
 The in-memory reference and the SQLite adapter follow these rules, pinned by the shared conformance
-corpus in both languages. Other adapters are not yet run against the corpus; in particular the
-PostgreSQL adapter orders `keys()` by the database collation.
+corpus in both languages; `@mirk/store-indexeddb` replays the same corpus in a real browser. Other
+adapters are not yet run against the corpus; in particular the PostgreSQL adapter orders `keys()` by
+the database collation.
 
 - `get` returns `null` both for a missing key and for a stored `null`. `has` is the only existence
   test.
@@ -87,8 +88,8 @@ PostgreSQL adapter orders `keys()` by the database collation.
 ## Optional atomic mutation
 
 `@mirk/store/atomic` adds versioned reads and a bounded declarative mutation batch without changing
-the base `SyncStore` or `AsyncStore` ports. The in-memory reference and `SqliteAdapter.kv` implement
-the capability; discover it with `supportsAtomicMutation` (or
+the base `SyncStore` or `AsyncStore` ports. The in-memory reference, `SqliteAdapter.kv`, and `@mirk/store-indexeddb`
+implement the capability; discover it with `supportsAtomicMutation` (or
 `supportsAsyncAtomicMutation` after `toAsync`). Stores that do not implement it — including the
 libSQL, PostgreSQL, and SurrealDB adapters today — are still valid stores; do not emulate atomicity
 with sequential writes. Conditions are checked at one decision point, and an applied batch returns
