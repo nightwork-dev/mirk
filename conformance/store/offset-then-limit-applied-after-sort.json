@@ -1,0 +1,93 @@
+{
+  "id": "store/offset-then-limit-applied-after-sort",
+  "title": "offset and limit page a sorted result, not the insertion order",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p1",
+          "name": "alpha",
+          "category": "ai",
+          "priority": 1,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p2",
+          "name": "bravo",
+          "category": "ai",
+          "priority": 2,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p3",
+          "name": "charlie",
+          "category": "web",
+          "priority": 3,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p4",
+          "name": "delta",
+          "category": "web",
+          "priority": 4,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p5",
+          "name": "echo",
+          "category": "ops",
+          "priority": 5,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "projects",
+        {
+          "sortBy": "priority",
+          "sortDir": "desc",
+          "offset": 1,
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "p4",
+          "p3"
+        ]
+      }
+    }
+  ]
+}

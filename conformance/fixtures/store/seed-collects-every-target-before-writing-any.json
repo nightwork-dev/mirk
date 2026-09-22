@@ -1,0 +1,62 @@
+{
+  "id": "fixtures/store/seed-collects-every-target-before-writing-any",
+  "title": "a later target's failure stops an earlier target's valid fixture from being written (item 43)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"theme:missing\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "theme": "themes_out",
+            "page": "pages_out"
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Fixture \"page:home\" failed validation before store seeding."
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "themes_out",
+        "dark"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "id": "search/limit-caps-results",
+  "title": "limit caps the number of results returned",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "doc-00",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-01",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-02",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-03",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-04",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-05",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-06",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-07",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-08",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-09",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-10",
+            "text": "identical text everywhere"
+          },
+          {
+            "id": "doc-11",
+            "text": "identical text everywhere"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical",
+        {
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "doc-00",
+          "doc-01"
+        ]
+      }
+    }
+  ]
+}

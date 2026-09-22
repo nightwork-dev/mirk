@@ -1,0 +1,86 @@
+{
+  "id": "fixtures/store/layers-with-a-memory-source",
+  "title": "a store source layers against a memory source by priority like any other",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "files",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\",\"accent\":\"blue\"}"
+              }
+            },
+            {
+              "kind": "store",
+              "name": "db",
+              "priority": 1,
+              "collection": "fixture_docs",
+              "items": [
+                {
+                  "id": "dark",
+                  "content": "{\"$patch\":\"theme:dark\",\"accent\":\"red\"}"
+                }
+              ],
+              "pathPrefix": "themes"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark",
+          "accent": "red"
+        }
+      }
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "files",
+              "layer": "files",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "base"
+            },
+            {
+              "sourceId": "db",
+              "layer": "db",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "patch"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

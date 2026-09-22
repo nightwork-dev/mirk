@@ -1,0 +1,30 @@
+{
+  "id": "store/atomic/reject-non-string-idempotency-key",
+  "title": "an idempotency key must be a string",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ],
+          "idempotency": {
+            "key": 7
+          }
+        }
+      ],
+      "expect": {
+        "throws": "idempotency requires a string key"
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "store/kv-keys-prefix",
+  "title": "keys with a prefix returns only the keys under that prefix",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "ns:alpha",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "ns:beta",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "other:gamma",
+        3
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [
+        "ns:"
+      ],
+      "expect": {
+        "value": [
+          "ns:alpha",
+          "ns:beta"
+        ]
+      }
+    }
+  ]
+}

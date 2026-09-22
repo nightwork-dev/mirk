@@ -1,0 +1,79 @@
+{
+  "id": "fixtures/store/seed-can-skip-validation",
+  "title": "validateBeforeWrite false writes a fixture whose reference does not resolve",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            },
+            {
+              "type": "page",
+              "directory": "pages"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "pages/home.json": "{\"theme\":{\"$ref\":\"theme:missing\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "page": "pages_out"
+          },
+          "validateBeforeWrite": false
+        }
+      ],
+      "expect": {
+        "value": {
+          "written": [
+            {
+              "type": "page",
+              "ref": "page:home",
+              "collection": "pages_out",
+              "id": "home"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "pages_out",
+        "home"
+      ],
+      "expect": {
+        "value": {
+          "id": "home",
+          "value": {
+            "theme": {
+              "$ref": "theme:missing"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

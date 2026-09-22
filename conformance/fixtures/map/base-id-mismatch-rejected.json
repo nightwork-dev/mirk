@@ -1,0 +1,46 @@
+{
+  "id": "fixtures/map/base-id-mismatch-rejected",
+  "title": "a base map entry whose explicit id disagrees with its key throws map-id-mismatch (item 8)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"id\":\"other\",\"name\":\"Dark\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Map key \"dark\" does not match explicit id \"other\"."
+      }
+    }
+  ]
+}

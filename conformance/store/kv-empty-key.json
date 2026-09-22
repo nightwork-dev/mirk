@@ -1,0 +1,44 @@
+{
+  "id": "store/kv-empty-key",
+  "title": "the empty string is a valid, addressable key",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "",
+        "root"
+      ]
+    },
+    {
+      "op": "has",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "value": "root"
+      }
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          ""
+        ]
+      }
+    }
+  ]
+}

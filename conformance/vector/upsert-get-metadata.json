@@ -1,0 +1,59 @@
+{
+  "id": "vector/upsert-get-metadata",
+  "title": "a vector and its nested metadata round-trip through upsert and get",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "type": "cat",
+            "tags": [
+              "black",
+              "small"
+            ],
+            "live": true,
+            "owner": null
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "type": "cat",
+            "tags": [
+              "black",
+              "small"
+            ],
+            "live": true,
+            "owner": null
+          }
+        }
+      }
+    }
+  ]
+}

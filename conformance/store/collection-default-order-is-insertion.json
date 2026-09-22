@@ -1,0 +1,50 @@
+{
+  "id": "store/collection-default-order-is-insertion",
+  "title": "list with no sortBy returns items in the order they were put",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "ids": [
+          "c",
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

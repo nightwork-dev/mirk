@@ -30,6 +30,7 @@ class AsyncStoreAdapter
     Partial<AsyncAtomicMutationStore>
 {
   readonly listWhereIn?: AsyncStoreInQuery["listWhereIn"];
+  readonly atomicLimits?: AsyncAtomicMutationStore["atomicLimits"];
   readonly getVersioned?: AsyncAtomicMutationStore["getVersioned"];
   readonly mutateAtomically?: AsyncAtomicMutationStore["mutateAtomically"];
 
@@ -43,6 +44,8 @@ class AsyncStoreAdapter
       ): Promise<T[]> => sync.listWhereIn<T>(collection, field, values, filter);
     }
     if (supportsAtomicMutation(sync)) {
+      // Lifting to async changes nothing about what the request may contain.
+      this.atomicLimits = sync.atomicLimits;
       this.getVersioned = async <T>(target: StoreTarget) =>
         sync.getVersioned<T>(target);
       this.mutateAtomically = async (request) => sync.mutateAtomically(request);

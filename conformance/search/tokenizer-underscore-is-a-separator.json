@@ -1,0 +1,44 @@
+{
+  "id": "search/tokenizer-underscore-is-a-separator",
+  "title": "an underscore separates tokens",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "snake_case_name"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "snake"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "case"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "fixtures/map/non-object-document-rejected",
+  "title": "a map type whose document parses to an array throws invalid-map-document",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "[{\"name\":\"Dark\"}]"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Fixture map documents must parse to an object keyed by fixture id."
+      }
+    }
+  ]
+}

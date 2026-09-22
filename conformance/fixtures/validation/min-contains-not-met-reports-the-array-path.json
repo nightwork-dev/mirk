@@ -1,0 +1,57 @@
+{
+  "id": "fixtures/validation/min-contains-not-met-reports-the-array-path",
+  "title": "minContains is one contains error in Ajv and its own keyword in Python; both land on the array",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "tags"
+                ],
+                "properties": {
+                  "tags": {
+                    "type": "array",
+                    "contains": {
+                      "type": "number"
+                    },
+                    "minContains": 2
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"tags\":[1,\"a\"]}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#tags"
+        ]
+      }
+    }
+  ]
+}

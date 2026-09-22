@@ -1,0 +1,42 @@
+{
+  "id": "fixtures/layering/patches-without-a-base-are-rejected",
+  "title": "a pack of patches with no full document throws patch-without-base (item 15)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"accent\":\"red\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Fixture \"theme:dark\" has patches but no base document."
+      }
+    }
+  ]
+}

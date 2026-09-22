@@ -1,0 +1,34 @@
+{
+  "id": "artifact/hashing/canonical-json/empty-key",
+  "title": "the empty string is an ordinary key and sorts first",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "": 1,
+          "a": 2
+        }
+      ],
+      "expect": {
+        "value": "{\"\":1,\"a\":2}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "": 1,
+          "a": 2
+        }
+      ],
+      "expect": {
+        "value": "9cf535828d5dbc2d87d9c4c0b99d9e7308b5fdbd22aac02bac1d60f6ac9aa127"
+      }
+    }
+  ]
+}

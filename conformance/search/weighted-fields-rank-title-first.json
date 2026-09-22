@@ -1,0 +1,77 @@
+{
+  "id": "search/weighted-fields-rank-title-first",
+  "title": "a heavier title weight ranks the title hit above the body hit",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "title-hit",
+            "fields": {
+              "title": "matcha",
+              "body": "unrelated words here"
+            }
+          },
+          {
+            "id": "body-hit",
+            "fields": {
+              "title": "unrelated",
+              "body": "matcha in the body"
+            }
+          },
+          {
+            "id": "neither",
+            "fields": {
+              "title": "nothing",
+              "body": "nothing at all"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha",
+        {
+          "fieldWeights": {
+            "title": 5,
+            "body": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "title-hit",
+          "body-hit"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha",
+        {
+          "fieldWeights": {
+            "title": 1,
+            "body": 5
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "body-hit",
+          "title-hit"
+        ]
+      }
+    }
+  ]
+}

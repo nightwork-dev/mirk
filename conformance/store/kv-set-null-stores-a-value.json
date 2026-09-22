@@ -1,0 +1,53 @@
+{
+  "id": "store/kv-set-null-stores-a-value",
+  "title": "set of null stores a value: has is true and get is null",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "nulled",
+        null
+      ]
+    },
+    {
+      "op": "has",
+      "args": [
+        "nulled"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "nulled"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "never-set"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "nulled"
+        ]
+      }
+    }
+  ]
+}

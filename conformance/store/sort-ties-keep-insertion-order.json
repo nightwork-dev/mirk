@@ -1,0 +1,73 @@
+{
+  "id": "store/sort-ties-keep-insertion-order",
+  "title": "items with equal sort values stay in the order they were put",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "n": 1
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "n"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "c",
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "n",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "c",
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

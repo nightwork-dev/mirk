@@ -1,0 +1,121 @@
+{
+  "id": "vector/where-compares-nested-json-exactly",
+  "title": "where compares nested objects and arrays by exact JSON, key order included",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "spec": {
+              "a": 1,
+              "b": 2
+            },
+            "tags": [
+              "x",
+              "y"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "spec": {
+              "a": 1,
+              "b": 2
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "spec": {
+              "b": 2,
+              "a": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "tags": [
+              "y",
+              "x"
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "tags": "x"
+          }
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    }
+  ]
+}

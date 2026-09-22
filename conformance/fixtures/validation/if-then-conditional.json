@@ -1,0 +1,72 @@
+{
+  "id": "fixtures/validation/if-then-conditional",
+  "title": "an if/then failure reports the then-branch path, never the if keyword's",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string"
+                  },
+                  "accent": {
+                    "type": "string"
+                  }
+                },
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "dark"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "accent"
+                  ]
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"mode\":\"dark\"}",
+                "themes/light.json": "{\"mode\":\"light\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": [
+          "theme:dark#"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "id": "fixtures/resolve/explicit-ref-loads-in-either-mode",
+  "title": "an explicit $ref object always loads, whatever the reference mode",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        {
+          "$ref": "theme:dark"
+        }
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark"
+        }
+      }
+    }
+  ]
+}

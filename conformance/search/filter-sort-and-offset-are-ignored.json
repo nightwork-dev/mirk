@@ -1,0 +1,60 @@
+{
+  "id": "search/filter-sort-and-offset-are-ignored",
+  "title": "sortBy, sortDir and offset on the filter object do not affect search",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "a",
+            "text": "identical text",
+            "meta": {
+              "rank": 3
+            }
+          },
+          {
+            "id": "b",
+            "text": "identical text",
+            "meta": {
+              "rank": 1
+            }
+          },
+          {
+            "id": "c",
+            "text": "identical text",
+            "meta": {
+              "rank": 2
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical",
+        {
+          "filter": {
+            "sortBy": "rank",
+            "sortDir": "desc",
+            "offset": 2
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    }
+  ]
+}

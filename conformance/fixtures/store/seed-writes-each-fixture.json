@@ -1,0 +1,104 @@
+{
+  "id": "fixtures/store/seed-writes-each-fixture",
+  "title": "seedStoreFromFixtures writes every fixture of every target into its collection (item 41)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "themes/light.json": "{\"name\":\"Light\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "seedStore",
+      "args": [
+        {
+          "targets": {
+            "theme": "themes"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "written": [
+            {
+              "type": "theme",
+              "ref": "theme:dark",
+              "collection": "themes",
+              "id": "dark"
+            },
+            {
+              "type": "theme",
+              "ref": "theme:light",
+              "collection": "themes",
+              "id": "light"
+            }
+          ],
+          "skipped": []
+        }
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "themes",
+        "dark"
+      ],
+      "expect": {
+        "value": {
+          "id": "dark",
+          "value": {
+            "name": "Dark"
+          }
+        }
+      }
+    },
+    {
+      "op": "readSeeded",
+      "args": [
+        "themes",
+        "light"
+      ],
+      "expect": {
+        "value": {
+          "id": "light",
+          "value": {
+            "name": "Light"
+          }
+        }
+      }
+    }
+  ]
+}

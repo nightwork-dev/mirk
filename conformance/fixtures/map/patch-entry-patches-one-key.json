@@ -1,0 +1,71 @@
+{
+  "id": "fixtures/map/patch-entry-patches-one-key",
+  "title": "a $patch entry in a higher layer patches only its own key (item 5)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              },
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"name\":\"Dark\",\"accent\":\"blue\"},\"light\":{\"name\":\"Light\"}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/core.json": "{\"dark\":{\"$patch\":\"theme:dark\",\"accent\":\"red\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "id": "dark",
+          "name": "Dark",
+          "accent": "red"
+        }
+      }
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:light"
+      ],
+      "expect": {
+        "value": {
+          "id": "light",
+          "name": "Light"
+        }
+      }
+    }
+  ]
+}

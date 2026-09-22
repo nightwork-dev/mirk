@@ -1,0 +1,53 @@
+{
+  "id": "store/list-where-in-non-scalar-value-throws",
+  "title": "an object or array among the values is rejected, not treated as no match",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "f": "x"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          {
+            "a": 1
+          }
+        ]
+      ],
+      "expect": {
+        "throws": "Store IN queries only support JSON scalar values."
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "x",
+          [
+            1
+          ]
+        ]
+      ],
+      "expect": {
+        "throws": "Store IN queries only support JSON scalar values."
+      }
+    }
+  ]
+}

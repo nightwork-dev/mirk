@@ -1,0 +1,50 @@
+{
+  "id": "store/list-where-in-duplicate-values",
+  "title": "a repeated value does not duplicate the row it matches",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "f": "x"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "f": "y"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "x",
+          "x",
+          "y"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

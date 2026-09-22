@@ -1,0 +1,46 @@
+{
+  "id": "fixtures/map/non-object-entry-rejected-with-id-field",
+  "title": "with idField set, a non-object map entry throws invalid-map-fixture",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/core.json": "{\"dark\":\"plain\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "throws": "Fixture \"theme:dark\" must be an object to inject \"id\"."
+      }
+    }
+  ]
+}

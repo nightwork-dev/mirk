@@ -1,0 +1,65 @@
+{
+  "id": "store/atomic/conflict-reports-the-first-condition-in-sorted-order",
+  "title": "with two failing conditions authored out of order, the conflict names the one that sorts first",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "z"
+              },
+              "expected": "present"
+            },
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "expected": "present"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "m",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "condition": {
+            "target": {
+              "kind": "key",
+              "key": "a"
+            },
+            "expected": "present"
+          },
+          "observed": "missing"
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "m"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

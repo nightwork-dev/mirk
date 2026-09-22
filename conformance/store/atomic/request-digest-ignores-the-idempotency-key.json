@@ -1,0 +1,74 @@
+{
+  "id": "store/atomic/request-digest-ignores-the-idempotency-key",
+  "title": "the same operations under two idempotency keys apply twice with one requestDigest; a reader of the corpus compares the two digest strings",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": true
+            }
+          ],
+          "idempotency": {
+            "key": "one"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "3b6d002e6788098a9ebb20e8b5b9639988718403f93420ecbabb4f8214c7d2a8",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": true
+            }
+          ],
+          "idempotency": {
+            "key": "two"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "3b6d002e6788098a9ebb20e8b5b9639988718403f93420ecbabb4f8214c7d2a8",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "a"
+              },
+              "version": "conformance-v2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

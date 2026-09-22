@@ -1,0 +1,79 @@
+{
+  "id": "fixtures/layering/declaration-order-breaks-a-priority-tie",
+  "title": "sources sharing a priority keep declaration order, so the later declaration is the base",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "first",
+              "priority": 3,
+              "files": {
+                "themes/dark.json": "{\"name\":\"First\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "second",
+              "priority": 3,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Second\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Second"
+        }
+      }
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "first",
+              "layer": "first",
+              "priority": 3,
+              "path": "themes/dark.json",
+              "kind": "replace"
+            },
+            {
+              "sourceId": "second",
+              "layer": "second",
+              "priority": 3,
+              "path": "themes/dark.json",
+              "kind": "base"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

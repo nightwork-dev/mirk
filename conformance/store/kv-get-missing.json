@@ -1,0 +1,19 @@
+{
+  "id": "store/kv-get-missing",
+  "title": "get on an empty store returns null",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "get",
+      "args": [
+        "nonexistent"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

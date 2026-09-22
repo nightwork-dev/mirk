@@ -1,0 +1,38 @@
+{
+  "id": "artifact/hashing/canonical-json/line-separators",
+  "title": "U+2028 and U+2029 are emitted raw, not escaped",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$codepoints": [
+            8232,
+            8233
+          ]
+        }
+      ],
+      "expect": {
+        "value": "\"  \""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$codepoints": [
+            8232,
+            8233
+          ]
+        }
+      ],
+      "expect": {
+        "value": "e3a0e2262ac7790f4df36b522a8fbdd4ee3370d568eb15dc25c5f1775f14ed6c"
+      }
+    }
+  ]
+}

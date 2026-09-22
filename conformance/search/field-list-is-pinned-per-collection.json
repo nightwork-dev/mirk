@@ -1,0 +1,52 @@
+{
+  "id": "search/field-list-is-pinned-per-collection",
+  "title": "a document whose field list differs from the collection's throws",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "fields": {
+            "title": "one",
+            "body": "two"
+          }
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "b",
+          "fields": {
+            "title": "one",
+            "summary": "two"
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Search collection \"docs\" was initialized with fields [body, title], got [summary, title]."
+      }
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "c",
+          "text": "plain"
+        }
+      ],
+      "expect": {
+        "throws": "Search collection \"docs\" was initialized with fields [body, title], got [text]."
+      }
+    }
+  ]
+}

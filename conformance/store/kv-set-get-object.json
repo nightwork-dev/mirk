@@ -1,0 +1,38 @@
+{
+  "id": "store/kv-set-get-object",
+  "title": "a nested object value round-trips through set and get",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "obj",
+        {
+          "name": "mirk",
+          "count": 3,
+          "nested": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "obj"
+      ],
+      "expect": {
+        "value": {
+          "name": "mirk",
+          "count": 3,
+          "nested": {
+            "ok": true
+          }
+        }
+      }
+    }
+  ]
+}

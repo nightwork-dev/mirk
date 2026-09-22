@@ -1,0 +1,36 @@
+{
+  "id": "artifact/hashing/canonical-json/lone-surrogate",
+  "title": "a lone surrogate escapes as \\udXXX and is in contract",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$codepoints": [
+            55296
+          ]
+        }
+      ],
+      "expect": {
+        "value": "\"\\ud800\""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$codepoints": [
+            55296
+          ]
+        }
+      ],
+      "expect": {
+        "value": "8c0c59dd0d275aadcd462a5fe12eb352cbdfeaf961eae4f85a4660521df7d2f5"
+      }
+    }
+  ]
+}

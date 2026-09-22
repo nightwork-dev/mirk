@@ -1,0 +1,80 @@
+{
+  "id": "fixtures/layering/higher-base-replaces-lower-base",
+  "title": "two full documents do not merge: the highest-priority one replaces the other outright",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\",\"accent\":\"blue\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "override",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Darker\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Darker"
+        }
+      }
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "replace"
+            },
+            {
+              "sourceId": "override",
+              "layer": "override",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "base"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "id": "fixtures/layering/parse-error-degrades-in-validate",
+  "title": "a malformed document is reported by validate() rather than thrown, and the source is skipped (item 78)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/bad.json": "{ not json",
+                "themes/good.json": "{\"name\":\"Good\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validateDiagnostics",
+      "args": [],
+      "expect": {
+        "values": [
+          {
+            "fixture": "theme",
+            "severity": "error",
+            "code": "parse-failed",
+            "source": "pack",
+            "path": "themes/bad.json"
+          }
+        ],
+        "ignoreFields": [
+          "message"
+        ]
+      }
+    }
+  ]
+}

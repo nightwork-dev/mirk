@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-1e100",
+  "title": "a large exponent carries no leading zeros",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        1e+100
+      ],
+      "expect": {
+        "value": "1e+100"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        1e+100
+      ],
+      "expect": {
+        "value": "33d5997bb6b66e3ae3b8e79fff5fe0954bc7b2a38a9d95d83f437d0e57b68f82"
+      }
+    }
+  ]
+}

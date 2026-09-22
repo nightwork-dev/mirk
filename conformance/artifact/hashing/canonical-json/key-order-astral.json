@@ -1,0 +1,40 @@
+{
+  "id": "artifact/hashing/canonical-json/key-order-astral",
+  "title": "keys sort by Unicode code point, so an astral key sorts after U+FFFD",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "😀": 1,
+          "�": 2,
+          "a": 3,
+          "A": 4,
+          "ä": 5
+        }
+      ],
+      "expect": {
+        "value": "{\"A\":4,\"a\":3,\"ä\":5,\"�\":2,\"😀\":1}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "😀": 1,
+          "�": 2,
+          "a": 3,
+          "A": 4,
+          "ä": 5
+        }
+      ],
+      "expect": {
+        "value": "b43f65e9bee3e7086d257a2e046302e7008f9750eb067cdb13564c7315f934d6"
+      }
+    }
+  ]
+}

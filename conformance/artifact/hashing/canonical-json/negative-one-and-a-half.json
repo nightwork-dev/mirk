@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/negative-one-and-a-half",
+  "title": "a negative fraction keeps its sign",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        -1.5
+      ],
+      "expect": {
+        "value": "-1.5"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        -1.5
+      ],
+      "expect": {
+        "value": "37c2b212b94e5372b33df924ea2a91182d90c237d0bf942c1768e794ebef2376"
+      }
+    }
+  ]
+}

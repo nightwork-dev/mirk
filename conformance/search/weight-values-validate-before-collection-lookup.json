@@ -1,0 +1,50 @@
+{
+  "id": "search/weight-values-validate-before-collection-lookup",
+  "title": "a bad weight value throws even for a collection that does not exist",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "x"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "missing",
+        "x",
+        {
+          "fieldWeights": {
+            "text": -1
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Search field weight for \"text\" must be a non-negative finite number."
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "missing",
+        "x",
+        {
+          "fieldWeights": {
+            "text": 2
+          }
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

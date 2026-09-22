@@ -1,0 +1,55 @@
+{
+  "id": "store/where-empty-object-is-a-no-op",
+  "title": "an empty where clause filters nothing out",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {}
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {}
+        }
+      ],
+      "expect": {
+        "value": 2
+      }
+    }
+  ]
+}

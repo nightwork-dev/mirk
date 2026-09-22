@@ -1,0 +1,43 @@
+{
+  "id": "search/every-document-holds-the-term",
+  "title": "when every document holds the term, the shorter document ranks first",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "mirk storage layer"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "b",
+          "text": "storage"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "storage"
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a"
+        ]
+      }
+    }
+  ]
+}

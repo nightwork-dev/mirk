@@ -1,0 +1,57 @@
+{
+  "id": "fixtures/layering/patch-merges-over-base",
+  "title": "a base in a low layer plus a $patch in a high layer produces the merged value (item 10)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\",\"palette\":{\"fg\":\"white\"}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"palette\":{\"bg\":\"black\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark",
+          "palette": {
+            "fg": "white",
+            "bg": "black"
+          }
+        }
+      }
+    }
+  ]
+}

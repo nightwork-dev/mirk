@@ -1,0 +1,74 @@
+{
+  "id": "search/meta-filter-applies-before-limit",
+  "title": "the meta filter runs before the limit, so the limit counts survivors",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "dog-a",
+            "text": "identical text",
+            "meta": {
+              "type": "dog"
+            }
+          },
+          {
+            "id": "dog-b",
+            "text": "identical text",
+            "meta": {
+              "type": "dog"
+            }
+          },
+          {
+            "id": "dog-c",
+            "text": "identical text",
+            "meta": {
+              "type": "dog"
+            }
+          },
+          {
+            "id": "cat-a",
+            "text": "identical text",
+            "meta": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "cat-b",
+            "text": "identical text",
+            "meta": {
+              "type": "cat"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical",
+        {
+          "filter": {
+            "where": {
+              "type": "cat"
+            }
+          },
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "cat-a",
+          "cat-b"
+        ]
+      }
+    }
+  ]
+}

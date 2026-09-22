@@ -1,0 +1,200 @@
+{
+  "id": "vector/search-min-score-before-topk",
+  "title": "minScore filters the candidate set before topK slices it",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsertMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "d00",
+            "vector": [
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            "id": "d01",
+            "vector": [
+              1,
+              0.08333333333333333,
+              0
+            ]
+          },
+          {
+            "id": "d02",
+            "vector": [
+              1,
+              0.16666666666666666,
+              0
+            ]
+          },
+          {
+            "id": "d03",
+            "vector": [
+              1,
+              0.25,
+              0
+            ]
+          },
+          {
+            "id": "d04",
+            "vector": [
+              1,
+              0.3333333333333333,
+              0
+            ]
+          },
+          {
+            "id": "d05",
+            "vector": [
+              1,
+              0.4166666666666667,
+              0
+            ]
+          },
+          {
+            "id": "d06",
+            "vector": [
+              1,
+              0.5,
+              0
+            ]
+          },
+          {
+            "id": "d07",
+            "vector": [
+              1,
+              0.5833333333333334,
+              0
+            ]
+          },
+          {
+            "id": "d08",
+            "vector": [
+              1,
+              0.6666666666666666,
+              0
+            ]
+          },
+          {
+            "id": "d09",
+            "vector": [
+              1,
+              0.75,
+              0
+            ]
+          },
+          {
+            "id": "d10",
+            "vector": [
+              1,
+              0.8333333333333334,
+              0
+            ]
+          },
+          {
+            "id": "d11",
+            "vector": [
+              1,
+              0.9166666666666666,
+              0
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 3,
+          "minScore": 0.99
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "minScore": 0.99
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2,
+          "minScore": 0.9
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "minScore": 0.9
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01",
+          "d02",
+          "d03",
+          "d04",
+          "d05"
+        ]
+      }
+    }
+  ]
+}

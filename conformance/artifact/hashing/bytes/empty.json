@@ -1,0 +1,25 @@
+{
+  "id": "artifact/hashing/bytes/empty",
+  "title": "sha256 over zero bytes is the empty digest with sizeBytes 0",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "sha256Bytes",
+      "args": [
+        {
+          "$b64": ""
+        }
+      ],
+      "expect": {
+        "value": {
+          "algorithm": "sha256",
+          "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "sizeBytes": 0
+        }
+      }
+    }
+  ]
+}

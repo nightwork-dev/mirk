@@ -1,0 +1,52 @@
+{
+  "id": "search/reindex-replaces-terms",
+  "title": "re-indexing an id drops its old terms",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "original wording"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "replacement wording"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "original"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "replacement"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    }
+  ]
+}

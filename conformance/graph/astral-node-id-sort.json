@@ -1,0 +1,107 @@
+{
+  "id": "graph/astral-node-id-sort",
+  "title": "node and edge ids sort by Unicode code point, not by UTF-16 code unit",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "astral",
+        {
+          "id": "e🔥",
+          "from": "origin",
+          "to": "🔥",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "astral",
+        {
+          "id": "e�",
+          "from": "origin",
+          "to": "�",
+          "type": "link",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "traverse",
+      "args": [
+        "astral",
+        {
+          "start": "origin",
+          "depth": 1
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "�",
+            "🔥"
+          ],
+          "edges": [
+            {
+              "id": "e�",
+              "from": "origin",
+              "to": "�",
+              "type": "link",
+              "published": true
+            },
+            {
+              "id": "e🔥",
+              "from": "origin",
+              "to": "🔥",
+              "type": "link",
+              "published": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "traverseFrontierBatched",
+      "args": [
+        "astral",
+        {
+          "start": "origin",
+          "depth": 1
+        }
+      ],
+      "expect": {
+        "value": {
+          "nodes": [
+            "�",
+            "🔥"
+          ],
+          "edges": [
+            {
+              "id": "e�",
+              "from": "origin",
+              "to": "�",
+              "type": "link",
+              "published": true
+            },
+            {
+              "id": "e🔥",
+              "from": "origin",
+              "to": "🔥",
+              "type": "link",
+              "published": true
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "id": "fixtures/merge/deep-scalar-overwrites-an-object",
+  "title": "deep merge replaces when either side stops being a plain object",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"a\":{\"b\":1}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"a\":5}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "a": 5
+        }
+      }
+    }
+  ]
+}

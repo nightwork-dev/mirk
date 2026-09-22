@@ -1,0 +1,85 @@
+{
+  "id": "vector/topk-applies-after-where",
+  "title": "topK counts filtered survivors, not nearest documents overall",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsertMany",
+      "args": [
+        "pets",
+        [
+          {
+            "id": "cat-1",
+            "vector": [
+              1,
+              0,
+              0
+            ],
+            "metadata": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "cat-2",
+            "vector": [
+              0.9,
+              0.1,
+              0
+            ],
+            "metadata": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "cat-3",
+            "vector": [
+              0.8,
+              0.2,
+              0
+            ],
+            "metadata": {
+              "type": "cat"
+            }
+          },
+          {
+            "id": "dog-1",
+            "vector": [
+              0.95,
+              0.05,
+              0
+            ],
+            "metadata": {
+              "type": "dog"
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "pets",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "type": "cat"
+          },
+          "topK": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "cat-1",
+          "cat-2"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-boundary-1e21",
+  "title": "a decimal exponent of 21 switches to exponential form",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        1e+21
+      ],
+      "expect": {
+        "value": "1e+21"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        1e+21
+      ],
+      "expect": {
+        "value": "241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
+      }
+    }
+  ]
+}

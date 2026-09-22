@@ -1,0 +1,128 @@
+{
+  "id": "store/where-boolean-is-not-a-number",
+  "title": "where distinguishes true from 1 and false from 0 in the same field",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "true",
+          "v": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "one",
+          "v": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "false",
+          "v": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "zero",
+          "v": 0
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": true
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "true"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "one"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": false
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "false"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": 0
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "zero"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "v": true
+          }
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

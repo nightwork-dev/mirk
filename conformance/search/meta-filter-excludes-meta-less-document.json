@@ -1,0 +1,52 @@
+{
+  "id": "search/meta-filter-excludes-meta-less-document",
+  "title": "a document indexed without meta never satisfies a filter",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "tagged",
+          "text": "shared term",
+          "meta": {
+            "type": "cat"
+          }
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "bare",
+          "text": "shared term"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "shared",
+        {
+          "filter": {
+            "where": {
+              "type": "cat"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "tagged"
+        ]
+      }
+    }
+  ]
+}

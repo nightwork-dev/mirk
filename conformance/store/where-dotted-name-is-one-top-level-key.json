@@ -1,0 +1,48 @@
+{
+  "id": "store/where-dotted-name-is-one-top-level-key",
+  "title": "a dotted where field is one literal top-level key, never a nested path",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "flat",
+          "a.b": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "nested",
+          "a": {
+            "b": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "a.b": 1
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "flat"
+        ]
+      }
+    }
+  ]
+}

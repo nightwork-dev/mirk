@@ -1,0 +1,214 @@
+{
+  "id": "vector/tie-break-at-topk-boundary",
+  "title": "ties at the topK boundary resolve by id, whatever order the rows went in",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "asc",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "asc",
+        {
+          "id": "b",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "asc",
+        {
+          "id": "c",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "desc",
+        {
+          "id": "c",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "desc",
+        {
+          "id": "b",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "desc",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "asc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "desc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "asc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 1
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "desc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 1
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "asc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2,
+          "minScore": 0.5
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "desc",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "topK": 2,
+          "minScore": 0.5
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

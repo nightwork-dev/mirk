@@ -1,0 +1,45 @@
+{
+  "id": "search/text-and-fields-text-coexist",
+  "title": "a text document and a fields document naming text share one schema",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "plain",
+          "text": "shared term here"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "fielded",
+          "fields": {
+            "text": "shared term also"
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "shared"
+      ],
+      "expect": {
+        "ids": [
+          "fielded",
+          "plain"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "id": "artifact/hashing/canonical-json/negative-zero-in-array",
+  "title": "negative zero prints as 0 inside an array",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        [
+          {
+            "$num": "-0"
+          }
+        ]
+      ],
+      "expect": {
+        "value": "[0]"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        [
+          {
+            "$num": "-0"
+          }
+        ]
+      ],
+      "expect": {
+        "value": "d0bca111f8628137adc4c16f123496dcdd1d590d06cb5d9acd68b39fe656fb97"
+      }
+    }
+  ]
+}

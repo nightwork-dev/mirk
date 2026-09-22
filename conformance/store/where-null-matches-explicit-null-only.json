@@ -1,0 +1,69 @@
+{
+  "id": "store/where-null-matches-explicit-null-only",
+  "title": "where null matches a stored null and never a missing field",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "explicit",
+          "x": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "missing"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "valued",
+          "x": 5
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "x": null
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "explicit"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "x": null
+          }
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

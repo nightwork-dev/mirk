@@ -1,0 +1,79 @@
+{
+  "id": "vector/count-is-per-collection",
+  "title": "count is scoped to its collection and zero for an unknown one",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "one",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "one",
+        {
+          "id": "b",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "two",
+        {
+          "id": "a",
+          "vector": [
+            0,
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "one"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "two"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "nothing"
+      ],
+      "expect": {
+        "value": 0
+      }
+    }
+  ]
+}

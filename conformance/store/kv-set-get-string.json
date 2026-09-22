@@ -1,0 +1,26 @@
+{
+  "id": "store/kv-set-get-string",
+  "title": "a string value round-trips through set and get",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "greeting",
+        "hello"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "greeting"
+      ],
+      "expect": {
+        "value": "hello"
+      }
+    }
+  ]
+}

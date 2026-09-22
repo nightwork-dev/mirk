@@ -1,0 +1,55 @@
+{
+  "id": "artifact/hashing/canonical-json/surrogate-pair-from-code-units",
+  "title": "a high and a low surrogate given as code units form one astral character",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$codepoints": [
+            55357,
+            56832
+          ]
+        }
+      ],
+      "expect": {
+        "value": "\"😀\""
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {
+          "$codepoints": [
+            55357,
+            56832
+          ]
+        }
+      ],
+      "expect": {
+        "value": "7a0c50b92434b015545fe93ab723db2d4b2cdd14a441405624a9ce8be29f1d5a"
+      }
+    },
+    {
+      "op": "canonicalJson",
+      "args": [
+        {
+          "$codepoints": [
+            55357,
+            56832,
+            55296,
+            56832,
+            56832
+          ]
+        }
+      ],
+      "expect": {
+        "value": "\"😀𐈀\\ude00\""
+      }
+    }
+  ]
+}

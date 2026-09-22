@@ -1,0 +1,54 @@
+{
+  "id": "search/tie-break-by-id",
+  "title": "identical documents come back in id order, not insertion order",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "c",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "b",
+          "text": "identical text"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "identical"
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "id": "store/kv-keys-prefix-is-literal",
+  "title": "an underscore in a key prefix is literal, not a LIKE wildcard",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "a_b",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "axb",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "a_c",
+        3
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [
+        "a_"
+      ],
+      "expect": {
+        "value": [
+          "a_b",
+          "a_c"
+        ]
+      }
+    }
+  ]
+}

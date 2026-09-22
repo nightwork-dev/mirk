@@ -1,0 +1,33 @@
+{
+  "id": "store/kv-set-overwrites",
+  "title": "set on an existing key overwrites the previous value",
+  "ports": [
+    "kv"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "set",
+      "args": [
+        "key",
+        "first"
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "key",
+        "second"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "key"
+      ],
+      "expect": {
+        "value": "second"
+      }
+    }
+  ]
+}

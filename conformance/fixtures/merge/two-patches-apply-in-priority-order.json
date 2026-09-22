@@ -1,0 +1,97 @@
+{
+  "id": "fixtures/merge/two-patches-apply-in-priority-order",
+  "title": "patches merge in ascending priority, and provenance records each one",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\",\"step\":0}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "mid",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"step\":1,\"mid\":true}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "top",
+              "priority": 2,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"step\":2}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark",
+          "step": 2,
+          "mid": true
+        }
+      }
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "base"
+            },
+            {
+              "sourceId": "mid",
+              "layer": "mid",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "patch"
+            },
+            {
+              "sourceId": "top",
+              "layer": "top",
+              "priority": 2,
+              "path": "themes/dark.json",
+              "kind": "patch"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

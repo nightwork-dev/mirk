@@ -1,0 +1,62 @@
+{
+  "id": "fixtures/validation/clean-pass",
+  "title": "a pack satisfying its schema validates with no diagnostics",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "jsonSchema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}",
+                "themes/light.json": "{\"name\":\"Light\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "invalidPaths": []
+      }
+    },
+    {
+      "op": "validate",
+      "args": [],
+      "expect": {
+        "value": {
+          "ok": true,
+          "diagnostics": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "id": "fixtures/resolve/bare-string-loads-under-explicit-and-bare",
+  "title": "the same call under explicit-and-bare loads the fixture (item 28)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "referenceMode": "explicit-and-bare",
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "resolveRef",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "fixtures/merge/deep-replaces-arrays-at-every-depth",
+  "title": "an array is not a plain object, so deep merge replaces it wherever it appears",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"a\":{\"b\":[1,2,3],\"c\":1}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"a\":{\"b\":[9]}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "a": {
+            "b": [
+              9
+            ],
+            "c": 1
+          }
+        }
+      }
+    }
+  ]
+}

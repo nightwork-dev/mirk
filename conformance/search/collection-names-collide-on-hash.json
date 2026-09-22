@@ -1,0 +1,98 @@
+{
+  "id": "search/collection-names-collide-on-hash",
+  "title": "two search collections that sanitize and hash identically stay independent",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "%$;**@",
+        {
+          "id": "a",
+          "text": "aardvark burrow"
+        }
+      ]
+    },
+    {
+      "op": "index",
+      "args": [
+        "~,~$(*",
+        {
+          "id": "b",
+          "text": "basilisk burrow"
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "%$;**@",
+        "aardvark"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "~,~$(*",
+        "basilisk"
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "%$;**@",
+        "basilisk"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "~,~$(*",
+        "aardvark"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "%$;**@",
+        "burrow"
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "~,~$(*",
+        "burrow"
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    }
+  ]
+}

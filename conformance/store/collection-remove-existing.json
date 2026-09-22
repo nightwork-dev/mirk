@@ -1,0 +1,104 @@
+{
+  "id": "store/collection-remove-existing",
+  "title": "remove returns true for an existing item and getById is null afterwards",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p1",
+          "name": "alpha",
+          "category": "ai",
+          "priority": 1,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p2",
+          "name": "bravo",
+          "category": "ai",
+          "priority": 2,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p3",
+          "name": "charlie",
+          "category": "web",
+          "priority": 3,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p4",
+          "name": "delta",
+          "category": "web",
+          "priority": 4,
+          "pinned": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "projects",
+        {
+          "id": "p5",
+          "name": "echo",
+          "category": "ops",
+          "priority": 5,
+          "pinned": false
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "projects",
+        "p3"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "projects",
+        "p3"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "projects"
+      ],
+      "expect": {
+        "value": 4
+      }
+    }
+  ]
+}

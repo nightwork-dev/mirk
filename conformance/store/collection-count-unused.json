@@ -1,0 +1,19 @@
+{
+  "id": "store/collection-count-unused",
+  "title": "count on a collection that was never written is zero",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "count",
+      "args": [
+        "never-used"
+      ],
+      "expect": {
+        "value": 0
+      }
+    }
+  ]
+}

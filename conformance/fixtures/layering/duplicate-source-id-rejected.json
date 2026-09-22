@@ -1,0 +1,44 @@
+{
+  "id": "fixtures/layering/duplicate-source-id-rejected",
+  "title": "two layers cannot share a source id: the caches and the skip set key by it",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Base\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Higher\"}"
+              }
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "Duplicate fixture source id \"pack\"."
+      }
+    }
+  ]
+}

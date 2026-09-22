@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/empty-object",
+  "title": "an empty object is {}",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        {}
+      ],
+      "expect": {
+        "value": "{}"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        {}
+      ],
+      "expect": {
+        "value": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      }
+    }
+  ]
+}

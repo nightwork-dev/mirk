@@ -1,0 +1,80 @@
+{
+  "id": "fixtures/layering/patch-at-base-priority-does-not-apply",
+  "title": "a patch at or below the base's priority does not apply; the value is the base alone (item 13)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 5,
+              "files": {
+                "themes/dark.json": "{\"name\":\"Dark\"}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "same",
+              "priority": 5,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"accent\":\"red\"}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "name": "Dark"
+        }
+      }
+    },
+    {
+      "op": "explain",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "theme:dark",
+          "layers": [
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 5,
+              "path": "themes/dark.json",
+              "kind": "base"
+            },
+            {
+              "sourceId": "same",
+              "layer": "same",
+              "priority": 5,
+              "path": "themes/dark.json",
+              "kind": "shadowed"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

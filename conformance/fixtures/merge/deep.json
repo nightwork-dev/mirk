@@ -1,0 +1,62 @@
+{
+  "id": "fixtures/merge/deep",
+  "title": "deep merges nested objects, replaces arrays, retains omitted keys (item 19)",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "theme",
+              "directory": "themes",
+              "mergeStrategy": "deep"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 0,
+              "files": {
+                "themes/dark.json": "{\"nested\":{\"keep\":true,\"replace\":\"base\"},\"list\":[\"base\"],\"retained\":{\"stable\":true}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "overrides",
+              "priority": 1,
+              "files": {
+                "themes/dark.json": "{\"$patch\":\"theme:dark\",\"nested\":{\"replace\":\"patch\"},\"list\":[\"patch\"]}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "load",
+      "args": [
+        "theme:dark"
+      ],
+      "expect": {
+        "value": {
+          "nested": {
+            "keep": true,
+            "replace": "patch"
+          },
+          "list": [
+            "patch"
+          ],
+          "retained": {
+            "stable": true
+          }
+        }
+      }
+    }
+  ]
+}

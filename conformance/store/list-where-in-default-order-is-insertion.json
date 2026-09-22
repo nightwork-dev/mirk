@@ -1,0 +1,59 @@
+{
+  "id": "store/list-where-in-default-order-is-insertion",
+  "title": "listWhereIn with no sortBy returns matches in insertion order",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "f": "x"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "f": "x"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "f": "x"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "x"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "c",
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

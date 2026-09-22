@@ -1,0 +1,81 @@
+{
+  "id": "store/atomic/remove-clears-the-version-token",
+  "title": "remove drops the record's token and consumes no sequence value",
+  "ports": [
+    "atomic",
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "x"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "y"
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "c",
+        "x"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "c",
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "c",
+        {
+          "id": "x",
+          "again": true
+        }
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "record",
+          "collection": "c",
+          "id": "x"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "id": "x",
+            "again": true
+          },
+          "version": "conformance-v3"
+        }
+      }
+    }
+  ]
+}

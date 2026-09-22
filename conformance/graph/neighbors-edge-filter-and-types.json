@@ -1,0 +1,117 @@
+{
+  "id": "graph/neighbors-edge-filter-and-types",
+  "title": "neighbors edgeFilter and edgeTypes compose",
+  "ports": [
+    "collection",
+    "graph"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ab",
+          "from": "a",
+          "to": "b",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_bc",
+          "from": "b",
+          "to": "c",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ca",
+          "from": "c",
+          "to": "a",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ad",
+          "from": "a",
+          "to": "d",
+          "type": "mentions",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_de",
+          "from": "d",
+          "to": "e",
+          "type": "follows",
+          "published": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "edges",
+        {
+          "id": "e_ax",
+          "from": "a",
+          "to": "x",
+          "type": "follows",
+          "published": false
+        }
+      ]
+    },
+    {
+      "op": "neighbors",
+      "args": [
+        "edges",
+        {
+          "from": "a",
+          "edgeTypes": [
+            "follows"
+          ],
+          "edgeFilter": {
+            "where": {
+              "published": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "e_ab",
+            "from": "a",
+            "to": "b",
+            "type": "follows",
+            "published": true
+          }
+        ]
+      }
+    }
+  ]
+}

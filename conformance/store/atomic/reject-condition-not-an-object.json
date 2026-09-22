@@ -1,0 +1,30 @@
+{
+  "id": "store/atomic/reject-condition-not-an-object",
+  "title": "a condition that is not an object is refused",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            "a"
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "invalid atomic condition"
+      }
+    }
+  ]
+}

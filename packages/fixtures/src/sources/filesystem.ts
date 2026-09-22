@@ -2,6 +2,8 @@ import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { compareCodePoints } from "../order.js";
+
 import { FixtureError } from "../errors.js";
 import type { FixtureSource, FixtureSourceEntry } from "../types.js";
 
@@ -86,7 +88,7 @@ function walk(root: string, sourceId: string): ListedFile[] {
     let entries;
     try {
       entries = readdirSync(directory, { withFileTypes: true })
-        .sort((left, right) => left.name.localeCompare(right.name));
+        .sort((left, right) => compareCodePoints(left.name, right.name));
     } catch {
       throw sourceError(sourceId, prefix || ".", "could not list directory");
     }
@@ -115,7 +117,7 @@ function walk(root: string, sourceId: string): ListedFile[] {
   };
 
   visit(root, "");
-  return files.sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return files.sort((left, right) => compareCodePoints(left.relativePath, right.relativePath));
 }
 
 function resolveListedFile(root: string, relativePath: string, sourceId: string): string {

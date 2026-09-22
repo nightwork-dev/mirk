@@ -1,0 +1,61 @@
+{
+  "id": "store/sort-booleans-false-before-true",
+  "title": "false sorts before true",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "t",
+          "v": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "f",
+          "v": false
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "v"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "f",
+          "t"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "v",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "t",
+          "f"
+        ]
+      }
+    }
+  ]
+}

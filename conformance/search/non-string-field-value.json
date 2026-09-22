@@ -1,0 +1,26 @@
+{
+  "id": "search/non-string-field-value",
+  "title": "a non-string field value is rejected by name",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "index",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "fields": {
+            "title": "ok",
+            "count": 3
+          }
+        }
+      ],
+      "expect": {
+        "throws": "SearchDocument field \"count\" must be a string."
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "artifact/hashing/canonical-json/exponent-2-5e-8",
+  "title": "a small exponential keeps its fractional digits",
+  "ports": [
+    "hash"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "canonicalJson",
+      "args": [
+        2.5e-8
+      ],
+      "expect": {
+        "value": "2.5e-8"
+      }
+    },
+    {
+      "op": "canonicalDigest",
+      "args": [
+        2.5e-8
+      ],
+      "expect": {
+        "value": "69fd1803d9d70181d9b13589717ffe4e36a3985071369a3d9625c9331a8ff1ac"
+      }
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "id": "search/ranking-three-tiers",
+  "title": "a three-tier relevance fixture ranks high, mid, low",
+  "ports": [
+    "search"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "indexMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "high",
+            "text": "matcha matcha matcha tea"
+          },
+          {
+            "id": "mid",
+            "text": "matcha matcha with milk and sugar added"
+          },
+          {
+            "id": "low",
+            "text": "one mention of matcha buried in a much longer document body"
+          },
+          {
+            "id": "filler-a",
+            "text": "unrelated words about nothing"
+          },
+          {
+            "id": "filler-b",
+            "text": "more unrelated words here"
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        "matcha"
+      ],
+      "expect": {
+        "ids": [
+          "high",
+          "mid",
+          "low"
+        ]
+      }
+    }
+  ]
+}

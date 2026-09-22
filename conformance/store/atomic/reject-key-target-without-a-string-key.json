@@ -1,0 +1,36 @@
+{
+  "id": "store/atomic/reject-key-target-without-a-string-key",
+  "title": "a key target needs a string key",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": 5
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "a",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "key target requires a string key"
+      }
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mirk-fixtures"
+version = "0.1.0"
+description = "Authored fixture loading, layering and provenance. Python port of @mirk/fixtures."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["mirk-store"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[tool.uv.sources]
+mirk-store = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["README.md", "pyproject.toml", "src/mirk", "tests"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+pythonVersion = "3.12"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF"]
+ignore = ["N802", "N803", "N815"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,19 @@
+{
+  "id": "store/collection-list-unused",
+  "title": "list on a collection that was never written is empty",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "list",
+      "args": [
+        "never-used"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

@@ -15,8 +15,34 @@ pnpm test       # vitest across all packages
 pnpm -r typecheck
 ```
 
-Always run `pnpm test` and `pnpm typecheck` before claiming work is done. Tests are real (real
-backends, real persistence, real assertions) — keep them that way.
+The Python port lives in `python/store` and has its own gates:
+
+```bash
+cd python/store
+uv run pytest -q      # includes the conformance corpus on memory and sqlite
+uv run pyright
+uv run ruff check .
+```
+
+Always run `pnpm test` and `pnpm typecheck` before claiming work is done, and the Python gates too
+when the change touches `python/store`. Tests are real (real backends, real persistence, real
+assertions) — keep them that way.
+
+## The conformance corpus is the contract
+
+`conformance/**/*.json` is generated from `packages/store/scripts/scenarios/` and replayed by both
+the TypeScript and the Python suites. Never hand-edit a scenario file.
+
+```bash
+pnpm conformance:gen      # integrator only; rewrites the shared corpus
+pnpm conformance:current  # regenerate into a temp tree and diff; fails on drift
+```
+
+**A port behavior change lands with a scenario in the same commit. A TypeScript-only test for port
+behavior is a review finding.** While drafting, generate somewhere else with
+`pnpm --filter @mirk/store conformance:gen --out /tmp/mine` and let the integrator run the real
+generation once. `pnpm release:receipt` runs the freshness gate first, so a stale corpus fails the
+receipt.
 
 ## Where to read what
 
@@ -24,6 +50,8 @@ backends, real persistence, real assertions) — keep them that way.
 - [`packages/store/README.md`](../packages/store/README.md) — `@mirk/store` install + usage.
 - [`docs/roadmap.md`](../docs/roadmap.md) — planned substrate primitives.
 - [`docs/fixtures-spec.md`](../docs/fixtures-spec.md) — draft `@mirk/fixtures` public package spec.
+- [`conformance/README.md`](../conformance/README.md) — the scenario format and its governance.
+- [`docs/python-port-spec.md`](../docs/python-port-spec.md) — the Python port contract.
 
 ## Conventions enforced at review time
 
