@@ -1,19 +1,30 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "mirk-store"
 version = "0.1.0"
-description = "Substrate-agnostic KV and collection storage primitives. Python port of @mirk/store."
+description = "Storage primitives with no domain baked in: key-value, collections, vector, full-text search, and graph. Python port of @mirk/store."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = []
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/store"
+Repository = "https://github.com/nightwork-dev/mirk"
+Issues = "https://github.com/nightwork-dev/mirk/issues"
 
 [dependency-groups]
 dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
@@ -22,7 +33,7 @@ dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
 packages = ["src/mirk"]
 
 [tool.hatch.build.targets.sdist]
-include = ["README.md", "pyproject.toml", "src/mirk", "tests"]
+include = ["README.md", "LICENSE", "pyproject.toml", "src/mirk", "tests"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,9 +7,15 @@ name = "mirk-fixtures"
 version = "0.1.0"
 description = "Authored fixture loading, layering and provenance. Python port of @mirk/fixtures."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["mirk-store"]
+dependencies = ["mirk-store>=0.1.0,<0.2"]
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Typing :: Typed",
@@ -18,6 +24,11 @@ classifiers = [
 [tool.uv.sources]
 mirk-store = { workspace = true }
 
+[project.urls]
+Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/fixtures"
+Repository = "https://github.com/nightwork-dev/mirk"
+Issues = "https://github.com/nightwork-dev/mirk/issues"
+
 [dependency-groups]
 dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
 
@@ -25,7 +36,7 @@ dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6", "jsonschema>=4"]
 packages = ["src/mirk"]
 
 [tool.hatch.build.targets.sdist]
-include = ["README.md", "pyproject.toml", "src/mirk", "tests"]
+include = ["README.md", "LICENSE", "pyproject.toml", "src/mirk", "tests"]
 
 [tool.pyright]
 typeCheckingMode = "strict"

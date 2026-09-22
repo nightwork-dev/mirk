@@ -1,6 +1,6 @@
 {
   "name": "@mirk/artifact",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Domain-neutral artifact identity, integrity, lineage, and object-storage coordination.",
   "license": "Apache-2.0",
@@ -40,7 +40,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mirk/store": "workspace:*",
+    "@mirk/store": "workspace:^",
     "@noble/hashes": "^2.0.1"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 {
   "name": "@mirk/store-indexeddb",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "type": "module",
   "description": "IndexedDB source adapter for @mirk/store's async key-value, collection, and atomic mutation ports.",
   "license": "Apache-2.0",

@@ -11,7 +11,7 @@ you which files contributed to the value you got.
 The TypeScript package and this one replay the same conformance corpus, so a
 Python process and a Node process read the same fixture pack the same way. The
 loading rules, merge strategies, provenance kinds, and diagnostic shape are
-described in the [`@mirk/fixtures` README](../../packages/fixtures/README.md);
+described in the [`@mirk/fixtures` README](https://github.com/nightwork-dev/mirk/blob/main/packages/fixtures/README.md);
 this page covers what is specific to Python. The Python port ships memory,
 filesystem, and store sources. It has no package-resource source and no CLI.
 
@@ -20,6 +20,9 @@ filesystem, and store sources. It has no package-resource source and no CLI.
 ```bash
 uv add mirk-fixtures
 ```
+
+The import package is `mirk.fixtures`, inside the shared `mirk` namespace. The unrelated `mirk`
+distribution on PyPI uses the same top-level name, so do not install it in the same environment.
 
 No third-party runtime dependencies. The install pulls `mirk-store`, which this
 package depends on for the store source's structural type and for the JSON
@@ -218,7 +221,7 @@ explicit one to reach the same answer.
 ## The contract
 
 The corpus at `conformance/` in the repository root is the contract (format:
-[`conformance/README.md`](../../conformance/README.md)). Both the TypeScript
+[`conformance/README.md`](https://github.com/nightwork-dev/mirk/blob/main/conformance/README.md)). Both the TypeScript
 suite and this package replay every `fixtures/` scenario against both backends.
 A behavior that is not in the corpus is not contractual.
 
