@@ -1,0 +1,60 @@
+{
+  "name": "@mirk/vector-qdrant",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Qdrant source adapter for @mirk/store's asynchronous vector port.",
+  "license": "Apache-2.0",
+  "keywords": [
+    "storage",
+    "vector",
+    "vector-search",
+    "qdrant",
+    "embeddings"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nightwork-dev/mirk.git",
+    "directory": "packages/vector-qdrant"
+  },
+  "homepage": "https://github.com/nightwork-dev/mirk/tree/main/packages/vector-qdrant#readme",
+  "bugs": "https://github.com/nightwork-dev/mirk/issues",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsup src/index.ts --format esm --dts --external @qdrant/js-client-rest"
+  },
+  "peerDependencies": {
+    "@qdrant/js-client-rest": "^1.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@qdrant/js-client-rest": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@mirk/store": "workspace:^"
+  },
+  "devDependencies": {
+    "@qdrant/js-client-rest": "1.19.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}

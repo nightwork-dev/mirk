@@ -11,7 +11,7 @@ import json
 import math
 from typing import Any, Literal, cast
 
-from .canonical import escape_lone_surrogates
+from .canonical import canonical_json
 from .types import StoreFilter
 
 __all__ = [
@@ -77,14 +77,35 @@ def dumps_json(value: Any) -> str:
     None}`` matches a stored null and not a missing key, so writing one for the
     other would change what matches.
     """
-    return escape_lone_surrogates(
-        json.dumps(
-            normalize_json_numbers(value),
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        )
+    plain = json.loads(
+        json.dumps(normalize_json_numbers(value), ensure_ascii=False, allow_nan=False)
     )
+    return _stringify_plain_json(plain)
+
+
+def _stringify_plain_json(value: Any) -> str:
+    if isinstance(value, list):
+        return "[" + ",".join(_stringify_plain_json(item) for item in cast(list[Any], value)) + "]"
+    if isinstance(value, dict):
+        record = cast(dict[str, Any], value)
+        # ECMAScript enumerates array-index keys first; other keys retain insertion order.
+        indices = {
+            key: int(key)
+            for key in record
+            if 0 < len(key) <= 10
+            and key.isascii()
+            and key.isdecimal()
+            and str(int(key)) == key
+            and int(key) < 2**32 - 1
+        }
+        keys = [
+            *sorted(indices, key=indices.__getitem__),
+            *(key for key in record if key not in indices),
+        ]
+        return "{" + ",".join(
+            canonical_json(key) + ":" + _stringify_plain_json(record[key]) for key in keys
+        ) + "}"
+    return canonical_json(value)
 
 
 def is_scalar(value: object) -> bool:

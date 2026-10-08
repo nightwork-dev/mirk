@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mirk-vector-qdrant"
+version = "0.1.0"
+description = "Qdrant source adapter for mirk-store's synchronous vector port."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["mirk-store>=0.1.0,<0.2", "qdrant-client>=1.19.1,<2"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Topic :: Database",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/vector-qdrant"
+Repository = "https://github.com/nightwork-dev/mirk"
+Issues = "https://github.com/nightwork-dev/mirk/issues"
+
+[tool.uv.sources]
+mirk-store = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["README.md", "LICENSE", "pyproject.toml", "src/mirk", "tests"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+pythonVersion = "3.12"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF"]
+ignore = ["N802", "N803", "N815"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

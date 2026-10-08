@@ -61,6 +61,7 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
 | `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer)                                                           |
 | `@mirk/store-libsql`     | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets                                                                                          | none                                                                              |
+| `@mirk/vector-qdrant`    | async Qdrant vector adapter with exact cosine scores, metadata filters, and shared Python storage format | `@qdrant/js-client-rest` (peer) |
 | `@mirk/store-postgres`   | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters                                                                                  | `pg`                                                                              |
 | `@mirk/store-markdown`   | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history                                                                | none                                                                              |
 | `@mirk/store-indexeddb`  | async browser source adapter on native IndexedDB — key-value, collections, and atomic mutation in one database                                                    | none                                                                              |
@@ -96,8 +97,12 @@ with YAML frontmatter. Its shared scenarios run on a separate filesystem backend
 `python/artifact-opendal` (`mirk-artifact-opendal`) adds S3-compatible artifact byte storage
 through a host-configured OpenDAL operator. Artifact metadata remains in the supplied Mirk repository.
 
-See the [Markdown adapter](python/store-markdown/README.md) and
-[S3/OpenDAL adapter](python/artifact-opendal/README.md) for Python usage.
+`python/vector-qdrant` (`mirk-vector-qdrant`) implements the synchronous vector port over
+a host-provided Qdrant client. It shares collections and records with `@mirk/vector-qdrant`.
+
+See the [Markdown adapter](python/store-markdown/README.md),
+[S3/OpenDAL adapter](python/artifact-opendal/README.md), and
+[Qdrant adapter](python/vector-qdrant/README.md) for Python usage.
 
 ## Sync by design
 

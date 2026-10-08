@@ -6,7 +6,7 @@
 # and one environment.
 
 [tool.uv.workspace]
-members = ["store", "fixtures", "artifact", "store-markdown", "artifact-opendal"]
+members = ["store", "fixtures", "artifact", "store-markdown", "artifact-opendal", "vector-qdrant"]
 
 [tool.uv.sources]
 mirk-store = { workspace = true }
