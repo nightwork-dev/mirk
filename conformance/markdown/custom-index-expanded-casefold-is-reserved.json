@@ -1,0 +1,47 @@
+{
+  "id": "markdown/custom-index-expanded-casefold-is-reserved",
+  "title": "custom index expanded casefold is reserved",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "preset": "notes",
+          "indexFileName": "ß.md"
+        }
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "documents",
+          {
+            "id": "note-1",
+            "title": "SS",
+            "status": "draft",
+            "summary": "Opening paragraph.",
+            "details": "Details here."
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "unsafe-filename"
+        }
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

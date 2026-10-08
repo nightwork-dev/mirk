@@ -1,0 +1,71 @@
+{
+  "id": "artifact/lifecycle/digest-lookup",
+  "title": "digest lookup",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "getByDigest",
+      "args": [
+        {
+          "algorithm": "sha256",
+          "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "artifact-1",
+            "objectKey": "artifacts/artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+            "mediaType": "text/plain"
+          },
+          {
+            "id": "artifact-2",
+            "objectKey": "artifacts/artifact-2",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+            "mediaType": "text/plain"
+          }
+        ]
+      }
+    }
+  ]
+}

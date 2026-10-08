@@ -46,8 +46,13 @@ current disk contents; writes use a temporary sibling followed by atomic rename.
 is chosen only when a record is created, so title changes do not rename files. An index is a derived
 projection and is regenerated after collection mutations.
 
+Keys and record IDs must be non-empty strings. Index filenames are safe basenames,
+reserved with Unicode normalization and case folding. Filename collisions cannot
+overwrite records, and reads and deletes verify the stored identity.
+
 Git is optional durability history. When enabled, the adapter initializes a fresh repository and
-creates one commit per successful store mutation. Git failure never invalidates the filesystem
+creates one commit per successful store mutation, limited to the record and derived index.
+Unrelated staged changes remain staged. Git failure never invalidates the filesystem
 mutation, and the adapter never pushes or manages branches.
 
 V1 assumes one writing process. Atomic replacement prevents torn individual files, but two writers

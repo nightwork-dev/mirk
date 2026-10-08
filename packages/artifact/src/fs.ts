@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, realpath, rename, rm } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 import type {
@@ -62,12 +62,19 @@ export class FileObjectStore implements ListableObjectStore {
   ): Promise<ObjectInfo> {
     assertObjectKey(key);
     const bytesPath = this.#path(key, BYTES_SUFFIX);
+    await this.#assertSafePath(bytesPath, key);
     await mkdir(dirname(bytesPath), { recursive: true });
+    await this.#assertSafePath(bytesPath, key);
 
     // `wx` gives atomic exclusive-create for ifAbsent; `w` truncates/overwrites.
     let handle;
     try {
-      handle = await open(bytesPath, options.ifAbsent ? "wx" : "w");
+      const flags =
+        constants.O_WRONLY |
+        constants.O_CREAT |
+        (options.ifAbsent ? constants.O_EXCL : constants.O_TRUNC) |
+        (constants.O_NOFOLLOW ?? 0);
+      handle = await open(bytesPath, flags);
     } catch (error) {
       if (
         options.ifAbsent &&
@@ -118,11 +125,22 @@ export class FileObjectStore implements ListableObjectStore {
   async get(key: string): Promise<ByteStream | undefined> {
     assertObjectKey(key);
     const bytesPath = this.#path(key, BYTES_SUFFIX);
+    await this.#assertSafePath(bytesPath, key);
     if (!(await this.#exists(bytesPath))) return undefined;
     return (async function* (): ByteStream {
-      // createReadStream(...,{}) yields Buffer chunks, which are Uint8Array.
-      for await (const chunk of createReadStream(bytesPath)) {
-        yield chunk as Uint8Array;
+      const handle = await open(
+        bytesPath,
+        constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
+      );
+      try {
+        const buffer = Buffer.allocUnsafe(1024 * 1024);
+        while (true) {
+          const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, null);
+          if (bytesRead === 0) break;
+          yield Uint8Array.from(buffer.subarray(0, bytesRead));
+        }
+      } finally {
+        await handle.close();
       }
     })();
   }
@@ -134,16 +152,20 @@ export class FileObjectStore implements ListableObjectStore {
     // Sidecar missing but bytes present (e.g. externally seeded): synthesize
     // the minimum ObjectInfo from the byte file's size.
     const bytesPath = this.#path(key, BYTES_SUFFIX);
-    const stats = await stat(bytesPath).catch(() => undefined);
+    await this.#assertSafePath(bytesPath, key);
+    const stats = await lstat(bytesPath).catch(() => undefined);
     return stats?.isFile() ? { key, sizeBytes: stats.size } : undefined;
   }
 
   async delete(key: string): Promise<boolean> {
     assertObjectKey(key);
     const bytesPath = this.#path(key, BYTES_SUFFIX);
+    const sidecarPath = this.#path(key, SIDECAR_SUFFIX);
+    await this.#assertSafePath(bytesPath, key);
+    await this.#assertSafePath(sidecarPath, key);
     const existed = await this.#exists(bytesPath);
     await rm(bytesPath, { force: true });
-    await rm(this.#path(key, SIDECAR_SUFFIX), { force: true });
+    await rm(sidecarPath, { force: true });
     return existed;
   }
 
@@ -185,12 +207,57 @@ export class FileObjectStore implements ListableObjectStore {
     return full;
   }
 
+  async #assertSafePath(path: string, key: string): Promise<void> {
+    // This closes static symlink escapes. It does not provide a lock against a
+    // hostile process replacing an ancestor after this check completes.
+    const root = await realpath(this.#root).catch(() => this.#root);
+    let ancestor = dirname(path);
+    while (true) {
+      if (ancestor === this.#root) {
+        ancestor = root;
+        break;
+      }
+      const resolvedAncestor = await realpath(ancestor).catch(() => undefined);
+      if (resolvedAncestor) {
+        ancestor = resolvedAncestor;
+        break;
+      }
+      const parent = dirname(ancestor);
+      if (parent === ancestor) break;
+      ancestor = parent;
+    }
+    if (!this.#withinRoot(ancestor, root))
+      throw new ArtifactValidationError(
+        "object-key-escapes-root",
+        `object key escapes store root: ${JSON.stringify(key)}`
+      );
+
+    const final = await lstat(path).catch(() => undefined);
+    if (final?.isSymbolicLink())
+      throw new ArtifactValidationError(
+        "object-key-escapes-root",
+        `object key escapes store root: ${JSON.stringify(key)}`
+      );
+    const resolved = await realpath(path).catch(() => undefined);
+    if (resolved && !this.#withinRoot(resolved, root))
+      throw new ArtifactValidationError(
+        "object-key-escapes-root",
+        `object key escapes store root: ${JSON.stringify(key)}`
+      );
+  }
+
+  #withinRoot(path: string, root: string): boolean {
+    return path === root || path.startsWith(root + sep);
+  }
+
   /** Write the sidecar atomically: a unique temp file + rename (atomic on the
    *  same filesystem). A crash never leaves a truncated/partial sidecar — the
    *  reader sees either the previous complete file or the new one. */
   async #writeSidecar(key: string, info: ObjectInfo): Promise<void> {
     const path = this.#path(key, SIDECAR_SUFFIX);
+    await this.#assertSafePath(path, key);
     await mkdir(dirname(path), { recursive: true });
+    await this.#assertSafePath(path, key);
     const tmp = `${path}.tmp-${randomUUID()}`;
     const handle = await open(tmp, "wx");
     try {
@@ -211,7 +278,11 @@ export class FileObjectStore implements ListableObjectStore {
 
   async #readSidecar(key: string): Promise<ObjectInfo | undefined> {
     const path = this.#path(key, SIDECAR_SUFFIX);
-    const handle = await open(path, "r").catch(() => undefined);
+    await this.#assertSafePath(path, key);
+    const handle = await open(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)
+    ).catch(() => undefined);
     if (!handle) return undefined;
     try {
       const text = await handle.readFile("utf-8");
@@ -226,7 +297,7 @@ export class FileObjectStore implements ListableObjectStore {
   }
 
   async #exists(path: string): Promise<boolean> {
-    const stats = await stat(path).catch(() => undefined);
+    const stats = await lstat(path).catch(() => undefined);
     return stats?.isFile() ?? false;
   }
 }

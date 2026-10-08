@@ -1,0 +1,60 @@
+{
+  "id": "artifact/lifecycle/idempotent-different-bytes",
+  "title": "idempotent different bytes",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "idempotencyKey": "request"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "b3RoZXI=",
+          "mediaType": "text/plain",
+          "idempotencyKey": "request"
+        }
+      ],
+      "expect": {
+        "throws": "idempotency key reused with incompatible bytes: artifacts:request"
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "bytes": "aGVsbG8="
+        }
+      }
+    }
+  ]
+}

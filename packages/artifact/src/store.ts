@@ -516,6 +516,8 @@ export class StoreArtifactRepository
     lease: ArtifactObjectLease;
     now?: number;
   }): Promise<ArtifactLeaseAtomicCreateResult> {
+    if (input.record.objectKey !== input.lease.objectKey)
+      return { status: "lease-lost" };
     const atomic = this.#atomic();
     const requestDigest = artifactFinalizationDigest(input.record);
     const stateKey = this.#leaseStateKey(input.lease.objectKey);
@@ -552,7 +554,11 @@ export class StoreArtifactRepository
       const record = await this.get(prior.recordId);
       return record
         ? { status: "replayed", requestDigest, record }
-        : { status: "lease-lost" };
+        : {
+            status: "conflict",
+            expectedRequestDigest: prior.requestDigest,
+            receivedRequestDigest: requestDigest,
+          };
     }
     const result = await atomic.mutateAtomically({
       conditions: [
@@ -618,6 +624,8 @@ export class StoreArtifactRepository
     lease: ArtifactObjectLease;
     now?: number;
   }): Promise<ArtifactLeaseCreateResult> {
+    if (input.record.objectKey !== input.lease.objectKey)
+      return { status: "lease-lost" };
     const atomic = this.#atomic();
     const stateKey = this.#leaseStateKey(input.lease.objectKey);
     const current = await atomic.getVersioned<LeaseState>({

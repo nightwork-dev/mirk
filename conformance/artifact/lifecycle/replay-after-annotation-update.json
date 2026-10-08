@@ -1,0 +1,66 @@
+{
+  "id": "artifact/lifecycle/replay-after-annotation-update",
+  "title": "replay after annotation update",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": 1
+          },
+          "idempotencyKey": "request"
+        }
+      ]
+    },
+    {
+      "op": "updateAnnotations",
+      "args": [
+        "artifact-1",
+        {
+          "a": 2
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": 1
+          },
+          "idempotencyKey": "request"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": 2
+          }
+        }
+      }
+    }
+  ]
+}

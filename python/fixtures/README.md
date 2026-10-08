@@ -236,15 +236,7 @@ The function `mergeStrategy` and the `validateReferences`, `extractReferences`
 and `materialize` hooks are code and cannot cross a language boundary. Each
 language pins those with its own tests.
 
-## Tests
+## Conformance
 
-```bash
-uv sync --group dev
-uv run pytest -q
-uv run pyright
-uv run ruff check .
-uv run ruff format --check .
-```
-
-`python/` is a uv workspace, so these run the same from either member and share
-one lockfile.
+The shared fixture scenarios run against the memory and SQLite backends in both
+languages. Contributor setup and test commands are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).

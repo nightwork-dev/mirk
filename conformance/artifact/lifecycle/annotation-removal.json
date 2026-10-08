@@ -1,0 +1,71 @@
+{
+  "id": "artifact/lifecycle/annotation-removal",
+  "title": "annotation removal",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "removeAnnotations",
+      "args": [
+        "artifact-1",
+        [
+          "a"
+        ]
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "artifacts/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "dcd4b1dd848bf1af330c558014726ce11bb1498b6583dc44870560b6b47f9e02",
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "artifacts/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "dcd4b1dd848bf1af330c558014726ce11bb1498b6583dc44870560b6b47f9e02",
+          "mediaType": "text/plain"
+        }
+      }
+    }
+  ]
+}

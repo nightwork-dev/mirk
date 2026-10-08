@@ -1,0 +1,58 @@
+{
+  "id": "artifact/lifecycle/binary-bytes",
+  "title": "binary bytes",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "AAECf4D/",
+          "mediaType": "application/octet-stream"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "da2cb6ad175bc966de5e79c6e16777f8a98b610c2424a894132df2815be50677"
+          },
+          "sizeBytes": 6,
+          "mediaType": "application/octet-stream"
+        }
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "da2cb6ad175bc966de5e79c6e16777f8a98b610c2424a894132df2815be50677"
+            },
+            "sizeBytes": 6,
+            "mediaType": "application/octet-stream"
+          },
+          "bytes": "AAECf4D/"
+        }
+      }
+    }
+  ]
+}

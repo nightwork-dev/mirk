@@ -1,0 +1,84 @@
+{
+  "id": "markdown/strict-scalar-filtering",
+  "title": "strict scalar filtering",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "value": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "b",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "c",
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "where": {
+            "value": true
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "where": {
+            "value": 1
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "b",
+            "value": 1
+          }
+        ]
+      }
+    }
+  ]
+}

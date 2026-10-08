@@ -1,0 +1,63 @@
+{
+  "id": "markdown/non-scalar-filters-do-not-match-copied-records",
+  "title": "non scalar filters do not match copied records",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "values": [
+            1
+          ],
+          "nested": {
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "where": {
+            "values": [
+              1
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "where": {
+            "nested": {
+              "a": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

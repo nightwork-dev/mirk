@@ -1,0 +1,62 @@
+{
+  "id": "markdown/kv-scalar-and-array-values",
+  "title": "kv scalar and array values",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "text",
+        "yes"
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "items",
+        [
+          true,
+          1,
+          "1",
+          {
+            "nested": false
+          }
+        ]
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "text"
+      ],
+      "expect": {
+        "value": "yes"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "value": [
+          true,
+          1,
+          "1",
+          {
+            "nested": false
+          }
+        ]
+      }
+    }
+  ]
+}

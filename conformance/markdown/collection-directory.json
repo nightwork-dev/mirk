@@ -1,0 +1,52 @@
+{
+  "id": "markdown/collection-directory",
+  "title": "collection directory",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "collections": {
+            "things": {
+              "directory": "records/items"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": [
+          "records/items/a.md"
+        ]
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a"
+        }
+      }
+    }
+  ]
+}

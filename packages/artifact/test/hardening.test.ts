@@ -7,15 +7,33 @@ import {
   ArtifactConflictError,
   ArtifactCoordinator,
   ArtifactMaintenance,
+  ArtifactValidationError,
   InMemoryArtifactRepository,
   InMemoryObjectStore,
+  assertPortableMetadata,
   artifactFinalizationDigest,
 } from "../src/index.js";
+import type { ArtifactLeaseResult } from "../src/index.js";
 import { StoreArtifactRepository } from "../src/store.js";
 
 const bytes = (value: string) => new TextEncoder().encode(value);
 
 describe("artifact finalization hardening", () => {
+  it("rejects a non-string producer system with the typed validation error", () => {
+    expect(() =>
+      assertPortableMetadata({
+        mediaType: "text/plain",
+        producer: { system: 17 } as never,
+      })
+    ).toThrow(ArtifactValidationError);
+    expect(() =>
+      assertPortableMetadata({
+        mediaType: "text/plain",
+        producer: { system: 17 } as never,
+      })
+    ).toThrowError(expect.objectContaining({ code: "invalid-producer" }));
+  });
+
   it("computes a stable Mirk finalization digest and atomically replays", async () => {
     const repository = new StoreArtifactRepository(toAsync(new InMemoryKv()));
     const objects = new InMemoryObjectStore();
@@ -275,6 +293,149 @@ describe("artifact finalization hardening", () => {
     const plan = await maintenance.planRepair(report);
 
     await expect(maintenance.applyRepair(plan)).rejects.toBe(unavailable);
+  });
+
+  it("keeps an existing object when head fails before a put begins", async () => {
+    const unavailable = new Error("head unavailable");
+    class HeadFailingObjects extends InMemoryObjectStore {
+      fail = true;
+      override async head(key: string) {
+        if (this.fail) throw unavailable;
+        return super.head(key);
+      }
+    }
+    const objects = new HeadFailingObjects();
+    await objects.put("artifacts/fixed", bytes("existing"));
+    const coordinator = new ArtifactCoordinator(
+      objects,
+      new InMemoryArtifactRepository(),
+      { idFactory: () => "fixed" }
+    );
+    await expect(
+      coordinator.write({ bytes: bytes("replacement"), mediaType: "text/plain" })
+    ).rejects.toBe(unavailable);
+    objects.fail = false;
+    expect(await objects.get("artifacts/fixed")).toBeDefined();
+  });
+
+  it("uses an exclusive lease before deleting bytes when a writer races", async () => {
+    class RacingRepository extends InMemoryArtifactRepository {
+      raced = false;
+      override async acquireObjectLease(
+        input: Parameters<InMemoryArtifactRepository["acquireObjectLease"]>[0]
+      ): Promise<ArtifactLeaseResult> {
+        if (input.mode === "exclusive-delete" && !this.raced) {
+          this.raced = true;
+          await super.acquireObjectLease({
+            objectKey: input.objectKey,
+            ownerId: "racing-writer",
+            mode: "shared-writer",
+            ttlMs: input.ttlMs,
+            now: input.now,
+          });
+        }
+        return super.acquireObjectLease(input);
+      }
+    }
+    const objects = new InMemoryObjectStore();
+    const repository = new RacingRepository();
+    const coordinator = new ArtifactCoordinator(
+      objects,
+      repository,
+      { idFactory: () => "raced" }
+    );
+    const artifact = await coordinator.write({
+      bytes: bytes("value"),
+      mediaType: "text/plain",
+    });
+    await expect(coordinator.delete(artifact.id)).rejects.toMatchObject({
+      code: "object-deletion-failed",
+    });
+    expect(await repository.get(artifact.id)).toBeUndefined();
+    expect(await objects.head("artifacts/raced")).toBeDefined();
+  });
+
+  it("renews the delete lease after the final reference scan", async () => {
+    let now = 1_000;
+    class ExpiringRepository extends InMemoryArtifactRepository {
+      scans = 0;
+      override async list(
+        query: Parameters<InMemoryArtifactRepository["list"]>[0] = {}
+      ): ReturnType<InMemoryArtifactRepository["list"]> {
+        const page = await super.list(query);
+        this.scans += 1;
+        if (this.scans === 2) {
+          now = 2_000;
+          const importer = new ArtifactCoordinator(objects, this, {
+            idFactory: () => "imported",
+            now: () => now,
+            ownerId: "importer",
+            leaseTtlMs: 10,
+          });
+          await importer.import({
+            objectKey: "artifacts/target",
+            mediaType: "text/plain",
+          });
+        }
+        return page;
+      }
+    }
+    const objects = new InMemoryObjectStore();
+    const repository = new ExpiringRepository({ now: () => now });
+    const coordinator = new ArtifactCoordinator(objects, repository, {
+      idFactory: () => "target",
+      now: () => now,
+      ownerId: "deleter",
+      leaseTtlMs: 10,
+    });
+    const artifact = await coordinator.write({
+      bytes: bytes("value"),
+      mediaType: "text/plain",
+    });
+    await expect(coordinator.delete(artifact.id)).rejects.toMatchObject({
+      code: "object-deletion-failed",
+    });
+    expect(await repository.get("imported")).toBeDefined();
+    expect(await objects.head("artifacts/target")).toBeDefined();
+  });
+
+  it("renews the repair lease after the final reference and digest checks", async () => {
+    let now = 1_000;
+    class ExpiringRepository extends InMemoryArtifactRepository {
+      scans = 0;
+      override async list(
+        query: Parameters<InMemoryArtifactRepository["list"]>[0] = {}
+      ): ReturnType<InMemoryArtifactRepository["list"]> {
+        const page = await super.list(query);
+        this.scans += 1;
+        if (this.scans === 3) {
+          now = 2_000;
+          const importer = new ArtifactCoordinator(objects, this, {
+            idFactory: () => "imported",
+            now: () => now,
+            ownerId: "importer",
+            leaseTtlMs: 10,
+          });
+          await importer.import({ objectKey: "orphan", mediaType: "text/plain" });
+        }
+        return page;
+      }
+    }
+    const objects = new InMemoryObjectStore();
+    const repository = new ExpiringRepository({ now: () => now });
+    await objects.put("orphan", bytes("orphan"));
+    const maintenance = new ArtifactMaintenance(objects, repository, {
+      now: () => now,
+      leaseTtlMs: 10,
+      auditIdFactory: () => "audit",
+    });
+    const report = await maintenance.audit();
+    repository.scans = 0;
+    const plan = await maintenance.planRepair(report);
+    const [result] = await maintenance.applyRepair(plan);
+    expect(result).toMatchObject({ status: "conflict", reason: "lease-unavailable" });
+    expect(await repository.get("imported")).toBeDefined();
+    expect(await objects.head("orphan")).toBeDefined();
   });
 });
 

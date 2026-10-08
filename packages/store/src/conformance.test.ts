@@ -21,6 +21,7 @@ import {
 } from "./conformance/backends.js";
 import {
   executeStep,
+  backendsForPorts,
   targetKindFor,
   unsupportedPorts,
   type BackendName,
@@ -46,10 +47,10 @@ const CORPUS_DIR = process.env.MIRK_CONFORMANCE_DIR
 if (CORPUS_DIR !== DEFAULT_CORPUS_DIR) {
   console.log(`conformance corpus overridden by MIRK_CONFORMANCE_DIR: ${CORPUS_DIR}`);
 }
-const BACKENDS: BackendName[] = ["memory", "sqlite"];
+const BACKENDS: BackendName[] = ["memory", "sqlite", "markdown"];
 /** Directories the generator owns. A directory that exists must carry at least
  *  one scenario AND have at least one of them executed by every backend. */
-const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures"] as const;
+const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures", "markdown"] as const;
 
 function jsonFiles(dir: string): string[] {
   const out: string[] = [];
@@ -198,7 +199,8 @@ describe("conformance corpus", () => {
     for (const backend of BACKENDS) {
       const have = backendCapabilities(backend);
       console.log(`conformance capabilities: ${backend} -> ${have.join(", ") || "(none)"}`);
-      expect(have.length, `${backend} reports no capabilities`).toBeGreaterThan(0);
+      if (backend === "markdown") expect(have).toEqual([]);
+      else expect(have.length, `${backend} reports no capabilities`).toBeGreaterThan(0);
     }
     // The gate is only meaningful if something in the corpus goes through it.
     expect(
@@ -216,6 +218,7 @@ describe("conformance corpus", () => {
 for (const backend of BACKENDS) {
   describe(backend, () => {
     for (const { relativePath, scenario } of scenarios) {
+      if (!backendsForPorts(scenario.ports).includes(backend)) continue;
       const name = `${backend} ${scenario.id}`;
       it(name, async () => {
         // No skip path. Both TypeScript backends implement every port, so a
@@ -274,7 +277,8 @@ afterAll(() => {
   const present = new Set(scenarios.map(({ relativePath }) => relativePath.split("/")[0]));
   for (const dir of KNOWN_DIRS) {
     if (!present.has(dir)) continue;
-    for (const backend of BACKENDS) {
+    const selected = new Set(scenarios.filter(({ relativePath }) => relativePath.startsWith(`${dir}/`)).flatMap(({ scenario }) => backendsForPorts(scenario.ports)));
+    for (const backend of selected) {
       expect(
         executed[backend]?.[dir] ?? 0,
         `${backend} executed no scenario from conformance/${dir}`,
@@ -320,6 +324,13 @@ describe("ajvValidatorFactory", () => {
 });
 
 describe("targetKindFor", () => {
+  it("selects the filesystem backend only for the Markdown adapter contract", () => {
+    expect(backendsForPorts(["store_markdown"])).toEqual(["markdown"]);
+    expect(backendsForPorts(["atomic"])).toEqual(["memory", "sqlite"]);
+    expect(unsupportedPorts("markdown", ["atomic"])).toEqual(["atomic"]);
+    expect(unsupportedCapabilities("markdown", ["listWhereIn"])).toEqual(["listWhereIn"]);
+    expect(targetKindFor(["store_markdown"])).toBe("store_markdown");
+  });
   it("resolves the single non-store port", () => {
     expect(targetKindFor(["fixtures"])).toBe("fixtures");
     expect(targetKindFor(["kv", "collection", "atomic"])).toBe("store");

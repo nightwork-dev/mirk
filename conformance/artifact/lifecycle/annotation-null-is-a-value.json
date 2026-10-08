@@ -1,0 +1,81 @@
+{
+  "id": "artifact/lifecycle/annotation-null-is-a-value",
+  "title": "annotation null is a value",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "updateAnnotations",
+      "args": [
+        "artifact-1",
+        {
+          "a": null,
+          "b": "new"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "artifacts/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "dcd4b1dd848bf1af330c558014726ce11bb1498b6583dc44870560b6b47f9e02",
+          "mediaType": "text/plain",
+          "annotations": {
+            "a": null,
+            "b": "new"
+          }
+        }
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain",
+            "annotations": {
+              "a": null,
+              "b": "new"
+            }
+          },
+          "bytes": "aGVsbG8="
+        }
+      }
+    }
+  ]
+}

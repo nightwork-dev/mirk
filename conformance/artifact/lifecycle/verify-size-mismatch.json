@@ -1,0 +1,59 @@
+{
+  "id": "artifact/lifecycle/verify-size-mismatch",
+  "title": "verify size mismatch",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "artifacts/artifact-1",
+        "bG9uZ2Vy"
+      ]
+    },
+    {
+      "op": "verify",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "ok": false,
+          "reason": "size-mismatch",
+          "actualDigest": {
+            "algorithm": "sha256",
+            "value": "73834addcec75fafd7d73717ca1614a1324652ffa70b4b6c44fa359ae5a69dab"
+          },
+          "actualSizeBytes": 6
+        }
+      }
+    }
+  ]
+}

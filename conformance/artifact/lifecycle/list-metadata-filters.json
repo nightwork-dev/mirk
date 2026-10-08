@@ -1,0 +1,105 @@
+{
+  "id": "artifact/lifecycle/list-metadata-filters",
+  "title": "list metadata filters",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "kind": "source",
+          "producer": {
+            "system": "test",
+            "jobId": "job",
+            "attemptId": "attempt",
+            "outputSlot": "text"
+          }
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "application/json"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        {
+          "mediaTypePrefix": "text/",
+          "kind": "source",
+          "producerSystem": "test",
+          "producerJobId": "job",
+          "producerAttemptId": "attempt",
+          "producerOutputSlot": "text"
+        }
+      ],
+      "expect": {
+        "value": {
+          "items": [
+            {
+              "id": "artifact-1",
+              "objectKey": "artifacts/artifact-1",
+              "createdAt": 1000,
+              "digest": {
+                "algorithm": "sha256",
+                "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+              },
+              "sizeBytes": 5,
+              "idempotencyFingerprint": "4b31b957696e8ff5fbdc2fbd121eff362319e45a9ea6a8d45526999b196e9798",
+              "mediaType": "text/plain",
+              "kind": "source",
+              "producer": {
+                "system": "test",
+                "jobId": "job",
+                "attemptId": "attempt",
+                "outputSlot": "text"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        {
+          "mediaType": "application/json"
+        }
+      ],
+      "expect": {
+        "value": {
+          "items": [
+            {
+              "id": "artifact-2",
+              "objectKey": "artifacts/artifact-2",
+              "createdAt": 1000,
+              "digest": {
+                "algorithm": "sha256",
+                "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+              },
+              "sizeBytes": 5,
+              "idempotencyFingerprint": "40257845585cb50273a49afffae91d9e085907538ddbc07ee52edc204da5b51b",
+              "mediaType": "application/json"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

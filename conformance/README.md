@@ -1,15 +1,15 @@
 # Mirk conformance corpus
 
-The language-neutral contract for `@mirk/store`. The TypeScript suite and the
-Python suite each replay every scenario here against every backend they
-implement. **A behavior that is not in the corpus is not contractual.**
+The shared behavioral contract for Mirk's storage, artifact, and fixture ports.
+The TypeScript and Python suites replay each scenario on its declared backend
+matrix. Markdown scenarios use a separate filesystem backend.
 
 ## Generated, not authored
 
 These files are written by
 `packages/store/scripts/gen-conformance.ts` and by nothing else. Scenario
 *inputs* are declared in `packages/store/scripts/scenarios/`; every `expect`
-value is whatever the TypeScript in-memory reference produces right now.
+value comes from the current TypeScript reference for that scenario's port.
 
 - **Do not hand-edit a scenario file.** Change the scenario input and
   regenerate: `pnpm conformance:gen`.
@@ -25,8 +25,8 @@ value is whatever the TypeScript in-memory reference produces right now.
   every runner would happily replay — and wrong for a check. The gate's verdict
   depends on working-tree state, so it must never be cached.
 
-Two refusals keep a generated corpus from laundering a bug. Every scenario runs
-against both the in-memory reference and the SQLite adapter, and generation
+Two refusals keep a generated corpus from laundering a bug. Every shared-store
+scenario runs against both the in-memory reference and the SQLite adapter, and generation
 fails with the scenario id, the step and the diff if they disagree — a
 divergence is a bug in one backend, not a corpus option. A step marked `throws`
 that does not throw also fails generation, so a validation rule that stops
@@ -44,7 +44,7 @@ While drafting a scenario, generate somewhere else and read the result:
 pnpm --filter @mirk/store conformance:gen --out /tmp/my-corpus
 ```
 
-That runs every check the real generation runs — both backends, both refusals —
+That runs every check the real generation runs for the selected backends
 and writes nothing here. Commit the scenario input; the shared corpus is
 regenerated once, from all the inputs together.
 
@@ -61,6 +61,8 @@ conformance/
   graph/*.json           graph traversal scenarios
   artifact/hashing/canonical-json/*.json   canonical text and its digest
   artifact/hashing/bytes/*.json            content digests over raw bytes
+  artifact/lifecycle/*.json                artifact records, lineage, leases, and maintenance
+  markdown/*.json                         Markdown files, YAML, sections, indexes, and errors
   fixtures/**/*.json     authored-data loader scenarios
 ```
 
@@ -123,8 +125,8 @@ Rules:
 - Tie-break order everywhere (collection sort, vector results, search results,
   graph nodes and edges) is Unicode code point order of the id.
 - `ports` names the ports a scenario touches. `capabilities` names the optional
-  capabilities it needs. Both are HARD gates in both languages, never skips —
-  see "Ports and capabilities are hard gates" below.
+  capabilities it needs. Both are hard gates in the generated corpus and in the
+  accepted test run — see "Ports and capabilities are hard gates" below.
 - **A scenario asserts something.** At least one step carries an `expect`. A file
   made only of setup steps replays green forever while checking nothing, so both
   the generator and every runner refuse it by id: `scenario <id> asserts
@@ -154,21 +156,26 @@ Rules:
 
 ## Ports and capabilities are hard gates
 
-A runner that cannot satisfy a scenario's `ports` or `capabilities` **fails that
-scenario and names what is missing**. It never skips and never silently passes.
-A skip lets a typo in `ports`, or a capability that quietly stopped loading,
-retire a scenario from every backend at once — which is the exact failure the
-corpus exists to prevent.
+A runner that cannot satisfy a scenario's `ports` or `capabilities` reports the
+missing item. The generator fails immediately. The Python replay records a
+skip so that the test report names the missing target, then fails the run unless
+the port is explicitly allowed. The current allow-list is empty.
 
-- `ports` are the eight port names. Five bind a backend: `kv`, `collection`,
-  `vector`, `search`, `graph`. `atomic` binds the same object as `kv` and
-  `collection` and adds `getVersioned` and `mutateAtomically` to it. `hash`
-  binds a pure target with no backend behind it — `canonicalJson`,
-  `canonicalDigest`, `sha256Hex(text)` and `sha256Bytes(bytes)` — which is why
-  a `hash` scenario produces the same result under every backend name and is
-  still run under each of them. `fixtures` binds an authored-data loader over
-  the backend store, described below. Every backend in both languages
-  implements all eight, so an unsatisfiable port is a corpus error.
+A skipped case cannot retire a scenario from the accepted run. This rule catches
+both a typo in `ports` and a capability that stopped loading.
+
+- `ports` are the ten port names. `kv`, `collection`, `atomic`, `hash`,
+  `vector`, `search`, `graph`, `fixtures`, and `artifact` run on the memory and
+  SQLite backends. `store_markdown` runs on the separate `markdown` filesystem
+  backend. The runner uses `store` as the internal target kind for store-only
+  scenarios; scenario inputs use the specific store port names.
+- `hash` binds a pure target with no backend behind it: `canonicalJson`,
+  `canonicalDigest`, `sha256Hex(text)` and `sha256Bytes(bytes)`. A hash scenario
+  still runs on both shared-store backends so the matrix checks dispatch.
+- `fixtures` binds an authored-data loader over the backend store, described
+  below. `artifact` binds the artifact lifecycle coordinator over the backend
+  store and an object store. An unsatisfiable port on a selected backend is a
+  corpus error.
 - `capabilities` are the optional ones. The only known name today is
   `listWhereIn`; anything else is a typo and fails the same way. Each runner
   declares, per backend, which capabilities that backend has **right now**,
@@ -186,9 +193,44 @@ corpus exists to prevent.
 - Generation applies the same rule, so a scenario that no backend can honestly
   run never reaches the corpus.
 
-Each runner reports the capability set it found per backend, so a silently
-degraded environment (sqlite-vec missing from CI, say) is visible in the log
-rather than inferred from a suspiciously fast green.
+Each runner reports the capability set it found per backend, so a degraded
+environment is visible in the log rather than inferred from a suspiciously fast
+green run.
+
+## The `store_markdown` port
+
+Markdown scenarios use a fresh temporary directory in each language.
+They run once on the `markdown` backend, not on the memory/SQLite matrix.
+The generator derives expectations from the TypeScript Markdown adapter.
+Python replays those cases and exchanges actual files with TypeScript in its integration tests.
+
+The target begins with `configure(spec)` and exposes the ordinary synchronous store methods.
+It also exposes file setup and inspection helpers for manual edits.
+The `notes` preset supplies equivalent filename and index callbacks in both languages.
+Other callable hooks remain in language-local tests.
+
+The corpus compares parsed values, comment and section survival, stable error codes, and relative corruption paths.
+YAML engine error messages and serializer formatting are not portable contracts.
+The `failure` helper must observe an exception. Unexpected success fails generation and replay.
+Markdown declares no atomic mutation, lease, vector, search, or `listWhereIn` capability.
+
+## The `artifact` port
+
+The artifact target starts with `configure(spec)`. The specification can set the artifact IDs,
+clock, namespace, and concurrency mode. Lifecycle steps then cover writes, imports, reads,
+verification, idempotent replay and conflict, annotation updates, lineage, deletion, leases,
+maintenance audits, repair plans, and conditional repair.
+
+JSON has no byte type. The target therefore uses base64 strings for every byte field:
+
+- `write` uses `bytes` as base64 input.
+- `read` returns `bytes` as base64 output.
+- `putObject` uses its value as base64 input.
+
+Artifact projections omit physical `objectKey` values and internal receipt fields. The target runs
+against the in-memory and SQLite metadata repositories in both languages. The object-store target
+uses the in-memory object store for lifecycle scenarios; the Python package also verifies the
+filesystem adapter through the TypeScript exchange test.
 
 ## The `fixtures` port
 

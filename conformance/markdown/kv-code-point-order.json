@@ -1,0 +1,56 @@
+{
+  "id": "markdown/kv-code-point-order",
+  "title": "kv code point order",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "🌱",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "�",
+        2
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "a",
+        3
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "B",
+        4
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "B",
+          "a",
+          "�",
+          "🌱"
+        ]
+      }
+    }
+  ]
+}

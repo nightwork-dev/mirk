@@ -1,0 +1,58 @@
+{
+  "id": "artifact/lifecycle/exclusive-lease-excludes-writers",
+  "title": "exclusive lease excludes writers",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "exclusive-delete",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "lease": {
+            "leaseId": "lease-1",
+            "ownerId": "writer",
+            "objectKey": "orphan",
+            "mode": "exclusive-delete",
+            "generation": 0,
+            "heartbeatAt": 1000,
+            "expiresAt": 1010
+          }
+        }
+      }
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "other",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "reason": "exclusive-held"
+        }
+      }
+    }
+  ]
+}

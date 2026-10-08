@@ -1,0 +1,40 @@
+{
+  "id": "artifact/lifecycle/non-string-producer-system",
+  "title": "non string producer system",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "producer": {
+            "system": 17
+          }
+        }
+      ],
+      "expect": {
+        "throws": "producer.system must be non-empty"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

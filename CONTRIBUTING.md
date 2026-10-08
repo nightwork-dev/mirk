@@ -7,18 +7,40 @@ pnpm install
 pnpm build          # tsup, per package
 pnpm test           # vitest — real backends, real persistence, real assertions
 pnpm -r typecheck
-pnpm docs:check     # relative links and public package metadata
+pnpm docs:check     # public links, package metadata, and workspace READMEs
 ```
 
-The Python port is a uv workspace at `python/` with members `store` and `fixtures`. Run each
-member's gates from inside it:
+The Python port is a uv workspace at `python/` with members `store`, `fixtures`, `artifact`,
+`store-markdown`, and `artifact-opendal`.
+Run each member's gates from inside it:
 
 ```bash
-cd python/store     # or python/fixtures
+cd python
+uv sync --all-packages --locked --group dev
+cd store             # or another workspace member
 uv run pytest -q
 uv run pyright
 uv run ruff check .
 ```
+
+The artifact and Markdown packages run TypeScript exchange tests. These tests rebuild their
+TypeScript dependencies. Run package tests sequentially to avoid competing writes to `dist`.
+
+The S3 integration test requires a real service. The supplied harness starts an isolated MinIO
+server, creates a temporary bucket, runs the configured tests, and stops the server:
+
+```bash
+python3 scripts/run-python-s3-tests.py
+```
+
+The harness builds a pinned MinIO source release when `MINIO_BINARY` is unset. This requires Go.
+It does not use cloud credentials or a production bucket. The separate S3 CI job runs the same proof.
+
+The direct OpenDAL S3 integration tests use these explicit settings:
+`MIRK_OPENDAL_S3_ENDPOINT`, `MIRK_OPENDAL_S3_BUCKET`,
+`MIRK_OPENDAL_S3_ACCESS_KEY_ID`, and `MIRK_OPENDAL_S3_SECRET_ACCESS_KEY`.
+`MIRK_OPENDAL_S3_REGION` is optional. The tests do not access cloud resources
+without these settings.
 
 ## The conformance corpus
 
@@ -56,4 +78,4 @@ pnpm release:receipt -- --all   # the same checks, requiring a clean source tree
 
 `release:receipt` writes a receipt that names the source commit and the number of tests each
 package executed. `@mirk/store-postgres` needs `MIRK_POSTGRES_TEST_URL` pointing at a live
-PostgreSQL; without it the suite skips and no receipt is written.
+PostgreSQL; the publication receipt refuses that package unless its integration tests execute.

@@ -1,0 +1,59 @@
+{
+  "id": "markdown/kv-alias-cannot-read-or-delete-another-key",
+  "title": "kv alias cannot read or delete another key",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "Catalog",
+        "preserved"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "catalog"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "catalog"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "delete",
+      "args": [
+        "catalog"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "Catalog"
+      ],
+      "expect": {
+        "value": "preserved"
+      }
+    }
+  ]
+}

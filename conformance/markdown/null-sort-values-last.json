@@ -1,0 +1,94 @@
+{
+  "id": "markdown/null-sort-values-last",
+  "title": "null sort values last",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "rank": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "b",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "c"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "sortBy": "rank"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "b",
+            "rank": 1
+          },
+          {
+            "id": "a",
+            "rank": null
+          },
+          {
+            "id": "c"
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "sortBy": "rank",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "b",
+            "rank": 1
+          },
+          {
+            "id": "a",
+            "rank": null
+          },
+          {
+            "id": "c"
+          }
+        ]
+      }
+    }
+  ]
+}

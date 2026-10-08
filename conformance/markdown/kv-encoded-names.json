@@ -1,0 +1,68 @@
+{
+  "id": "markdown/kv-encoded-names",
+  "title": "kv encoded names",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "../x",
+        1
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "é/🌱",
+        2
+      ]
+    },
+    {
+      "op": "keys",
+      "args": [],
+      "expect": {
+        "value": [
+          "../x",
+          "é/🌱"
+        ]
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "../x"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "é/🌱"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": [
+          ".mirk-kv/~Li4veA.md",
+          ".mirk-kv/~w6kv8J-MsQ.md"
+        ]
+      }
+    }
+  ]
+}

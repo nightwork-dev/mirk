@@ -1,0 +1,76 @@
+{
+  "id": "markdown/record-order-is-id-order",
+  "title": "record order is id order",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "z",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "rank": 2
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things"
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a",
+            "rank": 2
+          },
+          {
+            "id": "z",
+            "rank": 1
+          }
+        ]
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "rank": 2
+        }
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "things"
+      ],
+      "expect": {
+        "value": 2
+      }
+    }
+  ]
+}

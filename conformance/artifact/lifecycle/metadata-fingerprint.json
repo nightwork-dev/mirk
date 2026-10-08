@@ -1,0 +1,31 @@
+{
+  "id": "artifact/lifecycle/metadata-fingerprint",
+  "title": "metadata fingerprint",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "metadataFingerprint",
+      "args": [
+        {
+          "z": 1,
+          "a": {
+            "😀": 2,
+            "�": 3
+          }
+        }
+      ],
+      "expect": {
+        "value": "597fd382511e727d56b4ad8eedacdcc22fac45c86a39b39907d4afe811c088df"
+      }
+    }
+  ]
+}

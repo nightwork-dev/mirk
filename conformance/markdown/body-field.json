@@ -1,0 +1,69 @@
+{
+  "id": "markdown/body-field",
+  "title": "body field",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "collections": {
+            "things": {
+              "body": {
+                "field": "content"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "title": "Hello",
+          "content": "  A body.  "
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "title": "Hello",
+          "content": "\nA body."
+        }
+      }
+    },
+    {
+      "op": "fileContains",
+      "args": [
+        "things/a.md",
+        "A body."
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "fileContains",
+      "args": [
+        "things/a.md",
+        "content:"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

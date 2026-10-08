@@ -1,0 +1,64 @@
+{
+  "id": "artifact/lifecycle/lease-wrong-owner",
+  "title": "lease wrong owner",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ]
+    },
+    {
+      "op": "releaseObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "other",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010
+        }
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "renewObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "other",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "unavailable",
+          "reason": "expired"
+        }
+      }
+    }
+  ]
+}

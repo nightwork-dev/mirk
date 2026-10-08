@@ -1,0 +1,56 @@
+{
+  "id": "artifact/lifecycle/lineage-missing-source-rolls-back",
+  "title": "lineage missing source rolls back",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "sources": [
+            {
+              "artifactId": "missing",
+              "operation": "copy"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "throws": "artifact metadata commit failed"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 0,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

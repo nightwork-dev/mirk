@@ -285,12 +285,52 @@ export class ArtifactCoordinator {
     if (!record) return false;
     if (!(await this.repository.delete(id))) return false;
     if (await this.#hasObjectReference(record.objectKey)) return true;
-    if (!(await this.objects.delete(record.objectKey)))
-      throw new ArtifactOperationError(
-        "object-deletion-failed",
-        `artifact metadata deleted but object deletion failed: ${id}`
-      );
-    return true;
+    let lease: ArtifactObjectLease | undefined;
+    if (this.isLeaseRepository()) {
+      const result = await (
+        this.repository as ArtifactRepository & ArtifactLeaseRepository
+      ).acquireObjectLease({
+        objectKey: record.objectKey,
+        ownerId: this.#ownerId,
+        mode: "exclusive-delete",
+        ttlMs: this.#leaseTtlMs,
+        now: this.#now(),
+      });
+      if (result.status !== "acquired") {
+        if (result.reason === "reference-created") return true;
+        throw new ArtifactOperationError(
+          "object-deletion-failed",
+          `artifact metadata deleted but object deletion lease unavailable: ${id}`
+        );
+      }
+      lease = result.lease;
+    }
+    try {
+      if (await this.#hasObjectReference(record.objectKey)) return true;
+      if (lease) {
+        const renewed = await (
+          this.repository as ArtifactRepository & ArtifactLeaseRepository
+        ).renewObjectLease({
+          ...lease,
+          ttlMs: this.#leaseTtlMs,
+          now: this.#now(),
+        });
+        if (renewed.status !== "acquired")
+          throw new ArtifactOperationError(
+            "object-deletion-failed",
+            `artifact metadata deleted but object deletion lease lost: ${id}`
+          );
+        lease = renewed.lease;
+      }
+      if (!(await this.objects.delete(record.objectKey)))
+        throw new ArtifactOperationError(
+          "object-deletion-failed",
+          `artifact metadata deleted but object deletion failed: ${id}`
+        );
+      return true;
+    } finally {
+      if (lease) await this.#releaseLease(lease);
+    }
   }
 
   async #hasObjectReference(objectKey: string): Promise<boolean> {

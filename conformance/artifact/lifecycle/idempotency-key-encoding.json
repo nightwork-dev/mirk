@@ -1,0 +1,50 @@
+{
+  "id": "artifact/lifecycle/idempotency-key-encoding",
+  "title": "idempotency key encoding",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "namespace": "document space"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "idempotencyKey": "a:b/é"
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "document space/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+          "mediaType": "text/plain",
+          "idempotencyKey": "document%20space:a%3Ab%2F%C3%A9",
+          "idempotencyFinalizationDigest": "c46e958933f8d36f4672d633c2434de08e68702b34a886f11b1b3d4f8c6d76de"
+        }
+      }
+    }
+  ]
+}

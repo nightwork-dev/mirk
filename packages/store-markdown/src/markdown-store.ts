@@ -8,10 +8,11 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 import { compareCodePoints } from "@mirk/store";
 import type { StoreFilter, StoreMeta, SyncStore } from "@mirk/store/kv";
+import { caseFold } from "unicode-case-folding";
 import { Document, isMap, parseDocument } from "yaml";
 
 export interface MarkdownSectionConfig {
@@ -135,12 +136,17 @@ export class MarkdownStore implements SyncStore {
   }
 
   set<T>(key: string, value: T): void {
+    assertRecordId(key);
     const directory = join(this.rootDir, KV_COLLECTION);
     mkdirSync(directory, { recursive: true });
     const path = join(directory, `${encodeName(key)}.md`);
+    const existingRecords = existsSync(directory) ? this.readDirectory(directory, defaultConfig()) : [];
+    const alias = existingRecords.find((record) => filenameAlias(basename(record.path)) === filenameAlias(basename(path)) && record.item.id !== key);
+    if (alias)
+      throw new MarkdownStoreError("filename-collision", `Markdown filename collision: ${path} already belongs to record ${String(alias.item.id)}.`);
     const existing = existsSync(path) ? this.parseRecord(path, defaultConfig()) : undefined;
     this.writeRecord(path, { id: key, value }, defaultConfig(), existing?.raw);
-    this.commit({ operation: "set", key });
+    this.commit({ operation: "set", key }, [path]);
   }
 
   has(key: string): boolean {
@@ -148,10 +154,11 @@ export class MarkdownStore implements SyncStore {
   }
 
   delete(key: string): boolean {
-    const path = join(this.rootDir, KV_COLLECTION, `${encodeName(key)}.md`);
-    if (!existsSync(path)) return false;
+    const record = this.readKvRecord(key);
+    if (record === null) return false;
+    const path = record.path;
     rmSync(path);
-    this.commit({ operation: "delete", key });
+    this.commit({ operation: "delete", key }, [path]);
     return true;
   }
 
@@ -176,7 +183,9 @@ export class MarkdownStore implements SyncStore {
     if (!existsSync(directory)) return null;
     if (config.fileName === undefined) {
       const path = join(directory, `${encodeName(id)}.md`);
-      return existsSync(path) ? this.parseRecord(path, config).item as T : null;
+      if (!existsSync(path)) return null;
+      const record = this.parseRecord(path, config);
+      return record.item.id === id ? record.item as T : null;
     }
     return this.readDirectory(directory, config).find((record) => record.item.id === id)?.item as T ?? null;
   }
@@ -184,29 +193,39 @@ export class MarkdownStore implements SyncStore {
   put<T extends { id: string }>(collection: string, item: T): T {
     assertRecordId(item.id);
     const config = this.configFor(collection);
+    const indexName = this.indexFileName(config);
     const directory = this.directoryFor(collection, config);
+    this.validateIndexDestination(directory, indexName);
     mkdirSync(directory, { recursive: true });
     const records = this.readDirectory(directory, config);
     const existing = records.find((record) => record.item.id === item.id);
-    const path = existing?.path ?? join(directory, this.newFileName(item, config));
+    const candidateName = this.newFileName(item, config);
+    if (existing === undefined) {
+      const alias = records.find((record) => filenameAlias(basename(record.path)) === filenameAlias(candidateName));
+      if (alias)
+        throw new MarkdownStoreError("filename-collision", `Markdown filename collision: ${candidateName} already belongs to record ${String(alias.item.id)}.`);
+    }
+    const path = existing?.path ?? join(directory, candidateName);
     if (existing === undefined && existsSync(path)) {
       const occupant = this.parseRecord(path, config);
       throw new MarkdownStoreError("filename-collision", `Markdown filename collision: ${path} already belongs to record ${String(occupant.item.id)}.`);
     }
     this.writeRecord(path, item as Record<string, unknown>, config, existing?.raw);
-    this.regenerateIndex(collection, config);
-    this.commit({ operation: "put", collection, id: item.id });
+    const indexPath = this.regenerateIndex(collection, config, indexName);
+    this.commit({ operation: "put", collection, id: item.id }, [path, ...(indexPath ? [indexPath] : [])]);
     return item;
   }
 
   remove(collection: string, id: string): boolean {
     const config = this.configFor(collection);
+    const indexName = this.indexFileName(config);
     const records = this.readCollection(collection);
+    this.validateIndexDestination(this.directoryFor(collection, config), indexName);
     const existing = records.find((record) => record.item.id === id);
     if (existing === undefined) return false;
     rmSync(existing.path);
-    this.regenerateIndex(collection, config);
-    this.commit({ operation: "remove", collection, id });
+    const indexPath = this.regenerateIndex(collection, config, indexName);
+    this.commit({ operation: "remove", collection, id }, [existing.path, ...(indexPath ? [indexPath] : [])]);
     return true;
   }
 
@@ -216,7 +235,9 @@ export class MarkdownStore implements SyncStore {
 
   private readKvRecord(key: string): ParsedRecord | null {
     const path = join(this.rootDir, KV_COLLECTION, `${encodeName(key)}.md`);
-    return existsSync(path) ? this.parseRecord(path, defaultConfig()) : null;
+    if (!existsSync(path)) return null;
+    const record = this.parseRecord(path, defaultConfig());
+    return record.item.id === key ? record : null;
   }
 
   private configFor(collection: string): MarkdownCollectionConfig {
@@ -234,11 +255,11 @@ export class MarkdownStore implements SyncStore {
   }
 
   private readDirectory(directory: string, config: MarkdownCollectionConfig): ParsedRecord[] {
-    const indexName = config.index === false ? undefined : config.index?.fileName ?? "INDEX.md";
+    const indexName = this.indexFileName(config);
     const records: ParsedRecord[] = [];
     const errors: Error[] = [];
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name === indexName) continue;
+      if (!entry.isFile() || !entry.name.endsWith(".md") || (indexName !== undefined && filenameAlias(entry.name) === filenameAlias(indexName))) continue;
       const path = join(directory, entry.name);
       try {
         records.push(this.parseRecord(path, config));
@@ -310,20 +331,50 @@ export class MarkdownStore implements SyncStore {
 
   private newFileName(item: Record<string, unknown>, config: MarkdownCollectionConfig): string {
     const candidate = config.fileName?.(item) ?? `${encodeName(String(item.id))}.md`;
-    if (basename(candidate) !== candidate || !candidate.endsWith(".md") || candidate === "INDEX.md") {
+    const indexName = this.indexFileName(config);
+    if (basename(candidate) !== candidate || !candidate.endsWith(".md") ||
+        (indexName !== undefined && filenameAlias(candidate) === filenameAlias(indexName))) {
       throw new MarkdownStoreError("unsafe-filename", `Unsafe markdown record filename: ${JSON.stringify(candidate)}`);
     }
     return candidate;
   }
 
-  private regenerateIndex(collection: string, config: MarkdownCollectionConfig): void {
-    if (config.index === false || config.index === undefined) return;
+  private regenerateIndex(collection: string, config: MarkdownCollectionConfig, indexName = this.indexFileName(config)): string | undefined {
+    if (config.index === false || config.index === undefined) return undefined;
     const directory = this.directoryFor(collection, config);
     const items = this.readDirectory(directory, config).map((record) => record.item);
     const heading = config.index.heading ?? collection;
     const lines = items.map((item) => config.index === false || config.index === undefined ? "" : config.index.renderLine(item));
     const output = `# ${heading}\n${lines.length > 0 ? `\n${lines.join("\n")}\n` : ""}`;
-    this.atomicWrite(join(directory, config.index.fileName ?? "INDEX.md"), output);
+    const path = join(directory, indexName!);
+    this.atomicWrite(path, output);
+    return path;
+  }
+
+  private indexFileName(config: MarkdownCollectionConfig): string | undefined {
+    if (config.index === false || config.index === undefined) return undefined;
+    const candidate = config.index.fileName ?? "INDEX.md";
+    if (basename(candidate) !== candidate || !candidate.endsWith(".md"))
+      throw new MarkdownStoreError("unsafe-filename", `Unsafe markdown index filename: ${JSON.stringify(candidate)}`);
+    return candidate;
+  }
+
+  private validateIndexDestination(directory: string, indexName: string | undefined): void {
+    if (indexName === undefined) return;
+    const alias = existsSync(directory)
+      ? readdirSync(directory, { withFileTypes: true }).find((entry) => entry.isFile() && filenameAlias(entry.name) === filenameAlias(indexName))
+      : undefined;
+    const path = join(directory, alias?.name ?? indexName);
+    if (!existsSync(path)) return;
+    const raw = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
+    if (!raw.startsWith("---\n")) return;
+    const { document } = parseFrontmatter(raw, path);
+    const data = document.toJS() as unknown;
+    if (isPlainRecord(data) && typeof data.id === "string" && data.id.length > 0)
+      throw new MarkdownStoreError("filename-collision", `Markdown index filename ${path} already belongs to record ${data.id}.`);
+    throw new MarkdownStoreCorruptionError([
+      new MarkdownStoreError("missing-record-id", `${path}: frontmatter must contain a non-empty string id`),
+    ]);
   }
 
   private atomicWrite(path: string, contents: string): void {
@@ -350,14 +401,15 @@ export class MarkdownStore implements SyncStore {
     }
   }
 
-  private commit(mutation: MarkdownMutation): void {
+  private commit(mutation: MarkdownMutation, paths: readonly string[]): void {
     if (!this.gitAvailable || this.gitConfig === null) return;
     const message = this.gitConfig.message?.(mutation) ?? defaultCommitMessage(mutation);
     const name = this.gitConfig.name ?? "Mirk Markdown Store";
     const email = this.gitConfig.email ?? "store-markdown@mirk.local";
     try {
-      execFileSync("git", ["-C", this.rootDir, "add", "-A"], { stdio: "ignore" });
-      execFileSync("git", ["-C", this.rootDir, "-c", `user.name=${name}`, "-c", `user.email=${email}`, "commit", "--quiet", "-m", message], { stdio: "ignore" });
+      const relativePaths = paths.map((path) => relative(this.rootDir, path));
+      execFileSync("git", ["--literal-pathspecs", "-C", this.rootDir, "add", "--", ...relativePaths], { stdio: "ignore" });
+      execFileSync("git", ["--literal-pathspecs", "-C", this.rootDir, "-c", `user.name=${name}`, "-c", `user.email=${email}`, "commit", "--quiet", "--only", "-m", message, "--", ...relativePaths], { stdio: "ignore" });
     } catch {
       // File persistence is authoritative; unavailable or empty git commits are non-fatal.
     }
@@ -372,7 +424,7 @@ function parseFrontmatter(raw: string, path: string): { document: Document; body
   if (!raw.startsWith("---\n")) throw new MarkdownStoreError("missing-frontmatter-open", `${path}: missing YAML frontmatter opening delimiter`);
   const end = raw.indexOf("\n---", 4);
   if (end === -1) throw new MarkdownStoreError("missing-frontmatter-close", `${path}: missing YAML frontmatter closing delimiter`);
-  const document = parseDocument(raw.slice(4, end), { keepSourceTokens: true, prettyErrors: true });
+  const document = parseDocument(raw.slice(4, end), { version: "1.2", keepSourceTokens: true, prettyErrors: true });
   if (document.errors.length > 0) throw new MarkdownStoreError("invalid-frontmatter", `${path}: ${document.errors.map((error) => error.message).join("; ")}`);
   return { document, body: raw.slice(end + 4).replace(/^\n/, "") };
 }
@@ -380,6 +432,10 @@ function parseFrontmatter(raw: string, path: string): { document: Document; body
 function encodeName(value: string): string {
   if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value) && value !== "." && value !== "..") return value;
   return `~${Buffer.from(value).toString("base64url")}`;
+}
+
+function filenameAlias(value: string): string {
+  return caseFold(value.normalize("NFC"));
 }
 
 function joinWithin(root: string, relative: string): string {
@@ -461,6 +517,8 @@ function applyFilter<T>(items: T[], filter?: StoreFilter): T[] {
       if (leftValue === rightValue) return 0;
       if (leftValue === undefined || leftValue === null) return 1;
       if (rightValue === undefined || rightValue === null) return -1;
+      if (typeof leftValue === "string" && typeof rightValue === "string")
+        return direction * compareCodePoints(leftValue, rightValue);
       return leftValue < rightValue ? -direction : direction;
     });
   }

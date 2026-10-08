@@ -1,0 +1,82 @@
+{
+  "id": "artifact/lifecycle/finalization-digest-excludes-storage-identity",
+  "title": "finalization digest excludes storage identity",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "finalizationDigest",
+      "args": [
+        {
+          "id": "one",
+          "objectKey": "artifacts/one",
+          "createdAt": 1000,
+          "mediaType": "text/plain",
+          "sizeBytes": 5,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "annotations": {
+            "a": 1
+          }
+        }
+      ],
+      "expect": {
+        "value": "49458bb72388b4ae59b827b587ad52f383113e66b273341810c0c119a62bd6fb"
+      }
+    },
+    {
+      "op": "finalizationDigest",
+      "args": [
+        {
+          "id": "two",
+          "objectKey": "artifacts/two",
+          "createdAt": 2000,
+          "mediaType": "text/plain",
+          "sizeBytes": 5,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "annotations": {
+            "a": 1
+          }
+        }
+      ],
+      "expect": {
+        "value": "49458bb72388b4ae59b827b587ad52f383113e66b273341810c0c119a62bd6fb"
+      }
+    },
+    {
+      "op": "finalizationDigest",
+      "args": [
+        {
+          "id": "one",
+          "objectKey": "artifacts/one",
+          "createdAt": 1000,
+          "mediaType": "text/plain",
+          "sizeBytes": 5,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "annotations": {
+            "a": 2
+          }
+        }
+      ],
+      "expect": {
+        "value": "4c10fde842fc41701f5ac88dda1c4bc5a342a5d06024fe29a5b24beda2c8ac18"
+      }
+    }
+  ]
+}

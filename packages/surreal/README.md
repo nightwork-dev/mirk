@@ -133,9 +133,3 @@ re-exported from the root. The store adapter does not implement `@mirk/store/ato
 
 `SurrealStoreAdapter` and `SurrealObjectStore` can share one connection as the backing for
 `@mirk/artifact`'s `StoreArtifactRepository` and `ArtifactCoordinator`.
-
-To run the store, vector, graph, and object-storage smoke against a real server after build:
-
-```bash
-MIRK_SURREAL_REMOTE_URL=ws://127.0.0.1:8000/rpc pnpm --filter @mirk/surreal test:remote
-```
