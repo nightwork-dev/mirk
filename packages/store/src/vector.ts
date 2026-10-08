@@ -26,3 +26,4 @@ export { toAsyncVector } from "./vector/to-async-vector.js";
 // The canonical pre-KNN metadata filter — exported so source adapters (sqlite,
 // libsql) share ONE definition rather than re-implementing the match semantics.
 export { matchesWhere } from "./vector/filter.js";
+export { compareCodePoints } from "./order.js";

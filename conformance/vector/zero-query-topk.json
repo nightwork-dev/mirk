@@ -1,0 +1,61 @@
+{
+  "id": "vector/zero-query-topk",
+  "title": "zero-query cutoff uses the complete code-point-ordered tie set",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsertMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "z",
+            "vector": [
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            "id": "a",
+            "vector": [
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "id": "b",
+            "vector": [
+              0,
+              0,
+              1
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          0,
+          0,
+          0
+        ],
+        {
+          "topK": 1
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    }
+  ]
+}

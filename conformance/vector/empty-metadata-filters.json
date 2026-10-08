@@ -1,0 +1,116 @@
+{
+  "id": "vector/empty-metadata-filters",
+  "title": "empty metadata and absent metadata have different empty-filter behavior",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "absent",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "empty",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {}
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "null",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "value": null
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {}
+        }
+      ],
+      "expect": {
+        "ids": [
+          "empty",
+          "null"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "whereNot": {}
+        }
+      ],
+      "expect": {
+        "ids": [
+          "absent"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "value": null
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "null"
+        ]
+      }
+    }
+  ]
+}

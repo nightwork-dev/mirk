@@ -1,0 +1,62 @@
+{
+  "id": "vector/literal-metadata-keys",
+  "title": "metadata filters preserve literal field names and JavaScript number spelling",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "a",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "a.b": [
+              1e-7,
+              1e+21
+            ],
+            "": {
+              "1": 1,
+              "2": 2
+            }
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "where": {
+            "a.b": [
+              1e-7,
+              1e+21
+            ],
+            "": {
+              "1": 1,
+              "2": 2
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    }
+  ]
+}

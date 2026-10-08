@@ -11,7 +11,7 @@ pnpm docs:check     # public links, package metadata, and workspace READMEs
 ```
 
 The Python port is a uv workspace at `python/` with members `store`, `fixtures`, `artifact`,
-`store-markdown`, and `artifact-opendal`.
+`store-markdown`, `artifact-opendal`, and `vector-qdrant`.
 Run each member's gates from inside it:
 
 ```bash
@@ -41,6 +41,21 @@ The direct OpenDAL S3 integration tests use these explicit settings:
 `MIRK_OPENDAL_S3_ACCESS_KEY_ID`, and `MIRK_OPENDAL_S3_SECRET_ACCESS_KEY`.
 `MIRK_OPENDAL_S3_REGION` is optional. The tests do not access cloud resources
 without these settings.
+
+The Qdrant adapters use a separate real-server harness:
+
+```bash
+pnpm build
+python3 scripts/run-qdrant-tests.py
+```
+
+The harness downloads a pinned Qdrant binary, verifies its checksum, and starts it with temporary
+storage on loopback. It runs both languages against that server and rejects skipped or empty suites.
+It also writes and reopens records across the two adapters to check their shared storage format.
+`QDRANT_BINARY` selects an existing binary of the pinned version. `MIRK_QDRANT_PYTHON` selects an
+interpreter with installed wheels; the harness verifies that its imports come from `site-packages`.
+For an existing test service, set `MIRK_QDRANT_URL` when running either adapter's tests directly.
+Each test creates and removes its own physical collection.
 
 ## The conformance corpus
 
