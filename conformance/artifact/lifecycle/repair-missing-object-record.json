@@ -1,0 +1,93 @@
+{
+  "id": "artifact/lifecycle/repair-missing-object-record",
+  "title": "repair missing object record",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "deleteObject",
+      "args": [
+        "artifacts/artifact-1"
+      ]
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 1,
+          "scannedObjects": 0,
+          "findings": [
+            {
+              "code": "record-without-object",
+              "artifactId": "artifact-1",
+              "detail": "artifact record has no readable object"
+            }
+          ],
+          "coverage": "complete"
+        }
+      }
+    },
+    {
+      "op": "planRepair",
+      "args": [],
+      "expect": {
+        "value": {
+          "schema": "mirk-artifact-repair/v1",
+          "auditId": "audit-1",
+          "createdAt": 1000,
+          "actions": [
+            {
+              "id": "077fbf560b0dd0682429b1d37d6bb294626d536b2f03cb13742eb2831704c6ae",
+              "operation": "delete-record-without-object",
+              "precondition": {
+                "kind": "record-missing-object",
+                "artifactId": "artifact-1",
+                "recordFingerprint": "83be3b7296a00ffb98d0886cb1b90e1fc18d0d2d465b7e09147535ae92838ec0"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "applied",
+            "actionId": "077fbf560b0dd0682429b1d37d6bb294626d536b2f03cb13742eb2831704c6ae"
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

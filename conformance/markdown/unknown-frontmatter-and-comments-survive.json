@@ -1,0 +1,75 @@
+{
+  "id": "markdown/unknown-frontmatter-and-comments-survive",
+  "title": "unknown frontmatter and comments survive",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "preset": "notes"
+        }
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "docs/first-note.md",
+        "---\n# human comment\nid: note-1\ntitle: First Note\nstatus: draft\ncustom: keep # inline comment\n---\n\n## Notes\n\nPreserved.\n"
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "documents",
+        {
+          "id": "note-1",
+          "title": "First Note",
+          "status": "done",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      ]
+    },
+    {
+      "op": "fileContains",
+      "args": [
+        "docs/first-note.md",
+        "# human comment"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "fileContains",
+      "args": [
+        "docs/first-note.md",
+        "# inline comment"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "documents",
+        "note-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "note-1",
+          "title": "First Note",
+          "status": "done",
+          "custom": "keep",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "id": "markdown/kv-null-is-present",
+  "title": "kv null is present",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "nil",
+        null
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "nil"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "nil"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "absent"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

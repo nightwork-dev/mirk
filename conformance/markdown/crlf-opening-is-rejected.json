@@ -1,0 +1,38 @@
+{
+  "id": "markdown/crlf-opening-is-rejected",
+  "title": "crlf opening is rejected",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/a.md",
+        "---\r\nid: a\r\n---\r\n"
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "getById",
+        [
+          "things",
+          "a"
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "missing-frontmatter-open"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "id": "artifact/lifecycle/repair-record-change-conflicts",
+  "title": "repair record change conflicts",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "deleteObject",
+      "args": [
+        "artifacts/artifact-1"
+      ]
+    },
+    {
+      "op": "audit",
+      "args": []
+    },
+    {
+      "op": "planRepair",
+      "args": []
+    },
+    {
+      "op": "updateAnnotations",
+      "args": [
+        "artifact-1",
+        {
+          "changed": true
+        }
+      ]
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "conflict",
+            "actionId": "077fbf560b0dd0682429b1d37d6bb294626d536b2f03cb13742eb2831704c6ae",
+            "reason": "state-changed"
+          }
+        ]
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "artifacts/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+          "mediaType": "text/plain",
+          "annotations": {
+            "changed": true
+          }
+        }
+      }
+    }
+  ]
+}

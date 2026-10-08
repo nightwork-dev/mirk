@@ -1,0 +1,43 @@
+{
+  "id": "artifact/lifecycle/missing-read-and-delete",
+  "title": "missing read and delete",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "read",
+      "args": [
+        "missing"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "delete",
+      "args": [
+        "missing"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "verify",
+      "args": [
+        "missing"
+      ],
+      "expect": {
+        "throws": "artifact not found: missing"
+      }
+    }
+  ]
+}

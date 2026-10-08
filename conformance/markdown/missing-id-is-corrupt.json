@@ -1,0 +1,38 @@
+{
+  "id": "markdown/missing-id-is-corrupt",
+  "title": "missing id is corrupt",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/a.md",
+        "---\ntitle: Missing id\n---\n"
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "getById",
+        [
+          "things",
+          "a"
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "missing-record-id"
+        }
+      }
+    }
+  ]
+}

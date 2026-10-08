@@ -1,0 +1,70 @@
+{
+  "id": "artifact/lifecycle/repair-changed-orphan-conflicts",
+  "title": "repair changed orphan conflicts",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "orphan",
+        "YmVmb3Jl"
+      ]
+    },
+    {
+      "op": "audit",
+      "args": []
+    },
+    {
+      "op": "planRepair",
+      "args": []
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "orphan",
+        "YWZ0ZXI="
+      ]
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "conflict",
+            "actionId": "8539d432f45e278a0929ba0a271a43e76c5583f54cd44acfb9566096bd3cb1e4",
+            "reason": "object-changed"
+          }
+        ]
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-2",
+          "scannedRecords": 0,
+          "scannedObjects": 1,
+          "findings": [
+            {
+              "code": "object-without-record",
+              "maintenanceRef": "ref-audit-2-1",
+              "detail": "object is not referenced by an artifact record"
+            }
+          ],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

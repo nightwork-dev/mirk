@@ -47,7 +47,7 @@ import {
   type Step,
 } from "../src/conformance/format.js";
 import { openTarget, unsupportedCapabilities } from "../src/conformance/backends.js";
-import { executeStep, type StepOutcome } from "../src/conformance/runner.js";
+import { backendsForPorts, unsupportedPorts, executeStep, type StepOutcome } from "../src/conformance/runner.js";
 import { invalidPathsOf, stripIgnored } from "../src/conformance/compare.js";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +57,7 @@ const SCENARIOS_DIR = join(SCRIPT_DIR, "scenarios");
 
 /** Only these subdirectories are cleared. README.md lives at the corpus root
  *  and is not generated, so it survives. */
-const GENERATED_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures"] as const;
+const GENERATED_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures", "markdown"] as const;
 
 export interface GenerationSummary {
   outDir: string;
@@ -179,7 +179,10 @@ async function buildScenario(authored: AuthoredScenario): Promise<Scenario> {
   // Capability gating is a HARD FAILURE, never a skip: generation cannot certify
   // a scenario against a backend that lacks the capability the scenario claims
   // to exercise.
-  for (const backend of ["memory", "sqlite"] as const) {
+  const backends = backendsForPorts(authored.ports);
+  for (const backend of backends) {
+    const missingPorts = unsupportedPorts(backend, authored.ports);
+    if (missingPorts.length) throw new Error(`${authored.id}: ${backend} lacks port(s) ${missingPorts.join(", ")}`);
     const missing = unsupportedCapabilities(backend, authored.capabilities);
     if (missing.length > 0) {
       throw new Error(
@@ -187,27 +190,19 @@ async function buildScenario(authored: AuthoredScenario): Promise<Scenario> {
       );
     }
   }
-  const memory = openTarget("memory", authored);
-  const sqlite = openTarget("sqlite", authored);
+  const targets = backends.map((backend) => ({ backend, ...openTarget(backend, authored) }));
   try {
     const steps: Step[] = [];
     for (const [index, authoredStep] of authored.steps.entries()) {
-      const memoryOutcome = await executeStep(memory.target, authoredStep);
-      const expect = deriveExpect(authored.id, index, authoredStep, memoryOutcome);
-      const sqliteOutcome = await executeStep(sqlite.target, authoredStep);
-
-      if (expect === undefined) {
-        if (!sqliteOutcome.ok) {
-          throw new Error(
-            `${authored.id} step ${index} (${authoredStep.op}) [sqlite]: setup step threw: ${sqliteOutcome.message}`,
-          );
-        }
-      } else {
-        const diff = compareExpect(expect, sqliteOutcome);
-        if (diff) {
-          throw new Error(
-            `${authored.id} step ${index} (${authoredStep.op}) [sqlite] disagrees with the memory reference: ${diff}`,
-          );
+      const reference = await executeStep(targets[0]!.target, authoredStep);
+      const expect = deriveExpect(authored.id, index, authoredStep, reference);
+      for (const target of targets.slice(1)) {
+        const outcome = await executeStep(target.target, authoredStep);
+        if (expect === undefined) {
+          if (!outcome.ok) throw new Error(`${authored.id} step ${index} (${authoredStep.op}) [${target.backend}]: setup step threw: ${outcome.message}`);
+        } else {
+          const diff = compareExpect(expect, outcome);
+          if (diff) throw new Error(`${authored.id} step ${index} (${authoredStep.op}) [${target.backend}] disagrees with the reference: ${diff}`);
         }
       }
 
@@ -223,8 +218,7 @@ async function buildScenario(authored: AuthoredScenario): Promise<Scenario> {
       steps,
     };
   } finally {
-    memory.dispose();
-    sqlite.dispose();
+    for (const target of targets) target.dispose();
   }
 }
 

@@ -1,0 +1,116 @@
+{
+  "id": "artifact/lifecycle/atomic-create-replay-conflict",
+  "title": "atomic create replay conflict",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "createIdempotent",
+      "args": [
+        {
+          "record": {
+            "id": "first",
+            "objectKey": "artifacts/first",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            }
+          },
+          "idempotencyKey": "key"
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "created",
+          "requestDigest": "c46e958933f8d36f4672d633c2434de08e68702b34a886f11b1b3d4f8c6d76de",
+          "record": {
+            "id": "first",
+            "objectKey": "artifacts/first",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "idempotencyKey": "key"
+          }
+        }
+      }
+    },
+    {
+      "op": "createIdempotent",
+      "args": [
+        {
+          "record": {
+            "id": "second",
+            "objectKey": "artifacts/second",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            }
+          },
+          "idempotencyKey": "key"
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "c46e958933f8d36f4672d633c2434de08e68702b34a886f11b1b3d4f8c6d76de",
+          "record": {
+            "id": "first",
+            "objectKey": "artifacts/first",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "idempotencyKey": "key"
+          }
+        }
+      }
+    },
+    {
+      "op": "createIdempotent",
+      "args": [
+        {
+          "record": {
+            "id": "third",
+            "objectKey": "artifacts/third",
+            "createdAt": 1000,
+            "mediaType": "text/markdown",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            }
+          },
+          "idempotencyKey": "key"
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "expectedRequestDigest": "c46e958933f8d36f4672d633c2434de08e68702b34a886f11b1b3d4f8c6d76de",
+          "receivedRequestDigest": "27da0d9e6796926cf29d29360be4246f50ea96eaf24dc4bf8665557d697bf63f"
+        }
+      }
+    }
+  ]
+}

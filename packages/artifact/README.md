@@ -97,6 +97,10 @@ Lineage is many-to-many. Both endpoints must exist (otherwise `ArtifactOperation
 
 An `idempotencyKey` is scoped to the coordinator `namespace`. Repeating a completed write with the same key, metadata, and bytes returns the original artifact without writing a second one. Reusing the key with different metadata or different bytes throws `ArtifactConflictError`. Mirk computes the `mirk-artifact-finalization/v1` request digest from the bytes and every immutable field supplied at finalization; callers never provide it, and later annotation updates do not change it. For generated outputs, a key built from `(attemptId, outputSlot)` gives each attempt output its own scope.
 
+Finalization receipts are tombstones. Deleting the record does not release its idempotency key;
+retrying that key returns a conflict and cannot recreate the record. Use a new key for a new
+artifact after deletion.
+
 Finalization concurrency is explicit:
 
 - `{ mode: "single-writer" }` (default) — correct for one writer. Concurrent finalizers need external exclusion; this mode does not promise multi-process idempotency.
@@ -107,6 +111,8 @@ Finalization concurrency is explicit:
 When the repository also implements `ArtifactLeaseRepository` (as `StoreArtifactRepository` does over an atomic store), writers and repair cooperate through repository-owned leases on each object:
 
 - A finalizer holds a `shared-writer` lease from before the byte write through commit, replay, conflict, or cleanup. The record is created only if the lease is still current in the same repository decision; a lost lease means no record.
+- A lease commit requires the record `objectKey` to equal the lease `objectKey`. A mismatch
+  returns `lease-lost` before a receipt or record decision.
 - Destructive repair takes an `exclusive-delete` lease. It blocks new writers and is refused while a writer holds the object.
 - Leases carry an ID, owner, mode, generation, heartbeat, and expiry (`leaseTtlMs`, default 30 s). Renewal, release, and commit must match owner and generation. Recovery after expiry advances the generation and re-reads state; it never acts on an observation from before expiry.
 

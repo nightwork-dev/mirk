@@ -1,0 +1,73 @@
+{
+  "id": "artifact/lifecycle/code-point-order",
+  "title": "code point order",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "ids": [
+            "😀",
+            "�"
+          ]
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": [
+            {
+              "id": "😀",
+              "objectKey": "artifacts/😀",
+              "createdAt": 1000,
+              "digest": {
+                "algorithm": "sha256",
+                "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+              },
+              "sizeBytes": 5,
+              "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+              "mediaType": "text/plain"
+            },
+            {
+              "id": "�",
+              "objectKey": "artifacts/�",
+              "createdAt": 1000,
+              "digest": {
+                "algorithm": "sha256",
+                "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+              },
+              "sizeBytes": 5,
+              "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+              "mediaType": "text/plain"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

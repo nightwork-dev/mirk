@@ -1,0 +1,58 @@
+{
+  "id": "markdown/record-invalid-id",
+  "title": "record invalid id",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "things",
+          {
+            "id": "",
+            "text": "bad"
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "invalid-record-id"
+        }
+      }
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "things",
+          {
+            "id": "nul\u0000id"
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "invalid-record-id"
+        }
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

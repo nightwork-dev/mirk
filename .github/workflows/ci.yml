@@ -68,7 +68,7 @@ jobs:
       # produced in this job.
       - name: Install Python workspace
         working-directory: python
-        run: uv sync --all-packages --group dev
+        run: uv sync --all-packages --locked --group dev
 
       # The Python port replays the same corpus. Running only the TypeScript
       # suite would let the two implementations drift apart between commits,
@@ -81,6 +81,18 @@ jobs:
         working-directory: python/fixtures
         run: uv run pytest -q
 
+      - name: Python tests (artifact)
+        working-directory: python/artifact
+        run: uv run pytest -q
+
+      - name: Python tests (Markdown)
+        working-directory: python/store-markdown
+        run: uv run pytest -q
+
+      - name: Python tests (OpenDAL)
+        working-directory: python/artifact-opendal
+        run: uv run pytest -q
+
       - name: Python typecheck (store)
         working-directory: python/store
         run: uv run pyright
@@ -89,9 +101,21 @@ jobs:
         working-directory: python/fixtures
         run: uv run pyright
 
+      - name: Python typecheck (artifact)
+        working-directory: python/artifact
+        run: uv run pyright
+
+      - name: Python typecheck (Markdown)
+        working-directory: python/store-markdown
+        run: uv run pyright
+
+      - name: Python typecheck (OpenDAL)
+        working-directory: python/artifact-opendal
+        run: uv run pyright
+
       - name: Python lint
         working-directory: python
-        run: uv run ruff check store fixtures
+        run: uv run ruff check store fixtures artifact store-markdown artifact-opendal
 
       - name: Verify packed package releases
         run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --receipt-dir .mirk-release

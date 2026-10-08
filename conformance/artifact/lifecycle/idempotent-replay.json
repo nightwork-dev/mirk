@@ -1,0 +1,84 @@
+{
+  "id": "artifact/lifecycle/idempotent-replay",
+  "title": "idempotent replay",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "idempotencyKey": "request"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "idempotencyKey": "request"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": [
+            {
+              "id": "artifact-1",
+              "objectKey": "artifacts/artifact-1",
+              "createdAt": 1000,
+              "digest": {
+                "algorithm": "sha256",
+                "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+              },
+              "sizeBytes": 5,
+              "idempotencyFingerprint": "b970400766c77b5b9d84f32fd3ed40772ef88c8c42db628caaddf8b4feb09e7a",
+              "mediaType": "text/plain",
+              "idempotencyKey": "artifacts:request",
+              "idempotencyFinalizationDigest": "c46e958933f8d36f4672d633c2434de08e68702b34a886f11b1b3d4f8c6d76de"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

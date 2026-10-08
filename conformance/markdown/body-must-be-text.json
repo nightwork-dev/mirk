@@ -1,0 +1,44 @@
+{
+  "id": "markdown/body-must-be-text",
+  "title": "body must be text",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "collections": {
+            "things": {
+              "body": {
+                "field": "content"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "things",
+          {
+            "id": "a",
+            "content": [
+              1
+            ]
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "non-string-body"
+        }
+      }
+    }
+  ]
+}

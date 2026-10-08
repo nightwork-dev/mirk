@@ -1,7 +1,7 @@
 """Mirk fixtures: authored documents, layered, validated, explained.
 
-The Python port of `@mirk/fixtures`. Zero runtime dependencies: the JSON Schema
-engine is injected into the loader, never imported here, so this package stays
+The Python port of `@mirk/fixtures`. The JSON Schema engine is injected into
+the loader, never imported here, so this package stays
 as free of an engine choice as `@mirk/fixtures` is of Ajv.
 
 ``mirk`` is a PEP 420 namespace package — there is no ``mirk/__init__.py`` in

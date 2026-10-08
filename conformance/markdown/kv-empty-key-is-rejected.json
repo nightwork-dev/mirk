@@ -1,0 +1,38 @@
+{
+  "id": "markdown/kv-empty-key-is-rejected",
+  "title": "kv empty key is rejected",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "set",
+        [
+          "",
+          1
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "invalid-record-id"
+        }
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "id": "artifact/lifecycle/empty-bytes",
+  "title": "empty bytes",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "sizeBytes": 0,
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "sizeBytes": 0,
+            "mediaType": "text/plain"
+          },
+          "bytes": ""
+        }
+      }
+    },
+    {
+      "op": "verify",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "sizeBytes": 0,
+            "mediaType": "text/plain"
+          },
+          "ok": true,
+          "actualDigest": {
+            "algorithm": "sha256",
+            "value": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "actualSizeBytes": 0
+        }
+      }
+    }
+  ]
+}

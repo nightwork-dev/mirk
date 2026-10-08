@@ -1,0 +1,57 @@
+{
+  "id": "markdown/record-id-lookup-does-not-return-an-alias",
+  "title": "record id lookup does not return an alias",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "Catalog"
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "catalog"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "things",
+        "catalog"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "Catalog"
+      ],
+      "expect": {
+        "value": {
+          "id": "Catalog"
+        }
+      }
+    }
+  ]
+}

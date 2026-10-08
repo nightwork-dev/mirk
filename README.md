@@ -75,10 +75,29 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 
 `python/store` (`mirk-store`) is a second implementation of the KV, collection, vector, search and
 graph ports, over stdlib `sqlite3` with zero runtime dependencies. It opens SQLite files
-TypeScript wrote and writes files TypeScript reads. Neither language is the other's reference:
-both replay one generated corpus at [`conformance/`](conformance/README.md), the generator refuses
-to emit a scenario the in-memory reference and the SQLite adapter disagree on, and each runner
-executes every scenario on both of its backends with no skips permitted.
+TypeScript wrote and writes files TypeScript reads. TypeScript generates expected values for the
+shared [conformance corpus](conformance/README.md), which both languages replay. The generator
+rejects shared-store scenarios when the in-memory reference and SQLite adapter disagree.
+Each accepted runner executes every scenario on its declared backend matrix. A
+missing target or unsupported capability fails the run.
+
+`python/fixtures` (`mirk-fixtures`) loads typed authored data with layering, validation,
+provenance, references, and store seeding. It shares the fixture scenarios with
+`@mirk/fixtures`; package-resource sources and the CLI remain TypeScript-only.
+
+`python/artifact` (`mirk-artifact`) ports the artifact coordinator, metadata repository, object
+store, leases, lineage, integrity checks, and maintenance operations. It uses the same record
+fields, canonical finalization digest, SQLite collections, and filesystem object layout as
+`@mirk/artifact`. Its lifecycle target uses base64 values for byte fields, and its integration
+tests reopen artifacts across TypeScript and Python.
+
+`python/store-markdown` (`mirk-store-markdown`) stores records in human-editable Markdown files
+with YAML frontmatter. Its shared scenarios run on a separate filesystem backend.
+`python/artifact-opendal` (`mirk-artifact-opendal`) adds S3-compatible artifact byte storage
+through a host-configured OpenDAL operator. Artifact metadata remains in the supplied Mirk repository.
+
+See the [Markdown adapter](python/store-markdown/README.md) and
+[S3/OpenDAL adapter](python/artifact-opendal/README.md) for Python usage.
 
 ## Sync by design
 

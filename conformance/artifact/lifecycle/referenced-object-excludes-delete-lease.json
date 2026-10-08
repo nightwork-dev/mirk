@@ -1,0 +1,41 @@
+{
+  "id": "artifact/lifecycle/referenced-object-excludes-delete-lease",
+  "title": "referenced object excludes delete lease",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "artifacts/artifact-1",
+          "ownerId": "repair",
+          "mode": "exclusive-delete"
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "reason": "reference-created"
+        }
+      }
+    }
+  ]
+}

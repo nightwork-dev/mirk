@@ -80,7 +80,10 @@ export function assertPortableMetadata(input: {
 }): void {
   if (!input.mediaType.trim() || !input.mediaType.includes("/"))
     throw new ArtifactValidationError("invalid-media-type", "mediaType must be a non-empty MIME type");
-  if (input.producer && !input.producer.system.trim())
+  if (
+    input.producer &&
+    (typeof input.producer.system !== "string" || !input.producer.system.trim())
+  )
     throw new ArtifactValidationError("invalid-producer", "producer.system must be non-empty");
   if (input.annotations) assertBoundedJson(input.annotations, "annotations");
 }

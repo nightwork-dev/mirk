@@ -1,0 +1,37 @@
+{
+  "id": "artifact/lifecycle/invalid-media-type",
+  "title": "invalid media type",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "invalid"
+        }
+      ],
+      "expect": {
+        "throws": "mediaType must be a non-empty MIME type"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

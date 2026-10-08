@@ -382,6 +382,8 @@ export class InMemoryArtifactRepository
     now?: number;
   }): Promise<ArtifactLeaseAtomicCreateResult> {
     const now = input.now ?? this.#now();
+    if (input.record.objectKey !== input.lease.objectKey)
+      return { status: "lease-lost" };
     if (!this.#holdsSharedWriterLease(input.lease, now))
       return { status: "lease-lost" };
     return this.createIdempotent({
@@ -396,6 +398,8 @@ export class InMemoryArtifactRepository
     now?: number;
   }): Promise<ArtifactLeaseCreateResult> {
     const now = input.now ?? this.#now();
+    if (input.record.objectKey !== input.lease.objectKey)
+      return { status: "lease-lost" };
     if (!this.#holdsSharedWriterLease(input.lease, now))
       return { status: "lease-lost" };
     if (this.#records.has(input.record.id)) return { status: "conflict" };

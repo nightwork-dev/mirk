@@ -5,13 +5,12 @@ revisions, durable admission receipts, bitemporal indexes, and named legacy
 dual-read parity harnesses.
 
 Hosts map their statement contract into this storage schema and inject the
-admission authority; Mirk owns persistence, serialization, indexes, replay, and
+admission authority. Mirk owns persistence, serialization, indexes, replay, and
 crash consistency.
 
 This is a specialized package for the separately versioned `statements-storage/v1`
-schema. Its local implementation may use general Mirk store and coordination
-capabilities, but it does not widen the general `SyncStore` or `AsyncStore`
-ports.
+schema. It can use general Mirk store and coordination capabilities, but it does
+not widen the general `SyncStore` or `AsyncStore` ports.
 
 ```ts
 import { createSqliteStatementStore } from "@mirk/statements/sqlite";

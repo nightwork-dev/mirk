@@ -1,0 +1,28 @@
+{
+  "id": "artifact/lifecycle/missing-annotation-target",
+  "title": "missing annotation target",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "updateAnnotations",
+      "args": [
+        "missing",
+        {
+          "a": 1
+        }
+      ],
+      "expect": {
+        "throws": "artifact not found: missing"
+      }
+    }
+  ]
+}

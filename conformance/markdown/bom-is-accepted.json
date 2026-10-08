@@ -1,0 +1,36 @@
+{
+  "id": "markdown/bom-is-accepted",
+  "title": "bom is accepted",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/a.md",
+        "﻿---\nid: a\nvalue: 1\n---\n"
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "value": 1
+        }
+      }
+    }
+  ]
+}

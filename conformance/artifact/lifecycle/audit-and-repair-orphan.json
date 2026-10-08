@@ -1,0 +1,90 @@
+{
+  "id": "artifact/lifecycle/audit-and-repair-orphan",
+  "title": "audit and repair orphan",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "orphan",
+        "b3JwaGFu"
+      ]
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 1,
+          "findings": [
+            {
+              "code": "object-without-record",
+              "maintenanceRef": "ref-audit-1-1",
+              "detail": "object is not referenced by an artifact record"
+            }
+          ],
+          "coverage": "complete"
+        }
+      }
+    },
+    {
+      "op": "planRepair",
+      "args": [],
+      "expect": {
+        "value": {
+          "schema": "mirk-artifact-repair/v1",
+          "auditId": "audit-1",
+          "createdAt": 1000,
+          "actions": [
+            {
+              "id": "0d3dfec2c57bfad91a9fb053bb4e32068ca97dd2dcd7e3c2974648284d83761c",
+              "operation": "delete-unreferenced-object",
+              "precondition": {
+                "kind": "object-unreferenced",
+                "maintenanceRef": "ref-audit-1-1",
+                "observedSizeBytes": 6,
+                "observedDigest": "88f6811ab5d8fc6d3177f9b7609ae0fcebfda187e5046b62d38bb539e88b74d7"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "applied",
+            "actionId": "0d3dfec2c57bfad91a9fb053bb4e32068ca97dd2dcd7e3c2974648284d83761c"
+          }
+        ]
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-2",
+          "scannedRecords": 0,
+          "scannedObjects": 0,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

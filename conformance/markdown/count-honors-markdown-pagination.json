@@ -1,0 +1,77 @@
+{
+  "id": "markdown/count-honors-markdown-pagination",
+  "title": "count honors markdown pagination",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "op": "count",
+      "args": [
+        "things",
+        {
+          "limit": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "things",
+        {
+          "offset": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "limit": -1
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a"
+          },
+          {
+            "id": "b"
+          }
+        ]
+      }
+    }
+  ]
+}

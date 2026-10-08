@@ -1,0 +1,57 @@
+{
+  "id": "markdown/all-corrupt-records-are-reported",
+  "title": "all corrupt records are reported",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "valid"
+        }
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/broken.md",
+        "not a document"
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/also-broken.md",
+        "---\nid: [\n---\n"
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "list",
+        [
+          "things"
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "corrupt-records",
+          "paths": [
+            "things/also-broken.md",
+            "things/broken.md"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,78 +1,124 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
-const failures = [];
-const markdownFiles = [
-  "README.md",
-  "CHANGELOG.md",
-  ...markdownUnder("docs"),
-  ...packageDirectories().map((directory) => join("packages", directory, "README.md")),
-].filter((file) => existsSync(resolve(root, file)));
+export function checkPublicDocs(root = process.cwd()) {
+  const failures = [];
+  const typescriptDirectories = packageDirectories(root);
+  const pythonDirectories = pythonWorkspaceDirectories(root);
+  const markdownFiles = [
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    ...markdownUnder(root, "docs"),
+    ...markdownUnder(root, "conformance"),
+    ...typescriptDirectories.map((directory) => join("packages", directory, "README.md")),
+    ...pythonDirectories.map((directory) => join("python", directory, "README.md")),
+  ].filter((file) => existsSync(resolve(root, file)));
 
-for (const file of markdownFiles) {
-  const text = readFileSync(resolve(root, file), "utf8");
-  checkRelativeLinks(file, text);
-  checkPublicSurface(file, text);
-}
-
-const packages = packageDirectories().map((directory) => {
-  const path = join("packages", directory, "package.json");
-  return { directory, path, manifest: JSON.parse(readFileSync(resolve(root, path), "utf8")) };
-}).filter(({ manifest }) => manifest.private !== true);
-
-const rootReadme = readFileSync(resolve(root, "README.md"), "utf8");
-for (const { directory, manifest } of packages) {
-  checkPublicSurface(join("packages", directory, "package.json"), JSON.stringify(manifest, null, 2));
-  const readme = join("packages", directory, "README.md");
-  if (!existsSync(resolve(root, readme))) {
-    failures.push(`${readme}: missing README for public package ${manifest.name}`);
-    continue;
-  }
-  if (!rootReadme.includes(`\`${manifest.name}\``)) {
-    failures.push(`README.md: public package inventory omits ${manifest.name}`);
-  }
-  if (manifest.publishConfig?.registry !== "https://registry.npmjs.org") {
-    failures.push(`${join("packages", directory, "package.json")}: public package must target npmjs`);
-  }
-  if (!manifest.description || !manifest.repository || !manifest.homepage || !manifest.bugs) {
-    failures.push(`${join("packages", directory, "package.json")}: incomplete public package metadata`);
+  for (const file of markdownFiles) {
+    const text = readFileSync(resolve(root, file), "utf8");
+    checkRelativeLinks(root, failures, file, text);
+    checkPublicSurface(failures, file, text);
   }
 
-  const packageReadme = readFileSync(resolve(root, readme), "utf8");
-  for (const exportPath of Object.keys(manifest.exports ?? {})) {
-    const publicImport = exportPath === "." ? manifest.name : `${manifest.name}${exportPath.slice(1)}`;
-    if (!packageReadme.includes(publicImport)) {
-      failures.push(`${readme}: does not document exported entry ${publicImport}`);
+  const packages = typescriptDirectories.map((directory) => {
+    const path = join("packages", directory, "package.json");
+    return { directory, path, manifest: JSON.parse(readFileSync(resolve(root, path), "utf8")) };
+  }).filter(({ manifest }) => manifest.private !== true);
+
+  const rootReadmePath = resolve(root, "README.md");
+  if (!existsSync(rootReadmePath)) {
+    failures.push("README.md: missing root README");
+  }
+  const rootReadme = existsSync(rootReadmePath) ? readFileSync(rootReadmePath, "utf8") : "";
+
+  for (const { directory, manifest } of packages) {
+    const manifestPath = join("packages", directory, "package.json");
+    checkPublicSurface(failures, manifestPath, JSON.stringify(manifest, null, 2));
+    const readme = join("packages", directory, "README.md");
+    if (!existsSync(resolve(root, readme))) {
+      failures.push(`${readme}: missing README for public package ${manifest.name}`);
+      continue;
+    }
+    if (!rootReadme.includes(`\`${manifest.name}\``)) {
+      failures.push(`README.md: public package inventory omits ${manifest.name}`);
+    }
+    if (manifest.publishConfig?.registry !== "https://registry.npmjs.org") {
+      failures.push(`${manifestPath}: public package must target npmjs`);
+    }
+    if (!manifest.description || !manifest.repository || !manifest.homepage || !manifest.bugs) {
+      failures.push(`${manifestPath}: incomplete public package metadata`);
+    }
+
+    const packageReadme = readFileSync(resolve(root, readme), "utf8");
+    for (const exportPath of Object.keys(manifest.exports ?? {})) {
+      const publicImport = exportPath === "." ? manifest.name : `${manifest.name}${exportPath.slice(1)}`;
+      if (!packageReadme.includes(publicImport)) {
+        failures.push(`${readme}: does not document exported entry ${publicImport}`);
+      }
     }
   }
+
+  for (const directory of pythonDirectories) {
+    const pyproject = join("python", directory, "pyproject.toml");
+    if (!existsSync(resolve(root, pyproject))) {
+      failures.push(`${pyproject}: missing Python package metadata`);
+      continue;
+    }
+    const text = readFileSync(resolve(root, pyproject), "utf8");
+    checkPublicSurface(failures, pyproject, text);
+    const name = tomlString(text, "name");
+    const description = tomlString(text, "description");
+    const version = tomlString(text, "version");
+    const readme = join("python", directory, "README.md");
+    if (!name || !description || !version) {
+      failures.push(`${pyproject}: incomplete public package metadata`);
+    }
+    if (!existsSync(resolve(root, readme))) {
+      failures.push(`${readme}: missing README for Python package ${name ?? directory}`);
+      continue;
+    }
+    if (name && !rootReadme.includes(`\`${name}\``)) {
+      failures.push(`README.md: Python package inventory omits ${name}`);
+    }
+  }
+
+  return { failures, markdownFiles, packages, pythonDirectories };
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`docs:check: ${failure}`);
-  process.exitCode = 1;
-} else {
-  console.log(`docs:check: ${markdownFiles.length} Markdown files and ${packages.length} public packages passed`);
-}
-
-function markdownUnder(directory) {
+function markdownUnder(root, directory) {
   const absolute = resolve(root, directory);
   if (!existsSync(absolute)) return [];
   return readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
-    if (entry.isDirectory()) return markdownUnder(path);
+    if (entry.isDirectory()) return markdownUnder(root, path);
     return entry.isFile() && entry.name.endsWith(".md") ? [path] : [];
   });
 }
 
-function packageDirectories() {
-  return readdirSync(resolve(root, "packages"), { withFileTypes: true })
+function packageDirectories(root) {
+  const directory = resolve(root, "packages");
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(resolve(root, "packages", entry.name, "package.json")))
     .map((entry) => entry.name)
     .sort();
 }
 
-function checkRelativeLinks(file, text) {
+function pythonWorkspaceDirectories(root) {
+  const path = resolve(root, "python", "pyproject.toml");
+  if (!existsSync(path)) return [];
+  const text = readFileSync(path, "utf8");
+  const members = text.match(/members\s*=\s*\[([\s\S]*?)\]/)?.[1] ?? "";
+  return [...members.matchAll(/"([^"\n]+)"/g)].map((match) => match[1]);
+}
+
+function tomlString(text, key) {
+  return text.match(new RegExp(`^${key}\\s*=\\s*"([^"]*)"`, "m"))?.[1];
+}
+
+function checkRelativeLinks(root, failures, file, text) {
   for (const match of text.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g)) {
     let target = match[1].trim();
     if (target.startsWith("<")) {
@@ -98,7 +144,7 @@ function checkRelativeLinks(file, text) {
   }
 }
 
-function checkPublicSurface(file, text) {
+function checkPublicSurface(failures, file, text) {
   const forbidden = [
     { pattern: /\/Users\/[^/\s)]+/g, label: "local macOS home path" },
     { pattern: /\/home\/[^/\s)]+/g, label: "local Unix home path" },
@@ -117,5 +163,19 @@ function checkPublicSurface(file, text) {
       const line = text.slice(0, match.index).split("\n").length;
       failures.push(`${file}:${line}: ${label}`);
     }
+  }
+}
+
+if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url)) {
+  const result = checkPublicDocs();
+  if (result.failures.length > 0) {
+    for (const failure of result.failures) console.error(`docs:check: ${failure}`);
+    process.exitCode = 1;
+  } else {
+    console.log(
+      `docs:check: ${result.markdownFiles.length} Markdown files, ` +
+        `${result.packages.length} public packages, and ` +
+        `${result.pythonDirectories.length} Python packages passed`,
+    );
   }
 }
