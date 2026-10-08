@@ -1,0 +1,93 @@
+{
+  "id": "artifact/lifecycle/shared-object-deletion",
+  "title": "shared object deletion",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "shared",
+        "aGVsbG8="
+      ]
+    },
+    {
+      "op": "importArtifact",
+      "args": [
+        {
+          "objectKey": "shared",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "importArtifact",
+      "args": [
+        {
+          "objectKey": "shared",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-2"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-2",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "bytes": "aGVsbG8="
+        }
+      }
+    },
+    {
+      "op": "delete",
+      "args": [
+        "artifact-2"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 0,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

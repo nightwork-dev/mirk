@@ -1,0 +1,87 @@
+{
+  "id": "artifact/lifecycle/portable-metadata",
+  "title": "portable metadata",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "filename": "notes.txt",
+          "kind": "document",
+          "producer": {
+            "system": "test",
+            "operation": "render"
+          },
+          "annotations": {
+            "title": "Résumé",
+            "empty": null
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain",
+          "kind": "document",
+          "filename": "notes.txt",
+          "producer": {
+            "system": "test",
+            "operation": "render"
+          },
+          "annotations": {
+            "title": "Résumé",
+            "empty": null
+          }
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "objectKey": "artifacts/artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "idempotencyFingerprint": "28617c4abd2bba658579f9eb67c94cad09ab65136b4ba20fbe49dc35a4d74954",
+          "mediaType": "text/plain",
+          "kind": "document",
+          "filename": "notes.txt",
+          "producer": {
+            "system": "test",
+            "operation": "render"
+          },
+          "annotations": {
+            "title": "Résumé",
+            "empty": null
+          }
+        }
+      }
+    }
+  ]
+}

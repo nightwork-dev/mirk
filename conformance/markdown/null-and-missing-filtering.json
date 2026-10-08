@@ -1,0 +1,54 @@
+{
+  "id": "markdown/null-and-missing-filtering",
+  "title": "null and missing filtering",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "value": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "b"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "where": {
+            "value": null
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a",
+            "value": null
+          }
+        ]
+      }
+    }
+  ]
+}

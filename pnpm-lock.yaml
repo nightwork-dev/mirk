@@ -11,6 +11,12 @@ importers:
       '@changesets/cli':
         specifier: 2.31.0
         version: 2.31.0(@types/node@25.9.3)
+      '@mirk/artifact':
+        specifier: workspace:*
+        version: link:packages/artifact
+      '@mirk/store-markdown':
+        specifier: workspace:*
+        version: link:packages/store-markdown
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.15)(tsx@4.23.13)(typescript@5.9.3)(yaml@2.9.0)
@@ -207,6 +213,9 @@ importers:
       '@mirk/store':
         specifier: workspace:^
         version: link:../store
+      unicode-case-folding:
+        specifier: 1.1.1
+        version: 1.1.1
       yaml:
         specifier: ^2.8.1
         version: 2.9.0
@@ -1393,6 +1402,7 @@ packages:
 
   libsql@0.4.7:
     resolution: {integrity: sha512-T9eIRCs6b0J1SHKYIvD8+KCJMcWZ900iZyxdnSCdqxN12Z1ijzT+jY5nrk72Jw4B0HGzms2NgpryArlJqvc3Lw==}
+    cpu: [x64, arm64, wasm32]
     os: [darwin, linux, win32]
 
   lilconfig@3.1.3:
@@ -1896,6 +1906,9 @@ packages:
 
   undici-types@7.24.6:
     resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
+
+  unicode-case-folding@1.1.1:
+    resolution: {integrity: sha512-ZAYziAnMTBisO2dT5tyGvBFMNsIfonOS/BZTd3UZaKWtXMOZqK8s8HRUCrlKxGCTeCxCuCjS/6HW+4a6G+rbzw==}
 
   universalify@0.1.2:
     resolution: {integrity: sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==}
@@ -3532,6 +3545,8 @@ snapshots:
 
   undici-types@7.24.6:
     optional: true
+
+  unicode-case-folding@1.1.1: {}
 
   universalify@0.1.2: {}
 

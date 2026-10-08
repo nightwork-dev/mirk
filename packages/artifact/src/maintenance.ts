@@ -401,6 +401,18 @@ export class ArtifactMaintenance {
           actionId: action.id,
           reason: "object-changed",
         };
+      const renewedImmediatelyBeforeDelete = await leases.renewObjectLease({
+        ...activeLease,
+        ttlMs: this.#leaseTtlMs,
+        now: this.#now(),
+      });
+      if (renewedImmediatelyBeforeDelete.status !== "acquired")
+        return {
+          status: "conflict",
+          actionId: action.id,
+          reason: "lease-unavailable",
+        };
+      activeLease = renewedImmediatelyBeforeDelete.lease;
       await this.objects.delete(object.objectKey);
       return { status: "applied", actionId: action.id };
     } finally {

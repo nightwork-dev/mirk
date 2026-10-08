@@ -1,0 +1,55 @@
+{
+  "id": "artifact/lifecycle/repair-blocked-by-writer",
+  "title": "repair blocked by writer",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "orphan",
+        "aGVsbG8="
+      ]
+    },
+    {
+      "op": "audit",
+      "args": []
+    },
+    {
+      "op": "planRepair",
+      "args": []
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ]
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "conflict",
+            "actionId": "ca9574c283c8937d919038fd2100dbac6e5b2f93329a63d754130cc4245d515d",
+            "reason": "lease-unavailable"
+          }
+        ]
+      }
+    }
+  ]
+}

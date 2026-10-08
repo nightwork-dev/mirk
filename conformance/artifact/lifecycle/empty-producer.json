@@ -1,0 +1,40 @@
+{
+  "id": "artifact/lifecycle/empty-producer",
+  "title": "empty producer",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "producer": {
+            "system": " "
+          }
+        }
+      ],
+      "expect": {
+        "throws": "producer.system must be non-empty"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

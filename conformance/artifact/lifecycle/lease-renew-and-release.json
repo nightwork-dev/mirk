@@ -1,0 +1,96 @@
+{
+  "id": "artifact/lifecycle/lease-renew-and-release",
+  "title": "lease renew and release",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ]
+    },
+    {
+      "op": "setTime",
+      "args": [
+        1005
+      ]
+    },
+    {
+      "op": "renewObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010,
+          "ttlMs": 20
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "lease": {
+            "leaseId": "lease-1",
+            "ownerId": "writer",
+            "objectKey": "orphan",
+            "mode": "shared-writer",
+            "generation": 0,
+            "heartbeatAt": 1005,
+            "expiresAt": 1025
+          }
+        }
+      }
+    },
+    {
+      "op": "releaseObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010
+        }
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "releaseObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010
+        }
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

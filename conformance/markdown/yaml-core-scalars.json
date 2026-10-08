@@ -1,0 +1,43 @@
+{
+  "id": "markdown/yaml-core-scalars",
+  "title": "yaml core scalars",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "things/a.md",
+        "---\nid: a\nyesWord: yes\nonWord: on\ntruth: true\nempty: null\nnumber: 1_000\ncreated: 2024-01-02\nscientific: 1e3\noctal: 0o10\n---\n"
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "yesWord": "yes",
+          "onWord": "on",
+          "truth": true,
+          "empty": null,
+          "number": "1_000",
+          "created": "2024-01-02",
+          "scientific": 1000,
+          "octal": 8
+        }
+      }
+    }
+  ]
+}

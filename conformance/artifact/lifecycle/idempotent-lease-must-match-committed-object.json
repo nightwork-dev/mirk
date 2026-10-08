@@ -1,0 +1,88 @@
+{
+  "id": "artifact/lifecycle/idempotent-lease-must-match-committed-object",
+  "title": "idempotent lease must match committed object",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "other",
+          "ownerId": "repair",
+          "mode": "exclusive-delete"
+        }
+      ]
+    },
+    {
+      "op": "createIdempotentWithLease",
+      "args": [
+        {
+          "lease": {
+            "leaseId": "lease-1",
+            "objectKey": "orphan",
+            "ownerId": "writer",
+            "mode": "shared-writer",
+            "generation": 0,
+            "heartbeatAt": 1000,
+            "expiresAt": 1010
+          },
+          "record": {
+            "id": "wrong",
+            "objectKey": "other",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            }
+          },
+          "idempotencyKey": "key"
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "lease-lost"
+        }
+      }
+    },
+    {
+      "op": "getByIdempotencyKey",
+      "args": [
+        "key"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

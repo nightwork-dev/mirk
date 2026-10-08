@@ -1,0 +1,94 @@
+{
+  "id": "markdown/kv-roundtrip",
+  "title": "kv roundtrip",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "set",
+      "args": [
+        "settings/theme",
+        {
+          "mode": "dark",
+          "nullable": null
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": {
+          "mode": "dark",
+          "nullable": null
+        }
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "keys",
+      "args": [
+        "settings/"
+      ],
+      "expect": {
+        "value": [
+          "settings/theme"
+        ]
+      }
+    },
+    {
+      "op": "delete",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "has",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "delete",
+      "args": [
+        "settings/theme"
+      ],
+      "expect": {
+        "value": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "markdown/custom-index-filename-is-reserved",
+  "title": "custom index filename is reserved",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "preset": "notes",
+          "indexFileName": "catalog.md"
+        }
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "documents",
+          {
+            "id": "note-1",
+            "title": "Catalog",
+            "status": "draft",
+            "summary": "Opening paragraph.",
+            "details": "Details here."
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "unsafe-filename"
+        }
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

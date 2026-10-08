@@ -1,0 +1,83 @@
+{
+  "id": "artifact/lifecycle/shared-leases-exclude-delete",
+  "title": "shared leases exclude delete",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "lease": {
+            "leaseId": "lease-1",
+            "ownerId": "writer",
+            "objectKey": "orphan",
+            "mode": "shared-writer",
+            "generation": 0,
+            "heartbeatAt": 1000,
+            "expiresAt": 1010
+          }
+        }
+      }
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "other",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "lease": {
+            "leaseId": "lease-2",
+            "ownerId": "other",
+            "objectKey": "orphan",
+            "mode": "shared-writer",
+            "generation": 0,
+            "heartbeatAt": 1000,
+            "expiresAt": 1010
+          }
+        }
+      }
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "repair",
+          "mode": "exclusive-delete",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "unavailable",
+          "reason": "shared-held"
+        }
+      }
+    }
+  ]
+}

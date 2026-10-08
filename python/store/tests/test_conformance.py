@@ -42,6 +42,7 @@ IMPLEMENTED_CAPABILITIES = {"listWhereIn"}
 BACKENDS: dict[str, Callable[[], Any]] = {
     "memory": lambda: InMemoryStore(version_identity="conformance"),
     "sqlite": lambda: SqliteStore(":memory:", version_identity="conformance"),
+    "markdown": lambda: None,
 }
 
 EXECUTED: list[tuple[str, str, str]] = []
@@ -62,8 +63,13 @@ def _load() -> tuple[list[Scenario], str | None]:
 SCENARIOS, CORPUS_ERROR = _load()
 
 
-def _unsupported_capabilities(scenario: Scenario) -> list[str]:
-    return [name for name in scenario.capabilities if name not in IMPLEMENTED_CAPABILITIES]
+def _backends_for_port(port: str) -> tuple[str, ...]:
+    return ("markdown",) if port == "store_markdown" else ("memory", "sqlite")
+
+
+def _unsupported_capabilities(scenario: Scenario, backend: str) -> list[str]:
+    capabilities: set[str] = set() if backend == "markdown" else IMPLEMENTED_CAPABILITIES
+    return [name for name in scenario.capabilities if name not in capabilities]
 
 
 def test_corpus_is_present() -> None:
@@ -78,19 +84,23 @@ def test_corpus_validates_against_its_schema() -> None:
     assert validate_scenarios(SCENARIOS, directory) == len(SCENARIOS)
 
 
-@pytest.mark.parametrize("backend", sorted(BACKENDS))
 @pytest.mark.parametrize(
-    "scenario",
-    [pytest.param(scenario, id=scenario.id) for scenario in SCENARIOS],
+    ("scenario", "backend"),
+    [
+        pytest.param(scenario, backend, id=f"{scenario.id}-{backend}")
+        for scenario in SCENARIOS
+        for backend in _backends_for_port(scenario_port(scenario))
+    ],
 )
 def test_scenario(scenario: Scenario, backend: str) -> None:
     port = scenario_port(scenario)
-    missing = _unsupported_capabilities(scenario)
+    missing = _unsupported_capabilities(scenario, backend)
     if missing:
         SKIPPED.append((port, scenario.id, backend))
         pytest.skip(f"capabilities not implemented here: {', '.join(missing)}")
 
     store = BACKENDS[backend]()
+    target: object | None = None
     try:
         try:
             target = resolve_target(port, backend, store)
@@ -99,6 +109,10 @@ def test_scenario(scenario: Scenario, backend: str) -> None:
             pytest.skip(f"no target for port {port!r}: {exc}")
         failures = run_scenario(target, scenario)
     finally:
+        if target is not store:
+            target_close = getattr(target, "close", None)
+            if callable(target_close):
+                target_close()
         close = getattr(store, "close", None)
         if callable(close):
             close()
@@ -128,7 +142,7 @@ def test_every_corpus_port_either_ran_or_was_skipped() -> None:
     assert executed_ports, "no corpus scenario executed"
 
     for port in executed_ports:
-        for backend in BACKENDS:
+        for backend in _backends_for_port(port):
             count = sum(1 for p, _, b in EXECUTED if p == port and b == backend)
             assert count > 0, f"port {port} executed no scenario on {backend}"
 
@@ -140,6 +154,14 @@ def test_store_ports_resolve_to_the_backend_itself() -> None:
     store = InMemoryStore()
     for port in ("store", "kv", "collection", "atomic"):
         assert resolve_target(scenario_port(_scenario_naming(port)), "memory", store) is store
+
+
+def test_markdown_backend_is_separate_from_atomic_store_backends() -> None:
+    assert _backends_for_port("store_markdown") == ("markdown",)
+    assert _backends_for_port("store") == ("memory", "sqlite")
+    scenario = _scenario_naming("store_markdown")
+    scenario.data["capabilities"] = ["listWhereIn"]
+    assert _unsupported_capabilities(scenario, "markdown") == ["listWhereIn"]
 
 
 def test_a_missing_port_module_is_a_target_failure_not_a_crash() -> None:

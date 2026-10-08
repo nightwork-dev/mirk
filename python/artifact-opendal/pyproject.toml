@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mirk-artifact-opendal"
+version = "0.1.0"
+description = "OpenDAL object storage adapter for Mirk artifacts."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["mirk-artifact>=0.1.0,<0.2", "opendal>=0.47.10,<0.48"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[tool.uv.sources]
+mirk-artifact = { workspace = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirk"]
+
+[tool.hatch.build.targets.sdist]
+include = ["README.md", "LICENSE", "pyproject.toml", "src/mirk", "tests"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+pythonVersion = "3.12"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF"]
+ignore = ["N802", "N803", "N815"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

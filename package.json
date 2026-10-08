@@ -10,7 +10,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "typecheck": "pnpm -r typecheck",
-    "docs:check": "node scripts/check-public-docs.mjs",
+    "docs:check": "node --test scripts/check-public-docs.test.mjs && node scripts/check-public-docs.mjs",
     "release:verify": "node scripts/verify-package-release.mjs",
     "release:receipt": "node scripts/verify-package-release.mjs --publication",
     "changeset": "changeset",
@@ -20,6 +20,8 @@
     "conformance:current": "pnpm --filter @mirk/store conformance:current"
   },
   "devDependencies": {
+    "@mirk/artifact": "workspace:*",
+    "@mirk/store-markdown": "workspace:*",
     "@changesets/cli": "2.31.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0"

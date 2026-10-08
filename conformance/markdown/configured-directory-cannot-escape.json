@@ -1,0 +1,39 @@
+{
+  "id": "markdown/configured-directory-cannot-escape",
+  "title": "configured directory cannot escape",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "collections": {
+            "things": {
+              "directory": "../outside"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "op": "failure",
+      "args": [
+        "put",
+        [
+          "things",
+          {
+            "id": "a"
+          }
+        ]
+      ],
+      "expect": {
+        "value": {
+          "code": "path-escapes-root"
+        }
+      }
+    }
+  ]
+}

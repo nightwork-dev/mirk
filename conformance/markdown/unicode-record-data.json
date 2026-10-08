@@ -1,0 +1,53 @@
+{
+  "id": "markdown/unicode-record-data",
+  "title": "unicode record data",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "🌱",
+          "title": "Café",
+          "nested": {
+            "flag": true,
+            "values": [
+              1,
+              "x"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "🌱"
+      ],
+      "expect": {
+        "value": {
+          "id": "🌱",
+          "title": "Café",
+          "nested": {
+            "flag": true,
+            "values": [
+              1,
+              "x"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

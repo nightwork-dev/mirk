@@ -1,0 +1,49 @@
+{
+  "id": "artifact/lifecycle/lineage-self-cycle",
+  "title": "lineage self cycle",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "addLineage",
+      "args": [
+        {
+          "id": "edge",
+          "sourceArtifactId": "artifact-1",
+          "resultArtifactId": "artifact-1",
+          "operation": "copy",
+          "createdAt": 1000
+        }
+      ],
+      "expect": {
+        "throws": "lineage cycle forbidden"
+      }
+    },
+    {
+      "op": "getSources",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

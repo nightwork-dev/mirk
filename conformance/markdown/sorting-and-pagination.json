@@ -1,0 +1,91 @@
+{
+  "id": "markdown/sorting-and-pagination",
+  "title": "sorting and pagination",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a",
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "b",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "c",
+          "rank": 2
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "sortBy": "rank",
+          "offset": 1,
+          "limit": 1
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "c",
+            "rank": 2
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things",
+        {
+          "sortBy": "rank",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "id": "a",
+            "rank": 3
+          },
+          {
+            "id": "c",
+            "rank": 2
+          },
+          {
+            "id": "b",
+            "rank": 1
+          }
+        ]
+      }
+    }
+  ]
+}

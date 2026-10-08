@@ -1,0 +1,48 @@
+{
+  "id": "markdown/record-encoded-id",
+  "title": "record encoded id",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "x/y",
+          "value": "saved"
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "things",
+        "x/y"
+      ],
+      "expect": {
+        "value": {
+          "id": "x/y",
+          "value": "saved"
+        }
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": [
+          "things/~eC95.md"
+        ]
+      }
+    }
+  ]
+}

@@ -72,9 +72,10 @@ remain the right choice for different trust, retention, backup, or lifecycle bou
 ## Base store contract
 
 The in-memory reference and the SQLite adapter follow these rules, pinned by the shared conformance
-corpus in both languages; `@mirk/store-indexeddb` replays the same corpus in a real browser. Other
-adapters are not yet run against the corpus; in particular the PostgreSQL adapter orders `keys()` by
-the database collation.
+corpus in both languages. `@mirk/store-indexeddb` replays the store scenarios in a real browser.
+The artifact and Markdown targets use their own backend rows in the same corpus. PostgreSQL,
+libSQL, and SurrealDB are separate adapters; their package READMEs describe any adapter-specific
+behavior that is outside this matrix.
 
 - `get` returns `null` both for a missing key and for a stored `null`. `has` is the only existence
   test.

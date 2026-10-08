@@ -1,0 +1,37 @@
+{
+  "id": "artifact/lifecycle/import-missing-object",
+  "title": "import missing object",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "importArtifact",
+      "args": [
+        {
+          "objectKey": "missing",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "throws": "object not found: missing"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "id": "artifact/lifecycle/lease-expiry-advances-generation",
+  "title": "lease expiry advances generation",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ]
+    },
+    {
+      "op": "setTime",
+      "args": [
+        1011
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "orphan",
+          "ownerId": "other",
+          "mode": "shared-writer",
+          "ttlMs": 10
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "lease": {
+            "leaseId": "lease-2",
+            "ownerId": "other",
+            "objectKey": "orphan",
+            "mode": "shared-writer",
+            "generation": 1,
+            "heartbeatAt": 1011,
+            "expiresAt": 1021
+          }
+        }
+      }
+    },
+    {
+      "op": "renewObjectLease",
+      "args": [
+        {
+          "leaseId": "lease-1",
+          "objectKey": "orphan",
+          "ownerId": "writer",
+          "mode": "shared-writer",
+          "generation": 0,
+          "heartbeatAt": 1000,
+          "expiresAt": 1010
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "unavailable",
+          "reason": "expired"
+        }
+      }
+    },
+    {
+      "op": "createWithLease",
+      "args": [
+        {
+          "lease": {
+            "leaseId": "lease-1",
+            "objectKey": "orphan",
+            "ownerId": "writer",
+            "mode": "shared-writer",
+            "generation": 0,
+            "heartbeatAt": 1000,
+            "expiresAt": 1010
+          },
+          "record": {
+            "id": "lost",
+            "objectKey": "orphan",
+            "createdAt": 1000,
+            "mediaType": "text/plain",
+            "sizeBytes": 5,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "lease-lost"
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    }
+  ]
+}

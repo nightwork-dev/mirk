@@ -1,0 +1,55 @@
+{
+  "id": "artifact/lifecycle/lineage-cycle",
+  "title": "lineage cycle",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "sources": [
+            {
+              "artifactId": "artifact-1",
+              "operation": "copy"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "addLineage",
+      "args": [
+        {
+          "id": "reverse",
+          "sourceArtifactId": "artifact-2",
+          "resultArtifactId": "artifact-1",
+          "operation": "copy",
+          "createdAt": 1000
+        }
+      ],
+      "expect": {
+        "throws": "lineage cycle forbidden"
+      }
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "id": "artifact/lifecycle/delete-removes-lineage",
+  "title": "delete removes lineage",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain",
+          "sources": [
+            {
+              "artifactId": "artifact-1",
+              "operation": "copy"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "artifact-1"
+      ]
+    },
+    {
+      "op": "getSources",
+      "args": [
+        "artifact-2"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "verify",
+      "args": [
+        "artifact-2"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-2",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "ok": true,
+          "actualDigest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "actualSizeBytes": 5
+        }
+      }
+    }
+  ]
+}

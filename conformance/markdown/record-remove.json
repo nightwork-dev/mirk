@@ -1,0 +1,54 @@
+{
+  "id": "markdown/record-remove",
+  "title": "record remove",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "things",
+        {
+          "id": "a"
+        }
+      ]
+    },
+    {
+      "op": "remove",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "things",
+        "a"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "things"
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}

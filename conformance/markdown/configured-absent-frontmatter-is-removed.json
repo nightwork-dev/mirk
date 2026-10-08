@@ -1,0 +1,58 @@
+{
+  "id": "markdown/configured-absent-frontmatter-is-removed",
+  "title": "configured absent frontmatter is removed",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "preset": "notes"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "documents",
+        {
+          "id": "note-1",
+          "title": "First Note",
+          "status": "draft",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "documents",
+        {
+          "id": "note-1",
+          "title": "First Note",
+          "summary": "Opening",
+          "details": "Text"
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "documents",
+        "note-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "note-1",
+          "title": "First Note",
+          "summary": "Opening",
+          "details": "Text"
+        }
+      }
+    }
+  ]
+}

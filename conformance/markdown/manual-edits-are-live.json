@@ -1,0 +1,105 @@
+{
+  "id": "markdown/manual-edits-are-live",
+  "title": "manual edits are live",
+  "ports": [
+    "store_markdown"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "preset": "notes"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "documents",
+        {
+          "id": "note-1",
+          "title": "First Note",
+          "status": "draft",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      ]
+    },
+    {
+      "op": "writeFile",
+      "args": [
+        "docs/first-note.md",
+        "---\nid: note-1\ntitle: Hand edited\nstatus: ready\nunknown: preserved\n---\n\nManual opening.\n\n## Details\n\nManual details.\n\n## Notes\n\nKeep this prose.\n"
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "documents",
+        "note-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "note-1",
+          "title": "Hand edited",
+          "status": "ready",
+          "unknown": "preserved",
+          "summary": "Manual opening.",
+          "details": "Manual details."
+        }
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "documents",
+        {
+          "id": "note-1",
+          "title": "Renamed",
+          "status": "done",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      ]
+    },
+    {
+      "op": "getById",
+      "args": [
+        "documents",
+        "note-1"
+      ],
+      "expect": {
+        "value": {
+          "id": "note-1",
+          "title": "Renamed",
+          "status": "done",
+          "unknown": "preserved",
+          "summary": "Opening paragraph.",
+          "details": "Details here."
+        }
+      }
+    },
+    {
+      "op": "fileContains",
+      "args": [
+        "docs/first-note.md",
+        "## Notes\n\nKeep this prose."
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "files",
+      "args": [],
+      "expect": {
+        "value": [
+          "docs/INDEX.md",
+          "docs/first-note.md"
+        ]
+      }
+    }
+  ]
+}

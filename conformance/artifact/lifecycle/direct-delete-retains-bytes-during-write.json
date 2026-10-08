@@ -1,0 +1,89 @@
+{
+  "id": "artifact/lifecycle/direct-delete-retains-bytes-during-write",
+  "title": "direct delete retains bytes during write",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "acquireObjectLease",
+      "args": [
+        {
+          "objectKey": "artifacts/artifact-1",
+          "ownerId": "other",
+          "mode": "shared-writer"
+        }
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "throws": "artifact metadata deleted but object deletion lease unavailable: artifact-1"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 1,
+          "findings": [
+            {
+              "code": "object-without-record",
+              "maintenanceRef": "ref-audit-1-1",
+              "detail": "object is not referenced by an artifact record"
+            }
+          ],
+          "coverage": "complete"
+        }
+      }
+    },
+    {
+      "op": "planRepair",
+      "args": []
+    },
+    {
+      "op": "applyRepair",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "status": "conflict",
+            "actionId": "ca9574c283c8937d919038fd2100dbac6e5b2f93329a63d754130cc4245d515d",
+            "reason": "lease-unavailable"
+          }
+        ]
+      }
+    }
+  ]
+}

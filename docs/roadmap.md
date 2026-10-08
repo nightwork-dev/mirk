@@ -33,9 +33,13 @@ still open.
 | MR-22  | Remove the never-executed sqlite-vec path                 | `@mirk/store/sqlite`, `python/store` | shipped       |
 | MR-22b | Does the libSQL native vector path execute?               | `@mirk/store-libsql`                 | open question |
 | MR-23  | Python port of `@mirk/fixtures`                           | `python/fixtures` (`mirk-fixtures`)  | shipped       |
+| MR-24  | Python port of `@mirk/artifact`                           | `python/artifact` (`mirk-artifact`)  | unreleased |
+| MR-25  | Python Markdown storage adapter                          | `python/store-markdown`             | unreleased |
+| MR-26  | Python S3/OpenDAL artifact object adapter                 | `python/artifact-opendal`           | unreleased |
 
-"Shipped" means implemented and tested on the default branch. Published versions are listed in
-[`CHANGELOG.md`](../CHANGELOG.md). The Python packages build as wheels but are not yet on an index.
+"Shipped" means implemented and tested on the default branch. "Unreleased" means that
+the source and tests contain the feature without a release entry for it yet. Published
+versions and release history are listed in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Open
 

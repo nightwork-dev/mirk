@@ -16,6 +16,8 @@ import {
 } from "../canonical.js";
 import { SqliteAdapter } from "../adapters/sqlite.js";
 import { fixturesApi, type FixturesBackendStore } from "./fixtures-target.js";
+import { artifactApi } from "./artifact-target.js";
+import { openMarkdownTarget } from "./markdown-target.js";
 import { neighbors, traverse, traverseFrontierBatched } from "../graph.js";
 import {
   targetKindFor,
@@ -109,8 +111,8 @@ const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
 
 /** Optional capabilities a backend has right now. `listWhereIn` is a method both
  *  stores implement. */
-export function backendCapabilities(_backend: BackendName): string[] {
-  return ["listWhereIn"];
+export function backendCapabilities(backend: BackendName): string[] {
+  return backend === "markdown" ? [] : ["listWhereIn"];
 }
 
 /** The capabilities a scenario declares that this backend cannot supply, plus
@@ -132,11 +134,19 @@ export function unsupportedCapabilities(
 export function openTarget(backend: BackendName, scenario: TargetRequest): OpenTarget {
   const kind = targetKindFor(scenario.ports);
 
+  if (backend === "markdown" && kind === "store_markdown") return openMarkdownTarget();
+  if (backend === "markdown" || kind === "store_markdown")
+    throw new Error(`backend ${backend} cannot bind target ${kind}`);
+
   if (kind === "hash") {
     return { target: { kind, api: hashApi() }, dispose: () => {} };
   }
 
   if (backend === "memory") {
+    if (kind === "artifact") {
+      const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+      return { target: { kind, api: artifactApi(backend, store) }, dispose: () => {} };
+    }
     if (kind === "fixtures") {
       const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
       return {
@@ -169,6 +179,10 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
       : { path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY },
   );
   const dispose = () => adapter.close();
+
+  if (kind === "artifact") {
+    return { target: { kind, api: artifactApi(backend, adapter.kv) }, dispose };
+  }
 
   if (kind === "fixtures") {
     return {

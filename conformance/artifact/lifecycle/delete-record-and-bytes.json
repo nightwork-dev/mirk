@@ -1,0 +1,56 @@
+{
+  "id": "artifact/lifecycle/delete-record-and-bytes",
+  "title": "delete record and bytes",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ]
+    },
+    {
+      "op": "delete",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 0,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}
