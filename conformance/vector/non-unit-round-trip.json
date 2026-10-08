@@ -1,0 +1,41 @@
+{
+  "id": "vector/non-unit-round-trip",
+  "title": "get preserves original vector magnitude rather than a normalized direction",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "raw",
+          "vector": [
+            3,
+            4,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "docs",
+        "raw"
+      ],
+      "expect": {
+        "value": {
+          "id": "raw",
+          "vector": [
+            3,
+            4,
+            0
+          ]
+        }
+      }
+    }
+  ]
+}

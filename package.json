@@ -19,6 +19,11 @@
     "conformance:gen": "pnpm --filter @mirk/store conformance:gen",
     "conformance:current": "pnpm --filter @mirk/store conformance:current"
   },
+  "pnpm": {
+    "overrides": {
+      "@qdrant/js-client-rest>undici": "7.29.1"
+    }
+  },
   "devDependencies": {
     "@mirk/artifact": "workspace:*",
     "@mirk/store-markdown": "workspace:*",

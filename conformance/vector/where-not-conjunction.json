@@ -1,0 +1,68 @@
+{
+  "id": "vector/where-not-conjunction",
+  "title": "whereNot excludes a full conjunction and keeps partial matches",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "both",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "a": 1,
+            "b": 2
+          }
+        }
+      ]
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "docs",
+        {
+          "id": "partial",
+          "vector": [
+            1,
+            0,
+            0
+          ],
+          "metadata": {
+            "a": 1,
+            "b": 3
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        [
+          1,
+          0,
+          0
+        ],
+        {
+          "whereNot": {
+            "a": 1,
+            "b": 2
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "partial"
+        ]
+      }
+    }
+  ]
+}

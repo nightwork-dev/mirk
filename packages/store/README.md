@@ -377,6 +377,9 @@ To back up a live database, use a consistent SQLite snapshot (better-sqlite3's `
 `VACUUM INTO`) or stop writers first. Copying the main file alone, without its WAL, is not a
 backup. The adapter does not ship a backup or restore operation.
 
+The `@mirk/store/vector` entry includes `compareCodePoints` for adapters that need
+the same deterministic ID ordering as the reference store.
+
 Vectors (`Vector` is a `Float32Array`) are stored as little-endian float32 BLOBs and ranked by
 **exact cosine**, accumulated in float64. That is the only search path this adapter has, so
 `db.vector.meta.accelerated` is always `false`. `sqlite-vec` is no longer a peer dependency; files

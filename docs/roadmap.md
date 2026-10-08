@@ -16,7 +16,7 @@ still open.
 | MR-05  | Full-text search primitive                                | `@mirk/store/search`                 | shipped       |
 | MR-06  | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`                 | shipped       |
 | MR-07  | Authored-data fixture loader                              | `@mirk/fixtures`                     | shipped       |
-| MR-08  | Qdrant vector adapter                                     | `@mirk/vector-qdrant`                | proposed      |
+| MR-08  | Qdrant vector adapters for TypeScript and Python          | `@mirk/vector-qdrant`, `mirk-vector-qdrant` | unreleased |
 | MR-09  | Shared-connection SurrealDB adapters                      | `@mirk/surreal`                      | shipped       |
 | MR-10  | Durable artifact substrate                                | `@mirk/artifact`                     | shipped       |
 | MR-11  | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`               | shipped       |
@@ -42,12 +42,6 @@ the source and tests contain the feature without a release entry for it yet. Pub
 versions and release history are listed in [`CHANGELOG.md`](../CHANGELOG.md).
 
 ## Open
-
-### MR-08 · Qdrant vector adapter
-
-A server-side implementation of the existing vector port, for workloads that outgrow the embedded
-and general-purpose database adapters. Release requires cross-backend cosine, filter, update,
-removal, and dimensionality parity.
 
 ### MR-13 · PostgreSQL native full-text search facet
 

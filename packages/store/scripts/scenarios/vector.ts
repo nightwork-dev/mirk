@@ -35,7 +35,12 @@ export const scenarios = [
           {
             id: "a",
             vector: [1, 0, 0],
-            metadata: { type: "cat", tags: ["black", "small"], live: true, owner: null },
+            metadata: {
+              type: "cat",
+              tags: ["black", "small"],
+              live: true,
+              owner: null,
+            },
           },
         ],
       },
@@ -68,8 +73,14 @@ export const scenarios = [
     title: "upserting the same id twice keeps the second vector and one row",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0], metadata: { v: 1 } }] },
-      { op: "upsert", args: ["docs", { id: "a", vector: [0, 1, 0], metadata: { v: 2 } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vector: [1, 0, 0], metadata: { v: 1 } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vector: [0, 1, 0], metadata: { v: 2 } }],
+      },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
       { op: "count", args: ["docs"], expect: { value: true } },
     ],
@@ -128,18 +139,24 @@ export const scenarios = [
   // ── dimensions ──────────────────────────────────────────────────────────
   defineScenario({
     id: "vector/dimension-mismatch-upsert",
-    title: "upserting a vector of the wrong length throws the shared mismatch message",
+    title:
+      "upserting a vector of the wrong length throws the shared mismatch message",
     ports: ["vector"],
     steps: [
       { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "b", vector: [1, 0, 0, 0] }], expect: { throws: true } },
+      {
+        op: "upsert",
+        args: ["docs", { id: "b", vector: [1, 0, 0, 0] }],
+        expect: { throws: true },
+      },
       { op: "count", args: ["docs"], expect: { value: true } },
     ],
   }),
 
   defineScenario({
     id: "vector/dimension-mismatch-search",
-    title: "searching with a query of the wrong length throws the shared mismatch message",
+    title:
+      "searching with a query of the wrong length throws the shared mismatch message",
     ports: ["vector"],
     steps: [
       { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
@@ -227,7 +244,11 @@ export const scenarios = [
       { op: "upsert", args: ["docs", { id: "near", vector: [1, 0, 0] }] },
       { op: "upsert", args: ["docs", { id: "mid", vector: [1, 1, 0] }] },
       { op: "upsert", args: ["docs", { id: "far", vector: [0, 1, 0] }] },
-      { op: "search", args: ["docs", [1, 0, 0], { topK: 2 }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { topK: 2 }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -319,7 +340,8 @@ export const scenarios = [
 
   defineScenario({
     id: "vector/tie-break-at-topk-boundary",
-    title: "ties at the topK boundary resolve by id, whatever order the rows went in",
+    title:
+      "ties at the topK boundary resolve by id, whatever order the rows went in",
     ports: ["vector"],
     steps: [
       // More tied rows than topK. A backend that asks its index for exactly
@@ -333,10 +355,26 @@ export const scenarios = [
       { op: "upsert", args: ["desc", { id: "c", vector: [1, 0, 0] }] },
       { op: "upsert", args: ["desc", { id: "b", vector: [1, 0, 0] }] },
       { op: "upsert", args: ["desc", { id: "a", vector: [1, 0, 0] }] },
-      { op: "search", args: ["asc", [1, 0, 0], { topK: 2 }], expect: { ids: true } },
-      { op: "search", args: ["desc", [1, 0, 0], { topK: 2 }], expect: { ids: true } },
-      { op: "search", args: ["asc", [1, 0, 0], { topK: 1 }], expect: { ids: true } },
-      { op: "search", args: ["desc", [1, 0, 0], { topK: 1 }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["asc", [1, 0, 0], { topK: 2 }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["desc", [1, 0, 0], { topK: 2 }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["asc", [1, 0, 0], { topK: 1 }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["desc", [1, 0, 0], { topK: 1 }],
+        expect: { ids: true },
+      },
       {
         op: "search",
         args: ["asc", [1, 0, 0], { topK: 2, minScore: 0.5 }],
@@ -352,7 +390,8 @@ export const scenarios = [
 
   defineScenario({
     id: "vector/tie-break-astral-id",
-    title: "id tie-breaks compare Unicode code points, so an astral id sorts last",
+    title:
+      "id tie-breaks compare Unicode code points, so an astral id sorts last",
     ports: ["vector"],
     steps: [
       // U+1F600 is one code point above U+E000, but its UTF-16 surrogate
@@ -375,7 +414,11 @@ export const scenarios = [
       { op: "count", args: ["docs"], expect: { value: true } },
       { op: "has", args: ["docs", "zero"], expect: { value: true } },
       { op: "get", args: ["docs", "zero"], expect: { value: true } },
-      { op: "search", args: ["docs", [1, 0, 0], { minScore: -1 }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { minScore: -1 }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -407,9 +450,21 @@ export const scenarios = [
         args: [
           "pets",
           [
-            { id: "cat-black", vector: [1, 0, 0], metadata: { type: "cat", color: "black" } },
-            { id: "cat-white", vector: [0.9, 0.1, 0], metadata: { type: "cat", color: "white" } },
-            { id: "dog-a", vector: [0, 1, 0], metadata: { type: "dog", color: "black" } },
+            {
+              id: "cat-black",
+              vector: [1, 0, 0],
+              metadata: { type: "cat", color: "black" },
+            },
+            {
+              id: "cat-white",
+              vector: [0.9, 0.1, 0],
+              metadata: { type: "cat", color: "white" },
+            },
+            {
+              id: "dog-a",
+              vector: [0, 1, 0],
+              metadata: { type: "dog", color: "black" },
+            },
           ],
         ],
       },
@@ -431,9 +486,21 @@ export const scenarios = [
         args: [
           "pets",
           [
-            { id: "cat-black", vector: [1, 0, 0], metadata: { type: "cat", color: "black" } },
-            { id: "cat-white", vector: [0.9, 0.1, 0], metadata: { type: "cat", color: "white" } },
-            { id: "dog-a", vector: [0, 1, 0], metadata: { type: "dog", color: "black" } },
+            {
+              id: "cat-black",
+              vector: [1, 0, 0],
+              metadata: { type: "cat", color: "black" },
+            },
+            {
+              id: "cat-white",
+              vector: [0.9, 0.1, 0],
+              metadata: { type: "cat", color: "white" },
+            },
+            {
+              id: "dog-a",
+              vector: [0, 1, 0],
+              metadata: { type: "dog", color: "black" },
+            },
           ],
         ],
       },
@@ -444,7 +511,11 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["pets", [1, 0, 0], { where: { type: "cat" }, whereNot: { color: "black" } }],
+        args: [
+          "pets",
+          [1, 0, 0],
+          { where: { type: "cat" }, whereNot: { color: "black" } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -455,9 +526,19 @@ export const scenarios = [
     title: "a document with no metadata never satisfies a where filter",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["pets", { id: "tagged", vector: [1, 0, 0], metadata: { type: "cat" } }] },
+      {
+        op: "upsert",
+        args: [
+          "pets",
+          { id: "tagged", vector: [1, 0, 0], metadata: { type: "cat" } },
+        ],
+      },
       { op: "upsert", args: ["pets", { id: "bare", vector: [1, 0, 0] }] },
-      { op: "search", args: ["pets", [1, 0, 0], { where: { type: "cat" } }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["pets", [1, 0, 0], { where: { type: "cat" } }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -488,14 +569,19 @@ export const scenarios = [
 
   defineScenario({
     id: "vector/where-compares-nested-json-exactly",
-    title: "where compares nested objects and arrays by exact JSON, key order included",
+    title:
+      "where compares nested objects and arrays by exact JSON, key order included",
     ports: ["vector"],
     steps: [
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "a", vector: [1, 0, 0], metadata: { spec: { a: 1, b: 2 }, tags: ["x", "y"] } },
+          {
+            id: "a",
+            vector: [1, 0, 0],
+            metadata: { spec: { a: 1, b: 2 }, tags: ["x", "y"] },
+          },
         ],
       },
       {
@@ -516,6 +602,169 @@ export const scenarios = [
       {
         op: "search",
         args: ["docs", [1, 0, 0], { where: { tags: "x" } }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+  defineScenario({
+    id: "vector/non-unit-round-trip",
+    title:
+      "get preserves original vector magnitude rather than a normalized direction",
+    ports: ["vector"],
+    steps: [
+      { op: "upsert", args: ["docs", { id: "raw", vector: [3, 4, 0] }] },
+      { op: "get", args: ["docs", "raw"], expect: { value: true } },
+    ],
+  }),
+  defineScenario({
+    id: "vector/magnitude-extremes",
+    title: "finite float32 magnitude extremes retain their cosine direction",
+    ports: ["vector"],
+    steps: [
+      {
+        op: "upsert",
+        args: ["docs", { id: "large", vector: [1e30, 1e30, 0] }],
+      },
+      { op: "upsert", args: ["docs", { id: "small", vector: [1e-30, 0, 0] }] },
+      {
+        op: "search",
+        args: ["docs", [1e30, 0, 0]],
+        expect: { approxFields: ["score"], tol: 1e-6 },
+      },
+      { op: "search", args: ["docs", [1e-30, 0, 0]], expect: { ids: true } },
+    ],
+  }),
+  defineScenario({
+    id: "vector/float32-score-cutoff",
+    title:
+      "distinct float64 cosine scores determine topK and the inclusive score floor",
+    ports: ["vector"],
+    steps: [
+      {
+        op: "upsert",
+        args: ["docs", { id: "a-near", vector: [1, 0.0001, 0] }],
+      },
+      { op: "upsert", args: ["docs", { id: "z-exact", vector: [1, 0, 0] }] },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { topK: 1 }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { minScore: 1 }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+  defineScenario({
+    id: "vector/empty-metadata-filters",
+    title:
+      "empty metadata and absent metadata have different empty-filter behavior",
+    ports: ["vector"],
+    steps: [
+      { op: "upsert", args: ["docs", { id: "absent", vector: [1, 0, 0] }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "empty", vector: [1, 0, 0], metadata: {} }],
+      },
+      {
+        op: "upsert",
+        args: [
+          "docs",
+          { id: "null", vector: [1, 0, 0], metadata: { value: null } },
+        ],
+      },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { where: {} }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { whereNot: {} }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { where: { value: null } }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+  defineScenario({
+    id: "vector/where-not-conjunction",
+    title: "whereNot excludes a full conjunction and keeps partial matches",
+    ports: ["vector"],
+    steps: [
+      {
+        op: "upsert",
+        args: [
+          "docs",
+          { id: "both", vector: [1, 0, 0], metadata: { a: 1, b: 2 } },
+        ],
+      },
+      {
+        op: "upsert",
+        args: [
+          "docs",
+          { id: "partial", vector: [1, 0, 0], metadata: { a: 1, b: 3 } },
+        ],
+      },
+      {
+        op: "search",
+        args: ["docs", [1, 0, 0], { whereNot: { a: 1, b: 2 } }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+  defineScenario({
+    id: "vector/literal-metadata-keys",
+    title:
+      "metadata filters preserve literal field names and JavaScript number spelling",
+    ports: ["vector"],
+    steps: [
+      {
+        op: "upsert",
+        args: [
+          "docs",
+          {
+            id: "a",
+            vector: [1, 0, 0],
+            metadata: { "a.b": [1e-7, 1e21], "": { "2": 2, "1": 1 } },
+          },
+        ],
+      },
+      {
+        op: "search",
+        args: [
+          "docs",
+          [1, 0, 0],
+          { where: { "a.b": [1e-7, 1e21], "": { "1": 1, "2": 2 } } },
+        ],
+        expect: { ids: true },
+      },
+    ],
+  }),
+  defineScenario({
+    id: "vector/zero-query-topk",
+    title: "zero-query cutoff uses the complete code-point-ordered tie set",
+    ports: ["vector"],
+    steps: [
+      {
+        op: "upsertMany",
+        args: [
+          "docs",
+          [
+            { id: "z", vector: [1, 0, 0] },
+            { id: "a", vector: [0, 1, 0] },
+            { id: "b", vector: [0, 0, 1] },
+          ],
+        ],
+      },
+      {
+        op: "search",
+        args: ["docs", [0, 0, 0], { topK: 1 }],
         expect: { ids: true },
       },
     ],
