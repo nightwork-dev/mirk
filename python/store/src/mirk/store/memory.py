@@ -133,6 +133,10 @@ class InMemoryStore:
         items = list(self._collection(collection).values())
         return [copy_json(item) for item in apply_filter(items, filter)]
 
+    def ensureIndex(self, collection: str, field: str) -> None:
+        """Accepted and a no-op: the reference scans in memory."""
+        self._collection(collection)
+
     def getById(self, collection: str, id: str) -> Any:
         item = self._collection(collection).get(id, _MISSING)
         if item is _MISSING:

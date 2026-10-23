@@ -31,7 +31,7 @@ const scenarios = scenarioPaths(corpusRoot).map(
 const METHODS = [
   "get", "set", "has", "delete", "keys",
   "list", "getById", "put", "remove", "count",
-  "listWhereIn", "getVersioned", "mutateAtomically", "pruneExpiredReceipts",
+  "listWhereIn", "ensureIndex", "getVersioned", "mutateAtomically", "pruneExpiredReceipts",
 ] as const;
 
 // Every skip names the scenario and the README difference it reflects. A
@@ -47,7 +47,6 @@ const SKIPS = new Map<string, string>([
   ["store/offset-negative-is-zero", STRICT_PAGINATION],
   ["store/collection-empty-name-throws", UNVALIDATED_FILTERS],
   ["store/list-where-in-non-scalar-value-throws", UNVALIDATED_FILTERS],
-  ["store/where-non-scalar-value-throws", UNVALIDATED_FILTERS],
   ["store/atomic/reject-operation-limit-exceeded", "the remote default maxOperations is 128, not the in-process 4096"],
 ]);
 

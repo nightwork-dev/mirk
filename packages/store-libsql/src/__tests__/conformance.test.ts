@@ -37,7 +37,7 @@ const scenarios = scenarioPaths(corpusRoot).map(
 
 const METHODS = [
   "get", "set", "has", "delete", "keys",
-  "list", "listWhereIn", "getById", "put", "remove", "count",
+  "list", "listWhereIn", "ensureIndex", "getById", "put", "remove", "count",
   "getVersioned", "mutateAtomically", "pruneExpiredReceipts",
 ] as const;
 

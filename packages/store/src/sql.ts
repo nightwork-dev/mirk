@@ -8,6 +8,7 @@
 // ZERO driver deps: returns SQL text + bind params as plain values, so importing
 // it can never drag better-sqlite3 or @libsql/client into a consumer's graph.
 
+import { compareCodePoints } from "./order.js";
 import type { StoreFilter } from "./types.js";
 
 /** A bound SQL parameter — the common subset both better-sqlite3 and @libsql/client
@@ -30,9 +31,12 @@ export function jsonPath(field: string): string {
  *  a caller error rather than a filter that matches nothing. */
 export const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
 
-export type StoreFilterErrorCode = "non-scalar-filter" | "non-scalar-in-value";
+export const INVALID_RANGE_BOUND_MESSAGE = "Store range bounds must be finite numbers or strings.";
 
-/** Thrown for a `where` or IN value that is not a JSON scalar. */
+export type StoreFilterErrorCode = "non-scalar-filter" | "non-scalar-in-value" | "invalid-range-bound";
+
+/** Thrown for a `where` or IN value that is not a JSON scalar or a range, and
+ *  for a range bound that is not a finite number or a string. */
 export class StoreFilterError extends Error {
   declare readonly name: "StoreFilterError";
   constructor(readonly code: StoreFilterErrorCode, message: string) {
@@ -47,6 +51,75 @@ Object.defineProperty(StoreFilterError.prototype, "name", {
   enumerable: false,
 });
 
+export type StoreRangeOperator = "gt" | "gte" | "lt" | "lte";
+
+/** A `where` value that compares instead of matching exactly:
+ *  `{ seenAt: { gte: since } }`. A number bound compares only numbers, a string
+ *  bound only strings by code point, and null or missing never match. */
+export type StoreRange = { readonly [operator in StoreRangeOperator]?: number | string };
+
+export const STORE_RANGE_OPERATORS: readonly StoreRangeOperator[] = ["gt", "gte", "lt", "lte"];
+
+/** One `where` entry, classified. */
+export type WhereCondition =
+  | { readonly kind: "equals"; readonly value: string | number | bigint | boolean | null }
+  | { readonly kind: "range"; readonly bounds: readonly (readonly [StoreRangeOperator, number | string])[] };
+
+/** Classify a `where` value. A plain object whose keys are all range operators
+ *  is a range; any other non-scalar is the `non-scalar-filter` error, and a range
+ *  bound that is not a finite number or a string is `invalid-range-bound`. */
+export function whereCondition(value: unknown): WhereCondition {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    typeof value === "boolean"
+  ) {
+    return { kind: "equals", value };
+  }
+  if (typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0 || !entries.every(([key]) => (STORE_RANGE_OPERATORS as readonly string[]).includes(key))) {
+    throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
+  }
+  const bounds = entries.map(([operator, bound]) => {
+    if (typeof bound === "string" || (typeof bound === "number" && Number.isFinite(bound))) {
+      return [operator as StoreRangeOperator, bound] as const;
+    }
+    throw new StoreFilterError("invalid-range-bound", INVALID_RANGE_BOUND_MESSAGE);
+  });
+  return { kind: "range", bounds };
+}
+
+/** Validate every `where` value up front, so a bad filter throws even when the
+ *  collection is empty. */
+export function assertWhere(where: Record<string, unknown>): void {
+  for (const value of Object.values(where)) whereCondition(value);
+}
+
+/** True when a stored value lies inside every bound of a range. */
+export function inRange(stored: unknown, bounds: WhereCondition & { kind: "range" }): boolean {
+  return bounds.bounds.every(([operator, bound]) => {
+    let order: number;
+    if (typeof bound === "number") {
+      if (typeof stored !== "number") return false;
+      order = stored < bound ? -1 : stored > bound ? 1 : 0;
+    } else {
+      if (typeof stored !== "string") return false;
+      order = compareCodePoints(stored, bound);
+    }
+    if (operator === "gt") return order > 0;
+    if (operator === "gte") return order >= 0;
+    if (operator === "lt") return order < 0;
+    return order <= 0;
+  });
+}
+
+const RANGE_SQL: Record<StoreRangeOperator, string> = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
+
 export function buildWhereClause(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
   if (!filter?.where || Object.keys(filter.where).length === 0) {
     return { clause: "", params: [] };
@@ -54,42 +127,69 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
   const conditions: string[] = [];
   const params: SqlParam[] = [];
   for (const [key, value] of Object.entries(filter.where)) {
-    const path = jsonPath(key);
-    // Every comparison is guarded by json_type. json_extract collapses a JSON
-    // boolean to SQL 1/0, so an unguarded `= ?` makes `where {v: true}` match a
-    // stored 1 and `where {v: 1}` match a stored true. The in-memory reference's
-    // `record[key] !== value` keeps them apart; the type guard keeps SQLite in step.
-    if (value === null) {
-      // json_type is `'null'` ONLY for an explicit JSON null, and SQL NULL (not
-      // the string 'null') for a missing path, so this matches an explicit null
-      // and not a missing field. `= NULL` would never match at all.
-      conditions.push(`json_type(data, ?) = 'null'`);
-      params.push(path);
-    } else if (typeof value === "boolean") {
-      conditions.push(`json_type(data, ?) = '${value ? "true" : "false"}'`);
-      params.push(path);
-    } else if (typeof value === "string") {
-      conditions.push(`json_type(data, ?) = 'text' AND json_extract(data, ?) = ?`);
-      params.push(path, path, value);
-    } else if (typeof value === "number" || typeof value === "bigint") {
-      conditions.push(
-        `json_type(data, ?) IN ('integer', 'real') AND json_extract(data, ?) = ?`,
-      );
-      params.push(path, path, value);
+    const path = jsonPathLiteral(key);
+    const extract = `json_extract(data, ${path})`;
+    const type = `json_type(data, ${path})`;
+    // Every comparison leads with `json_extract(data, <literal>)`, so an expression
+    // index on it (see `buildEnsureIndexSql`) can serve it, and is guarded by
+    // json_type: json_extract collapses a JSON boolean to SQL 1/0, and the
+    // reference keeps `true` and `1` apart. json_type is `'null'` only for an
+    // explicit JSON null and SQL NULL for a missing path, so null never matches
+    // a missing field.
+    const condition = whereCondition(value);
+    if (condition.kind === "range") {
+      // `unlikely` tells the planner a range is selective. Without ANALYZE
+      // statistics it would otherwise scan in rowid order to skip the sort.
+      for (const [operator, bound] of condition.bounds) {
+        conditions.push(`unlikely(${extract} ${RANGE_SQL[operator]} ?)`);
+        params.push(bound);
+      }
+      const kinds = new Set(condition.bounds.map(([, bound]) => typeof bound));
+      // A number bound compares only numbers and a string bound only strings, so
+      // bounds of both kinds match nothing.
+      conditions.push(kinds.size > 1 ? "0" : kinds.has("number") ? `${type} IN ('integer', 'real')` : `${type} = 'text'`);
+      continue;
+    }
+    const match = condition.value;
+    if (match === null) {
+      conditions.push(`${extract} IS NULL AND ${type} = 'null'`);
+    } else if (typeof match === "boolean") {
+      conditions.push(`${extract} = ${match ? 1 : 0} AND ${type} = '${match}'`);
+    } else if (typeof match === "string") {
+      conditions.push(`${extract} = ? AND ${type} = 'text'`);
+      params.push(match);
     } else {
-      throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
+      conditions.push(`${extract} = ? AND ${type} IN ('integer', 'real')`);
+      params.push(match);
     }
   }
   return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
 }
 
+/** The name of the expression index `ensureIndex` declares on one collection
+ *  table: `ix_<table>_<hex of the field's UTF-8>`. The hex holds no `_`, so the
+ *  last `_` splits the name back into table and field: two declarations never
+ *  share a name. The Python port derives the same name, so each language sees
+ *  the other's index as already present. */
+export function indexNameFor(table: string, field: string): string {
+  let hex = "";
+  for (const byte of new TextEncoder().encode(field)) hex += byte.toString(16).padStart(2, "0");
+  return `ix_${table}_${hex}`;
+}
+
+/** The one idempotent statement behind `ensureIndex(collection, field)`: an
+ *  expression index over the same `json_extract(data, <literal>)` that where,
+ *  listWhereIn and sortBy write. */
+export function buildEnsureIndexSql(table: string, field: string): string {
+  return `CREATE INDEX IF NOT EXISTS ${indexNameFor(table, field)} ON ${table} (json_extract(data, ${jsonPathLiteral(field)}))`;
+}
+
 /** `jsonPath(field)` as a quoted SQL string literal, for SQL that must name the
  *  path in its text: an expression index on `json_extract(data, <literal>)` only
  *  serves a query that spells the same literal, never a bound parameter. Single
- *  quotes are doubled, which is the only escape a SQLite string literal has.
- *  Returns null for a field containing NUL, which SQL text cannot carry. */
-export function jsonPathLiteral(field: string): string | null {
-  if (field.includes("\u0000")) return null;
+ *  quotes are doubled, which is the only escape a SQLite string literal has, and
+ *  the JSON escapes in `jsonPath` leave no NUL or other raw control character. */
+export function jsonPathLiteral(field: string): string {
   return `'${jsonPath(field).replace(/'/g, "''")}'`;
 }
 
@@ -107,15 +207,13 @@ export const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar 
  *  `json_extract(data, path)`, so an expression index on it serves each one.
  *
  *  The path is inlined as a literal so that index can match; see
- *  `jsonPathLiteral`. Fields that cannot be a literal are bound instead. */
+ *  `jsonPathLiteral`. */
 export function buildInClause(
   field: string,
   values: readonly unknown[],
   hasPriorWhere: boolean,
 ): { clause: string; params: SqlParam[] } {
-  const literal = jsonPathLiteral(field);
-  const pathParams: SqlParam[] = literal === null ? [jsonPath(field)] : [];
-  const path = literal ?? "?";
+  const path = jsonPathLiteral(field);
   const scalars: SqlParam[] = [];
   const kinds = new Set<"true" | "false" | "null">();
   for (const value of values) {
@@ -131,12 +229,11 @@ export function buildInClause(
   const params: SqlParam[] = [];
   if (scalars.length > 0) {
     terms.push(`(${extract} IN (${scalars.map(() => "?").join(", ")}) AND ${type} IN ('integer', 'real', 'text'))`);
-    params.push(...pathParams, ...scalars, ...pathParams);
+    params.push(...scalars);
   }
   for (const kind of kinds) {
     const match = kind === "null" ? "IS NULL" : kind === "true" ? "= 1" : "= 0";
     terms.push(`(${extract} ${match} AND ${type} = '${kind}')`);
-    params.push(...pathParams, ...pathParams);
   }
   const condition = terms.length === 1 ? terms[0]! : `(${terms.join(" OR ")})`;
   return { clause: `${hasPriorWhere ? " AND" : " WHERE"} ${condition}`, params };
@@ -149,12 +246,12 @@ export function buildOrderBy(filter?: StoreFilter): { clause: string; params: Sq
   // whatever the query planner happens to scan.
   if (!filter?.sortBy) return { clause: " ORDER BY rowid", params: [] };
   const dir = filter.sortDir === "desc" ? "DESC" : "ASC";
-  const path = jsonPath(filter.sortBy);
-  // `... IS NULL` first puts null/missing fields LAST in BOTH directions, matching
-  // the in-memory reference (which pushes undefined/null after defined values).
+  // NULLS LAST puts null and missing fields last in BOTH directions, matching
+  // the in-memory reference, and unlike a leading `IS NULL` key it lets an
+  // expression index on the same literal deliver the order.
   return {
-    clause: ` ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) ${dir}, rowid`,
-    params: [path, path],
+    clause: ` ORDER BY json_extract(data, ${jsonPathLiteral(filter.sortBy)}) ${dir} NULLS LAST, rowid`,
+    params: [],
   };
 }
 

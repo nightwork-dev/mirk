@@ -30,7 +30,7 @@ const scenarios = scenarioPaths(corpusRoot).map((path) => ({
 
 const PORT_METHODS = {
   kv: ["get", "set", "has", "delete", "keys"],
-  collection: ["list", "getById", "put", "remove", "count"],
+  collection: ["list", "getById", "put", "remove", "count", "ensureIndex"],
   atomic: ["getVersioned", "mutateAtomically"],
 };
 const CAPABILITY_METHODS = {

@@ -32,7 +32,15 @@ from .memory import InMemoryStore
 from .namespace import NamespacedStore, NamespaceError, NamespaceErrorCode, namespace_store
 from .search import SearchInputError, SearchInputErrorCode
 from .sqlite import SqliteAdapterError, SqliteAdapterErrorCode, SqliteStore, hash_name
-from .types import Json, JsonObject, StoreFilter, StoreMeta, SyncStore, SyncStoreInQuery
+from .types import (
+    Json,
+    JsonObject,
+    StoreFilter,
+    StoreMeta,
+    SyncStore,
+    SyncStoreIndexes,
+    SyncStoreInQuery,
+)
 from .vector import VectorInputError, VectorInputErrorCode
 
 __all__ = [
@@ -66,6 +74,7 @@ __all__ = [
     "StoreMeta",
     "SyncStore",
     "SyncStoreInQuery",
+    "SyncStoreIndexes",
     "ValidatedRequest",
     "VectorInputError",
     "VectorInputErrorCode",
