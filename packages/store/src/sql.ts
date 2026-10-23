@@ -16,13 +16,13 @@ import type { StoreFilter } from "./types.js";
 export type SqlParam = string | number | bigint | null;
 
 /** A field name is ONE top-level JSON key, never a nested path. Build the JSON path
- *  `$."field"` (with `"` in the field doubled per SQLite JSON-path quoting) so a
- *  dotted name (`"a.b"`) resolves to the single top-level key `a.b`, matching the
- *  in-memory reference's `record[key]` lookup — not the nested path `$.a.b`. Returned
- *  as a value to BIND, never interpolated into SQL: field names are caller-supplied,
- *  so inlining them would be a SQL-injection vector. */
+ *  `$."field"` so a dotted name (`"a.b"`) resolves to the single top-level key `a.b`,
+ *  matching the in-memory reference's `record[key]` lookup — not the nested path
+ *  `$.a.b`. SQLite decodes a quoted path label as a JSON string, so the label is
+ *  written as one, with JSON escapes for `\` and control characters. A `"` is
+ *  written `\u0022`: SQLite 3.45, libSQL's engine, ends the label at `\"`. */
 export function jsonPath(field: string): string {
-  return `$."${field.replace(/"/g, '""')}"`;
+  return `$."${JSON.stringify(field).slice(1, -1).replaceAll('\\"', "\\u0022")}"`;
 }
 
 /** The message BOTH backends raise for a `where` value that is not a JSON scalar.

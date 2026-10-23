@@ -112,9 +112,15 @@ def hash_name(name: str) -> str:
 
 
 def json_path(field: str) -> str:
-    """A field name is ONE top-level JSON key, never a nested path."""
-    escaped = field.replace('"', '""')
-    return f'$."{escaped}"'
+    """A field name is ONE top-level JSON key, never a nested path.
+
+    SQLite decodes a quoted path label as a JSON string, so the label is written
+    as one, exactly as ``jsonPath`` writes it in TypeScript: JSON escapes, with
+    a ``"`` written ``\\u0022`` because SQLite 3.45, libSQL's engine, ends the
+    label at ``\\"``.
+    """
+    label = json.dumps(field, ensure_ascii=False)[1:-1].replace('\\"', "\\u0022")
+    return f'$."{label}"'
 
 
 def _type_guard(value: Any) -> str:
