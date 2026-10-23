@@ -18,7 +18,8 @@ objects.put("objects/example", b"hello", {"ifAbsent": True})
 
 The adapter checks OpenDAL capabilities before it uses conditional writes,
 content type metadata, user metadata, or recursive listing. Unsupported
-capabilities raise `OpenDalObjectStoreError`.
+capabilities raise `OpenDalObjectStoreError`. When `put` refuses a write for a missing
+capability, it raises `ObjectWriteRejectedError` with that error as `__cause__`.
 
 ## S3
 
@@ -54,5 +55,10 @@ The operator's `root` limits listings and maintenance to that prefix.
 
 Writes use native conditional creation when `ifAbsent` is true.
 A conflict raises Mirk's `ObjectAlreadyExistsError` and preserves the existing object.
+A failure before the writer commits the object raises `ObjectWriteRejectedError`, with the original
+error as `__cause__`. The write removes any partial object it created, so the coordinator never
+deletes the key afterwards. A conditional write that fails while it closes raises
+`ObjectWriteIndeterminateError` and keeps the object, because its owner cannot be proved.
+An unconditional write that fails removes its partial object.
 Reads are lazy byte iterators. The optional `digest_metadata_key` buffers a source once to hash it
 before opening the writer. Stored digest metadata is advisory. Artifact verification hashes the actual bytes.

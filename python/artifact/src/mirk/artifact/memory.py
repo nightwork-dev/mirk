@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from functools import cmp_to_key
 from typing import Any
 
-from .errors import ArtifactConflictError, ArtifactOperationError
+from .errors import ArtifactConflictError, ArtifactOperationError, ObjectWriteRejectedError
 from .types import (
     ArtifactDigest,
     ArtifactLeaseMode,
@@ -58,7 +58,13 @@ class InMemoryObjectStore:
         options = options or {}
         if options.get("ifAbsent") and key in self._objects:
             raise ObjectAlreadyExistsError(key)
-        parts = list(chunks(source))
+        try:
+            parts = list(chunks(source))
+        except Exception as cause:
+            raise ObjectWriteRejectedError(key) from cause
+        # Another writer may have created the key while the source streamed.
+        if options.get("ifAbsent") and key in self._objects:
+            raise ObjectAlreadyExistsError(key)
         value = b"".join(parts)
         info: ObjectInfo = {"key": key, "sizeBytes": len(value)}
         media_type = options.get("mediaType")

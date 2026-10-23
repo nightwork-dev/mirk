@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
-from .errors import ArtifactValidationError
+from .errors import ArtifactValidationError, ObjectWriteRejectedError
 from .memory import ObjectAlreadyExistsError
 from .types import ByteSource, ObjectInfo, ObjectPutOptions
 from .util import assertObjectKey, chunks
@@ -47,7 +47,9 @@ class FileObjectStore:
         except FileExistsError as exc:
             if options.get("ifAbsent"):
                 raise ObjectAlreadyExistsError(key) from exc
-            raise
+            raise ObjectWriteRejectedError(key) from exc
+        except OSError as exc:
+            raise ObjectWriteRejectedError(key) from exc
 
         size = 0
         try:
@@ -61,6 +63,8 @@ class FileObjectStore:
             # deleting them would make retry and recovery less safe.
             if options.get("ifAbsent"):
                 self._cleanup_if_absent(key, cause)
+                if isinstance(cause, Exception):
+                    raise ObjectWriteRejectedError(key) from cause
             raise
 
         info: ObjectInfo = {"key": key, "sizeBytes": size}
@@ -75,6 +79,8 @@ class FileObjectStore:
         except BaseException as cause:
             if options.get("ifAbsent"):
                 self._cleanup_if_absent(key, cause)
+                if isinstance(cause, Exception):
+                    raise ObjectWriteRejectedError(key) from cause
             raise
         return info
 

@@ -230,6 +230,12 @@ JSON has no byte type. The target therefore uses base64 strings for every byte f
 - `read` returns `bytes` as base64 output.
 - `putObject` uses its value as base64 input.
 
+`failNextPut(outcome, landed?)` makes the next object `put` fail the way a remote store can.
+`outcome` is `"rejected"` (`ObjectWriteRejectedError`) or `"indeterminate"`
+(`ObjectWriteIndeterminateError`). When `landed` (base64) is given, those bytes are stored at the
+key before the failure: another writer's object for a rejected write, or the write's own bytes for
+an indeterminate one. The source is not read.
+
 Maintenance runs with the coordinator's namespace (`artifacts` unless `configure` sets one), so
 only objects under `<namespace>/` are audited and repaired.
 

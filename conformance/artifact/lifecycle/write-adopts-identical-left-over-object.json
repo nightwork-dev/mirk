@@ -1,0 +1,78 @@
+{
+  "id": "artifact/lifecycle/write-adopts-identical-left-over-object",
+  "title": "write adopts identical left over object",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "artifacts/artifact-1",
+        "aGVsbG8="
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "artifact-1",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "artifact-1"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "artifact-1",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "bytes": "aGVsbG8="
+        }
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 1,
+          "scannedObjects": 1,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

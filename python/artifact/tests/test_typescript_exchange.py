@@ -161,14 +161,14 @@ def test_a_foreign_writer_lease_blocks_repair(tmp_path: Path) -> None:
             lease_id_factory=lambda: "py-lease",
         )
         objects = FileObjectStore(str(root))
-        objects.put("orphan", b"source")
+        objects.put("artifacts/orphan", b"source")
         maintenance = ArtifactMaintenance(objects, repository, now=lambda: 1_000)
         report = maintenance.audit()
         plan = maintenance.planRepair(report)
         acquired = node(
             """
 const result = await repository.acquireObjectLease({
-  objectKey: 'orphan', ownerId: 'ts-writer', mode: 'shared-writer',
+  objectKey: 'artifacts/orphan', ownerId: 'ts-writer', mode: 'shared-writer',
 });
 console.log(JSON.stringify(result));
 db.close();
@@ -180,7 +180,7 @@ db.close();
         result = maintenance.applyRepair(plan)
         assert result[0]["status"] == "conflict"
         assert result[0]["reason"] == "lease-unavailable"
-        assert objects.head("orphan") is not None
+        assert objects.head("artifacts/orphan") is not None
         assert repository.releaseObjectLease(acquired["lease"]) is True
         assert maintenance.applyRepair(plan)[0]["status"] == "applied"
-        assert objects.head("orphan") is None
+        assert objects.head("artifacts/orphan") is None

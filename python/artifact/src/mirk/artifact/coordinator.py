@@ -15,7 +15,13 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import suppress
 from typing import Any, cast
 
-from .errors import ArtifactConflictError, ArtifactOperationError, ArtifactValidationError
+from .errors import (
+    ArtifactConflictError,
+    ArtifactOperationError,
+    ArtifactValidationError,
+    ObjectWriteIndeterminateError,
+    ObjectWriteRejectedError,
+)
 from .memory import ObjectAlreadyExistsError
 from .types import (
     ArtifactDigest,
@@ -41,12 +47,23 @@ from .util import (
 
 
 class ArtifactWriteError(RuntimeError):
-    """A write failed, with an explicit statement about owned-byte cleanup."""
+    """A write failed, with an explicit statement about owned-byte cleanup.
+
+    ``cleanup`` is ``"not-needed"``, ``"succeeded"``, ``"failed"``, or
+    ``"preserved-indeterminate"`` when the object store could not tell whether
+    the object at the key is this write's and the coordinator kept it.
+    """
 
     def __init__(self, message: str, cleanup: str, cause: BaseException | None = None) -> None:
         super().__init__(message)
         self.cleanup = cleanup
         self.__cause__ = cause
+
+
+def _reported_size(info: object) -> object:
+    if isinstance(info, dict):
+        return cast(dict[str, Any], info).get("sizeBytes")
+    return getattr(info, "sizeBytes", None)
 
 
 def _is_process_level(cause: BaseException | None) -> bool:
@@ -132,31 +149,42 @@ class ArtifactCoordinator:
                 yield from hashingStream(source, complete)
 
             preexisting = self.objects.head(object_key)
-            try:
-                info = self.objects.put(
-                    object_key,
-                    tracked(),
-                    {"mediaType": input["mediaType"], "ifAbsent": True},
-                )
-            except BaseException as cause:
-                if _is_process_level(cause):
-                    raise
-                if preexisting is not None or isinstance(cause, ObjectAlreadyExistsError):
-                    cleanup = "not-needed"
-                else:
-                    cleanup = "succeeded" if self._cleanup_object(object_key) else "failed"
-                raise ArtifactWriteError("artifact object write failed", cleanup, cause) from cause
+            adopted = (
+                self._adopt_left_over_object(object_key, source)
+                if preexisting is not None and not self._has_object_reference(object_key)
+                else None
+            )
+            if adopted is not None:
+                digest, size = adopted
+                reported_size = size
+            else:
+                try:
+                    info = self.objects.put(
+                        object_key,
+                        tracked(),
+                        {"mediaType": input["mediaType"], "ifAbsent": True},
+                    )
+                except BaseException as cause:
+                    if _is_process_level(cause):
+                        raise
+                    if isinstance(cause, ObjectWriteIndeterminateError):
+                        cleanup = "preserved-indeterminate"
+                    elif preexisting is not None or isinstance(
+                        cause, (ObjectAlreadyExistsError, ObjectWriteRejectedError)
+                    ):
+                        cleanup = "not-needed"
+                    else:
+                        cleanup = "succeeded" if self._cleanup_object(object_key) else "failed"
+                    raise ArtifactWriteError(
+                        "artifact object write failed", cleanup, cause
+                    ) from cause
+                reported_size = _reported_size(info)
             if digest is None or size is None:
                 cleaned = self._cleanup_object(object_key)
                 raise ArtifactWriteError(
                     "object store did not consume the complete byte source",
                     "succeeded" if cleaned else "failed",
                 )
-            reported_size = (
-                info.get("sizeBytes")
-                if isinstance(info, dict)
-                else getattr(info, "sizeBytes", None)
-            )
             if reported_size != size:
                 cleaned = self._cleanup_object(object_key)
                 raise ArtifactWriteError(
@@ -551,6 +579,26 @@ class ArtifactCoordinator:
             if isinstance(cause, ArtifactWriteError) and cause.cleanup == "failed":
                 raise
             raise ArtifactWriteError("artifact metadata commit failed", status, cause) from cause
+
+    def _adopt_left_over_object(self, object_key: str, source: Any) -> tuple[ArtifactDigest, int]:
+        """Adopt an unreferenced object at a fresh write's key if its bytes match.
+
+        Such an object is left over from an earlier write that did not finish,
+        typically one whose outcome was indeterminate under a deterministic id.
+        Different bytes are never overwritten or deleted here.
+        """
+
+        existing = self.objects.get(object_key)
+        mine = digestStream(source)
+        theirs = digestStream(existing) if existing is not None else None
+        if theirs is not None and theirs[1] == mine[1] and theirs[0]["value"] == mine[0]["value"]:
+            return mine
+        raise ArtifactOperationError(
+            "object-key-occupied",
+            "an unreferenced object with different bytes occupies this artifact's object key; "
+            "remove it with ArtifactMaintenance (audit, planRepair, delete-unreferenced-object) "
+            "or write under a new id",
+        )
 
     def _cleanup_object(self, object_key: str) -> bool:
         try:

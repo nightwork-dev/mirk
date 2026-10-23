@@ -16,7 +16,7 @@ from .types import (
     ObjectStore,
     StoredArtifactRecord,
 )
-from .util import cloneJson, digestStream, makeId, metadataFingerprint
+from .util import assertObjectKey, cloneJson, digestStream, makeId, metadataFingerprint
 
 
 class ArtifactMaintenance:
@@ -25,6 +25,12 @@ class ArtifactMaintenance:
     A maintenance reference is meaningful only to this instance and audit.  It
     keeps physical object keys out of reports and plans while retaining the
     snapshot needed to perform a conditional repair later.
+
+    ``namespace`` is the coordinator namespace whose objects this audits and
+    repairs: only keys under ``f"{namespace}/"`` are scanned, so nothing else in
+    the store can become a deletion candidate.  It defaults to ``"artifacts"``,
+    the coordinator's default.  ``None`` scans the whole store; use it only when
+    the store holds nothing but this repository's objects.
     """
 
     def __init__(
@@ -32,11 +38,15 @@ class ArtifactMaintenance:
         objects: ObjectStore,
         repository: ArtifactRepository,
         *,
+        namespace: str | None = "artifacts",
         now: Callable[[], int | float] | None = None,
         owner_id: str | None = None,
         lease_ttl_ms: int = 30_000,
         audit_id_factory: Callable[[], str] | None = None,
     ) -> None:
+        if namespace is not None:
+            assertObjectKey(namespace)
+        self.namespace = namespace
         self.objects: ObjectStore = objects
         self.repository: ArtifactRepository = repository
         self.now = now or (lambda: time.time() * 1000)
@@ -107,7 +117,12 @@ class ArtifactMaintenance:
         scanned_objects: int | None = None
         list_method = getattr(self.objects, "list", None)
         if callable(list_method):
-            infos = cast(ListableObjectStore, self.objects).list()
+            scope = None if self.namespace is None else f"{self.namespace}/"
+            infos = [
+                info
+                for info in cast(ListableObjectStore, self.objects).list(scope or "")
+                if scope is None or str(info.get("key", "")).startswith(scope)
+            ]
             scanned_objects = len(infos)
             for info in infos:
                 key = info.get("key")
