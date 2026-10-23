@@ -117,7 +117,10 @@ The object-store key is infrastructure. Coordinator results are `ArtifactDescrip
 
 Any failure throws `ArtifactWriteError` with `cleanup: "not-needed" | "succeeded" | "failed" | "preserved-indeterminate"`. If the byte write fails, no record exists. If anything after it fails, the coordinator removes the record it created and attempts to delete the object. A `"failed"` cleanup leaves an orphaned object for `@mirk/artifact/maintenance` to find.
 
-A remote upload can land before its reply is lost, and a conditional create can lose a race the store cannot report. An object store signals that case by throwing `ObjectWriteIndeterminateError`. The coordinator then keeps the object, because it may belong to another writer, and fails the write with `cleanup: "preserved-indeterminate"`. No record is created, so the bytes are at worst an orphan for maintenance to find.
+A remote upload can land before its reply is lost. An object store signals that case by throwing `ObjectWriteIndeterminateError`. The coordinator then keeps the object, because it may belong to another writer, and fails the write with `cleanup: "preserved-indeterminate"`. No record is created. Two things reconcile the object:
+
+- A write whose fresh object key already holds an object that no record references compares the bytes. Identical bytes are adopted and the write finalizes; this is how a retry under a deterministic id (a fixed `idFactory`) recovers. Different bytes are left in place and the write throws `ArtifactOperationError` with `code: "object-key-occupied"`.
+- Otherwise the object is an `object-without-record` finding for [maintenance](#maintenance-and-repair), and `planRepair()` removes it with `delete-unreferenced-object`. This needs a `ListableObjectStore`.
 
 `import({ objectKey, mediaType, ... })` registers bytes already in the object store. It reads and hashes them first; it never trusts a caller-supplied size or digest. An import failure never deletes the imported object.
 
@@ -259,7 +262,7 @@ Rules every adapter must follow:
 
 - `put` consumes the byte source exactly once and returns the stored size. The coordinator always calls `put` with `ifAbsent: true` and a `mediaType`, and rejects a write whose reported size differs from the streamed size.
 - `ifAbsent: true` is an atomic create-if-missing that throws when the key exists. An adapter that cannot do this atomically must throw rather than check-then-write, and a failed conditional write must not delete the pre-existing object.
-- When a write fails and the adapter cannot tell whether the bytes now at the key are its own, `put` throws `ObjectWriteIndeterminateError` and does not delete them.
+- When a write fails after its bytes may have reached the store, so the adapter cannot tell whether the object now at the key is its own, `put` throws `ObjectWriteIndeterminateError` and does not delete it. A failure that proves nothing landed (a refused conditional create, a source over a size limit, a rejected request) is reported as itself.
 - `get` returns `undefined` and `delete` returns `false` for a missing key.
 - Keys are opaque. Validate them with `assertObjectKey()`: keys must be non-empty and relative, with no `.` or `..` segments and no NUL bytes. Never expose machine paths as keys.
 - `ObjectInfo` metadata (ETag, media type, user metadata) is advisory. Mirk establishes integrity from its own SHA-256, never from an ETag.

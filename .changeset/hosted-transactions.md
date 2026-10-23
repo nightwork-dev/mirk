@@ -11,4 +11,4 @@ Add the `AsyncStoreTransactions` contract: `transaction(work)` with nested savep
 
 The SQLite adapters gain `asyncKv`, `asyncTransaction`, and `afterCommit`. Awaitable work is serialized per file within a process; synchronous facets throw `async-operation-active` while it owns the file. `namespaceAsyncStore` binds an `AsyncStore` the way `namespaceStore` binds a `SyncStore`.
 
-`@mirk/artifact` adds `ObjectWriteIndeterminateError`: when an object store cannot tell whose bytes landed, the coordinator keeps the object and fails the write with `cleanup: "preserved-indeterminate"`. The new `@mirk/artifact-vercel-blob` package stores artifact bytes as private Vercel Blob objects.
+`@mirk/artifact` adds `ObjectWriteIndeterminateError`: when an object store cannot tell whose bytes landed, the coordinator keeps the object and fails the write with `cleanup: "preserved-indeterminate"`. A later write that finds identical left-over bytes at its object key adopts them; different bytes fail with `object-key-occupied`. The new `@mirk/artifact-vercel-blob` package stores artifact bytes as private Vercel Blob objects and lists them for maintenance.

@@ -48,6 +48,7 @@ export type ArtifactOperationErrorCode =
   | "lease-lost"
   | "lease-commit-unsupported"
   | "atomic-mutation-unavailable"
+  | "object-key-occupied"
   | "web-crypto-unavailable";
 
 export class ArtifactOperationError extends Error {
@@ -64,16 +65,18 @@ Object.defineProperty(ArtifactOperationError.prototype, "name", {
   enumerable: false,
 });
 
-/** Thrown by an object store when a write failed without proving whether the
- *  bytes now at `key` are this writer's. A remote upload can succeed before its
- *  reply is lost, and a conditional create can lose a race the store cannot
- *  report. The coordinator keeps the object for later reconciliation instead of
- *  deleting bytes that may belong to another writer. */
+/** Thrown by an object store when a write failed after its bytes may have
+ *  reached the store, so it cannot prove whether the object now at `key` is
+ *  this writer's; a remote upload can succeed before its reply is lost. The
+ *  coordinator keeps the object instead of deleting bytes that may belong to
+ *  another writer. A retry under the same id adopts identical bytes, and
+ *  `ArtifactMaintenance` finds any other leftover as `object-without-record`
+ *  and removes it with `delete-unreferenced-object`. */
 export class ObjectWriteIndeterminateError extends Error {
   declare readonly name: "ObjectWriteIndeterminateError";
   constructor(readonly key: string, options?: ErrorOptions) {
     super(
-      "Object write outcome is indeterminate; the object is kept for reconciliation.",
+      "Object write outcome is indeterminate; the object is kept. A retry with the same bytes adopts it; ArtifactMaintenance removes it if nothing does.",
       options
     );
     Object.setPrototypeOf(this, new.target.prototype);

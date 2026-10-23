@@ -185,6 +185,42 @@ describe("ArtifactCoordinator", () => {
     expect(await repository.get("uncertain")).toBeUndefined();
   });
 
+  it("adopts the bytes an indeterminate write left when a retry sends the same bytes", async () => {
+    const objects = new InMemoryObjectStore();
+    const put = objects.put.bind(objects);
+    let lose = true;
+    objects.put = async (key, source, options) => {
+      const info = await put(key, source, options);
+      if (lose) {
+        lose = false;
+        throw new ObjectWriteIndeterminateError(key);
+      }
+      return info;
+    };
+    const repository = new InMemoryArtifactRepository();
+    const coordinator = new ArtifactCoordinator(objects, repository, {
+      idFactory: () => "job-1-output",
+    });
+    const input = { bytes: bytes("rendered"), mediaType: "text/plain", idempotencyKey: "job-1:output" };
+    await expect(coordinator.write(input)).rejects.toMatchObject({ cleanup: "preserved-indeterminate" });
+    const artifact = await coordinator.write({ ...input, bytes: bytes("rendered") });
+    expect(artifact.id).toBe("job-1-output");
+    expect((await coordinator.verify(artifact.id)).ok).toBe(true);
+    expect(await readText((await coordinator.read(artifact.id))!.bytes)).toBe("rendered");
+  });
+
+  it("refuses to adopt left-over bytes that differ, naming the repair", async () => {
+    const objects = new InMemoryObjectStore();
+    await objects.put("artifacts/job-1-output", bytes("someone else's"), { mediaType: "text/plain" });
+    const coordinator = new ArtifactCoordinator(objects, new InMemoryArtifactRepository(), {
+      idFactory: () => "job-1-output",
+    });
+    await expect(
+      coordinator.write({ bytes: bytes("rendered"), mediaType: "text/plain" })
+    ).rejects.toMatchObject({ name: "ArtifactOperationError", code: "object-key-occupied" });
+    expect(await readText((await objects.get("artifacts/job-1-output"))!)).toBe("someone else's");
+  });
+
   it("keeps shared imported bytes until the final artifact record is deleted", async () => {
     let id = 0;
     const objects = new InMemoryObjectStore();
