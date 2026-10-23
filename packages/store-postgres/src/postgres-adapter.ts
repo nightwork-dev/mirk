@@ -419,10 +419,10 @@ class PostgresStoreFacet implements PostgresStore {
 
   async keys(prefix?: string): Promise<string[]> {
     const result = prefix === undefined
-      ? await this.database.query<{ key: string }>(`SELECT key FROM ${this.kvTable} ORDER BY key`)
+      ? await this.database.query<{ key: string }>(`SELECT key FROM ${this.kvTable} ORDER BY key COLLATE "C"`)
       : await this.database.query<{ key: string }>(
           `SELECT key FROM ${this.kvTable}
-           WHERE left(key, char_length($1)) = $1 ORDER BY key`,
+           WHERE left(key, char_length($1)) = $1 ORDER BY key COLLATE "C"`,
           [prefix],
         );
     return result.rows.map((row) => row.key);
@@ -731,7 +731,16 @@ function buildListQuery(
     values.push(filter.sortBy);
     const field = `$${values.length}`;
     const direction = filter.sortDir === "desc" ? "DESC" : "ASC";
-    sql += ` ORDER BY CASE WHEN NOT (data ? ${field}) OR data -> ${field} = 'null'::jsonb THEN 1 ELSE 0 END ASC, CASE WHEN NOT (data ? ${field}) OR data -> ${field} = 'null'::jsonb THEN NULL ELSE data -> ${field} END ${direction} NULLS LAST, ordinal ASC`;
+    const value = `data -> ${field}`;
+    const kind = `jsonb_typeof(${value})`;
+    // Missing and null last. Otherwise jsonb's own order across and within
+    // types, except that strings compare in "C" collation: byte order of
+    // UTF-8, which is the contract's code point order on any server locale.
+    sql += ` ORDER BY CASE WHEN NOT (data ? ${field}) OR ${kind} = 'null' THEN 1 ELSE 0 END ASC,`
+      + ` CASE ${kind} WHEN 'string' THEN 1 WHEN 'number' THEN 2 WHEN 'boolean' THEN 3 WHEN 'array' THEN 4 WHEN 'object' THEN 5 END ${direction} NULLS LAST,`
+      + ` CASE WHEN ${kind} = 'string' THEN ${value} #>> '{}' END COLLATE "C" ${direction} NULLS LAST,`
+      + ` CASE WHEN ${kind} IN ('number', 'boolean', 'array', 'object') THEN ${value} END ${direction} NULLS LAST,`
+      + ` ordinal ASC`;
   } else {
     sql += " ORDER BY ordinal ASC";
   }
