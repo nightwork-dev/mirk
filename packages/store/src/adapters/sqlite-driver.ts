@@ -114,6 +114,9 @@ export class NodeSqliteDriver implements SqliteDb {
       else this.raw.exec(`BEGIN ${mode.toUpperCase()}`);
       try {
         const value = work(arg);
+        if (value && typeof (value as { then?: unknown }).then === "function") {
+          throw new TypeError("Transaction function cannot return a promise");
+        }
         if (nested) this.raw.exec(`RELEASE SAVEPOINT ${savepoint}`);
         else this.raw.exec("COMMIT");
         return value;
