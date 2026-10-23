@@ -89,8 +89,20 @@ const adapter = await openIndexedDbAdapter({ dbName: "my-app" });
 | `atomicLimits` | `Partial<AtomicMutationLimits>?` | Request bounds. Defaults to the in-process limits. |
 | `versionIdentity` | `string?` | Prefix for version tokens, used only when a new database mints its first token. Defaults to a random identity; an existing database keeps the identity it was created with. |
 | `indexedDB` | `IDBFactory?` | The factory to use. Defaults to `globalThis.indexedDB`. |
+| `receiptRetentionMs` | `number?` | How long an idempotency receipt is kept. Off by default, so receipts are kept forever. |
+| `now` | `() => number?` | The clock, in milliseconds since the epoch, that stamps and expires receipts. Defaults to `Date.now`. |
 
 One database holds key/value rows, collection records, version tokens, and idempotency receipts.
+
+With `receiptRetentionMs`, receipts expire by the rules in the `@mirk/store` README's "Receipt
+expiry" section: a receipt is live while its age is at most the window, and a request whose key
+matches only an expired receipt is applied as new. A keyed write deletes at most 100 expired
+receipts in its own transaction, and `pruneExpiredReceipts()` deletes the rest, one transaction per
+batch, and returns how many it deleted. The browser's clock decides a receipt's age.
+**The window must be longer than the longest time a caller may retry or reconcile a
+request**: a retry after it applies the mutation again. A host that reconciles old receipts
+after an expired job lease, as the Foreclose app does, should leave expiry off or use a window
+of days.
 
 ## Reference
 
@@ -108,8 +120,9 @@ One database holds key/value rows, collection records, version tokens, and idemp
 - `readTransaction(reader)` runs a synchronous reader over keys, records, and versions read in one
   readonly transaction.
 
-Opening a database created by an earlier release of this package upgrades it to schema version 2
-and issues version tokens for keys that had none.
+Opening a database created by an earlier release of this package upgrades it to schema version 3.
+It issues version tokens for keys that had none, indexes receipts by creation time, and stamps
+receipts that had none with the time of the upgrade, so they expire one full window later.
 
 ### Another tab changes the database
 
@@ -149,11 +162,13 @@ Invalid atomic requests throw `AtomicMutationRejectedError` before any transacti
 
 ### Whole-store backup
 
-`exportState()` returns every key, record, version token, and idempotency receipt, plus the version
+`exportState()` returns every key, record, version token, and idempotency receipt (with its
+`createdAt`), plus the version
 and ordinal counters, as one object of plain rows. `importState(backup)` replaces the whole database with
 such a backup in one transaction. It first validates row shapes, duplicate keys, version targets,
 counters, and cloneability; a backup that fails validation throws `IndexedDbBackupError` and the
-database is not changed. Keys or records in the backup without a version row are issued one.
+database is not changed. Keys or records in the backup without a version row are issued one, and
+receipts without a `createdAt` are stamped with the time of the import.
 `validateIndexedDbExport(value)` runs the same validation without writing.
 
 The backup is a generic store format. An application that needs its own file format or profile

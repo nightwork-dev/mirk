@@ -261,6 +261,8 @@ Both adapters take the same options; only the type of `db` differs.
 | `busyTimeoutMs`   | `number`                        | Bounded wait for another SQLite writer. Defaults to 30 seconds; accepts `0` through `2_147_483_647` ms, and applies to owned and caller-supplied connections. |
 | `atomicLimits`    | `Partial<AtomicMutationLimits>` | Override the in-process atomic request limits (see [Request limits](#request-limits)).                                                                        |
 | `versionIdentity` | `string`                        | Prefix for atomic version tokens, written once when the file is first set up; a file that already has one keeps it. Defaults to a random UUID.                 |
+| `receiptRetentionMs` | `number`                     | How long an idempotency receipt is kept. Off by default: receipts are kept forever. See [Receipt expiry](#receipt-expiry).                                    |
+| `now`             | `() => number`                  | The clock, in milliseconds since the epoch, that stamps and expires receipts. Defaults to `Date.now`.                                                         |
 
 Every connection the adapter opens or receives is switched to WAL mode with foreign keys on.
 
@@ -389,8 +391,8 @@ operation target. The contract:
   canonical JSON of the conditions, operations, and outcome). The receipt commits atomically with
   an applied mutation; a `conflict` does not reserve the key. Repeating the key with the same
   request returns `replayed` with the original versions and outcome; a different request returns
-  `idempotency-conflict`. Receipts never expire and are durable in SQLite. Ordinary writes are not
-  idempotent.
+  `idempotency-conflict`. By default receipts never expire; see [Receipt expiry](#receipt-expiry).
+  Receipts are durable in SQLite. Ordinary writes are not idempotent.
 - **Failures:** `AtomicMutationBackendError` means the failure happened before any possible commit,
   and says whether it is `retryable`. `AtomicMutationIndeterminateError` means the commit may have
   happened; recover with `retry-with-same-key` or `manual-reconciliation`, as it says. Adapters
@@ -398,6 +400,65 @@ operation target. The contract:
 
 `namespaceStore()` keeps the capability, and binds targets, versions, and receipt keys to the
 namespace. One batch cannot span namespaces.
+
+### Your own record types
+
+`JsonValue` has an index signature, so an `interface` is not assignable to it even when every field
+is JSON. Build operations with `atomicSet` and `atomicPut` instead of casting. They accept any
+type whose parts are all JSON, optional fields included, and refuse at compile time a function, a
+method, a `Date`, a `Map`, a symbol, a `bigint`, a required field that may be `undefined`, and a
+field typed `unknown`. `jsonValue` does the same for an outcome.
+
+```ts
+import { atomicPut, atomicSet, jsonValue, type SyncAtomicStore } from "@mirk/store";
+
+interface Grant { accountId: string; access: ("read" | "write")[]; note?: string }
+
+function grant(store: SyncAtomicStore, key: string, value: Grant) {
+  return store.mutateAtomically({
+    operations: [atomicSet(key, value)],
+    idempotency: { key: `grant:${key}`, outcome: jsonValue(value) },
+  });
+}
+```
+
+`SyncAtomicStore` is `SyncStore & SyncAtomicMutationStore`, and `AsyncAtomicStore` is
+`AsyncStore & AsyncAtomicMutationStore`. The request is still checked when it runs: a class
+instance with only data fields looks like a plain object to TypeScript, and is refused then.
+
+### Receipt expiry
+
+Every receipt is kept forever by default, so the receipt table only grows. Pass
+`receiptRetentionMs` to an atomic store to let receipts expire. Every atomic store takes the same
+option and an injectable `now` clock.
+
+- **The boundary.** A receipt is live while its age is at most `receiptRetentionMs`, and expired
+  once its age is greater. A replay does not renew a receipt.
+- **An expired receipt is absent.** A request whose key matches only an expired receipt is
+  evaluated as new: its conditions are checked again, it is applied if they hold, and it gets a
+  fresh receipt. A different request under that key is no longer an `idempotency-conflict`. A
+  `conflict` never writes a receipt, with or without expiry.
+- **Pruning is lazy and bounded.** An atomic write that carries an idempotency key first deletes at
+  most `RECEIPT_PRUNE_BATCH` (100) expired receipts in its own transaction. There are no timers, so
+  short-lived serverless functions need nothing extra. A host that prefers a schedule calls
+  `pruneExpiredReceipts()`, which deletes every expired receipt, one batch per transaction, and
+  returns how many it deleted. Pruning never deletes a live receipt. With no window it returns 0.
+- **Receipts from an earlier release** carry no creation time. A store with a window stamps them
+  with the current time when it first prunes, so they expire one full window later.
+- **Whose clock.** Embedded stores use the host's clock. `@mirk/store-postgres` and
+  `@mirk/store-libsql` use the database's clock, so hosts with skewed clocks still agree on a
+  receipt's age. An injected `now` replaces the clock everywhere for that store; if several hosts
+  inject their own clocks, skew between them moves the boundary by the same amount.
+
+**The window must be longer than the longest time a caller may retry or reconcile a request.** A
+retry after the window applies the mutation a second time. For example, the Foreclose app
+reconciles old receipts after a job lease expires, so a host like it should leave expiry off or use
+a window of days, not minutes.
+
+```ts
+const store = new InMemoryKv({ receiptRetentionMs: 7 * 24 * 60 * 60 * 1000 });
+store.pruneExpiredReceipts(); // 0 until a receipt is older than seven days
+```
 
 ### Request limits
 
@@ -429,7 +490,8 @@ adapter.kv.atomicLimits.maxConditions; // 1024, the in-process default
 A rejection names the limit and its value, for example
 `request has 11 operations; this store's maxOperations is 10`.
 
-**The idempotency outcome cap is not configurable.** An outcome is kept under its key forever, so
+**The idempotency outcome cap is not configurable.** An outcome is kept under its key for as long
+as its receipt lives, which is forever by default, so
 `MAX_ATOMIC_OUTCOME_BYTES` (64 KiB) is a hard cap in every backend, whatever the limits above.
 
 ## Async transactions
