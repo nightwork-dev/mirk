@@ -1,8 +1,35 @@
 # @mirk/artifact
 
-Portable artifact identity, SHA-256 integrity, metadata, lineage, and coordination over a small object-store port.
+> **Store generated files with proof they are intact, a record of where they came from, and no
+> half-written file ever visible.**
 
-The root package is runtime-neutral. It exports the artifact coordinator, in-memory reference implementations, object-store types, digest helpers, and validation helpers. Use `@mirk/artifact/store` to persist metadata through `@mirk/store/kv`; use `@mirk/artifact/fs` for a Node filesystem object store; use a separate adapter such as `@mirk/artifact-opendal` for production object-storage backends.
+## Why
+
+An app that makes files (images, exports, model outputs) soon has questions that a folder of
+filenames cannot answer. Is this file the one that was written, or was it cut short or corrupted?
+Which job made it, and from which input? If the process died mid-write, is that half-file now being
+served to someone? If a job retries, do we get two copies?
+
+`@mirk/artifact` handles those. When you write bytes through it:
+
+- **Integrity.** Mirk computes a SHA-256 digest and byte length while the bytes stream, and
+  `verify(id)` can re-read the file later and tell you whether it still matches.
+- **Provenance.** Each file gets a record with a stable `id`, media type, optional producer
+  (which system, operation, and job made it), and **lineage**: which other artifacts it was made from.
+- **All or nothing.** A file becomes visible only after its bytes are stored and checked and its
+  record is saved. If anything fails on the way, no record exists, and leftover bytes are deleted or, if that fails, left for maintenance to find.
+- **Safe retries.** An `idempotencyKey` makes a repeated write return the original artifact instead
+  of making a second one.
+
+The bytes live behind a small object-store interface, so the same code runs against memory, local
+disk, or a bucket such as S3 (through [`@mirk/artifact-opendal`](../artifact-opendal)). The records
+live in any [`@mirk/store`](../store) key-value store.
+
+The root package is runtime-neutral. It exports the artifact coordinator, in-memory reference
+implementations, object-store types, digest helpers, and validation helpers. Use
+`@mirk/artifact/store` to persist metadata through `@mirk/store/kv`; use `@mirk/artifact/fs` for a
+Node filesystem object store; use a separate adapter such as `@mirk/artifact-opendal` for production
+object-storage backends.
 
 ESM-only.
 
@@ -27,7 +54,9 @@ import { FileObjectStore } from "@mirk/artifact/fs";
 | `@mirk/artifact/fs`          | `FileObjectStore`, backed by local disk bytes plus sidecar metadata                                                           | Node built-ins only |
 | `@mirk/artifact/maintenance` | read-only audits and explicit conditional repair plans                                                                        | none                |
 
-## Quickstart
+## A first look
+
+This runs entirely in memory, with only `@mirk/artifact` and `@mirk/store` installed.
 
 ```ts
 import {
