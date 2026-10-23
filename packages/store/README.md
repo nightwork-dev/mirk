@@ -461,11 +461,14 @@ interface AsyncStoreTransactions {
   notification is lost. Use it to wake workers early, and keep the durable state that lets them
   find the work without it.
 
+- A version token minted inside work that rolled back is never issued again, so a caller that
+  kept it cannot match a later write by accident.
+
 Await every store call inside `work`. A call that outlives its transaction throws
-`TransactionScopeError` (`transaction-ended`). A call from the parent while a nested transaction is
-still running throws `nested-transaction-active`; sibling nested transactions queue. Do network
-and object-storage work before or after a transaction, never inside it: the transaction holds the
-database's write lock until it ends.
+`TransactionScopeError` (`transaction-ended`). Calls made from the parent while a nested
+transaction runs, and sibling nested transactions, wait for it to finish, so they never land in a
+savepoint that may roll back. Do network and object-storage work before or after a transaction,
+never inside it: the transaction holds the database's write lock until it ends.
 
 The contract is checked by a shared test suite that every implementing adapter runs, with two
 adapter instances on one database. The JSON conformance corpus does not express it: its rules need

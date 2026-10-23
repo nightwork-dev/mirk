@@ -21,12 +21,6 @@ async function dropSchema(schema: string): Promise<void> {
   }
 }
 
-function deferred(): { promise: Promise<void>; resolve: () => void } {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => (resolve = done));
-  return { promise, resolve };
-}
-
 if (connectionString) {
   asyncTransactionContract("PostgreSQL (two adapters, two pools, one schema)", {
     async open() {
@@ -112,26 +106,6 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
     expect(await b.kv.keys("parallel")).toEqual(["parallel1", "parallel2", "parallel3"]);
   });
 
-  it("rejects parent facet access while a nested transaction is suspended", async () => {
-    await a.transaction(async () => {
-      const entered = deferred();
-      const hold = deferred();
-      const child = a.transaction(async () => {
-        await a.kv.set("child-paused", 1);
-        entered.resolve();
-        await hold.promise;
-        throw new Error("child rollback");
-      });
-      await entered.promise;
-      await expect(a.kv.set("outer-survives", 2)).rejects.toThrow("Await the nested");
-      hold.resolve();
-      await expect(child).rejects.toThrow("child rollback");
-      await a.kv.set("outer-survives", 3);
-    });
-    expect(await b.kv.get("outer-survives")).toBe(3);
-    expect(await b.kv.get("child-paused")).toBeNull();
-  });
-
   it("keeps the outer transaction usable after a statement fails inside it", async () => {
     await a.transaction(async () => {
       await a.kv.set("before-failure", 1);
@@ -142,6 +116,51 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
       await a.kv.set("after-failure", 2);
     });
     expect(await b.kv.get("after-failure")).toBe(2);
+  });
+
+  it("releases the schema lock held by a stalled transaction", async () => {
+    const stalled = await PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: 200 });
+    try {
+      const entered = new Promise<void>((resolve) => {
+        void stalled
+          .transaction(async () => {
+            await stalled.kv.set("stalled", 1);
+            resolve();
+            await new Promise((done) => setTimeout(done, 1500));
+            await stalled.kv.set("stalled", 2);
+          })
+          .catch(() => undefined);
+      });
+      await entered;
+      const started = Date.now();
+      await b.kv.set("after-stall", true);
+      expect(Date.now() - started).toBeLessThan(1200);
+      expect(await b.kv.get("stalled")).toBeNull();
+    } finally {
+      await stalled.close();
+    }
+  });
+
+  it("gives a version to a row written without one", async () => {
+    const pool = new Pool({ connectionString });
+    try {
+      await pool.query(`INSERT INTO "${schema}".kv (key, value) VALUES ('unversioned', '1')`);
+      await pool.query(`INSERT INTO "${schema}".records (collection, id, data) VALUES ('c', 'unversioned', '{"id":"unversioned"}')`);
+    } finally {
+      await pool.end();
+    }
+    const key = await a.kv.getVersioned({ kind: "key", key: "unversioned" });
+    expect(key?.version).toMatch(/-v\d+$/);
+    expect((await b.kv.getVersioned({ kind: "key", key: "unversioned" }))?.version).toBe(key?.version);
+    const record = await a.kv.getVersioned({ kind: "record", collection: "c", id: "unversioned" });
+    expect(record?.value).toEqual({ id: "unversioned" });
+    expect(record?.version).toMatch(/-v\d+$/);
+  });
+
+  it("rejects an invalid idle timeout", async () => {
+    await expect(PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: -1 })).rejects.toMatchObject({
+      code: "invalid-timeout",
+    });
   });
 
   it("refuses new transactions after close", async () => {

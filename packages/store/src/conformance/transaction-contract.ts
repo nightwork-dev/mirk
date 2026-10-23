@@ -297,10 +297,92 @@ export function asyncTransactionContract(
             ],
             operations: [{ op: "set", key: "lease", value: 2 }],
           });
+          expect(await settledWithin(competing, 50)).toBe("pending");
           release.open();
           await expect(transaction).rejects.toThrow("abandon");
           expect((await competing).status).toBe("applied");
           expect(await first.kv.get("lease")).toBe(2);
+        }));
+    });
+
+    describe("version tokens", () => {
+      it("never reissues a token minted by a rolled-back transaction", () =>
+        withDatabase(async ({ first, second }) => {
+          await first.kv.set("k", 0);
+          let minted: string | undefined;
+          await expect(
+            first.transaction(async () => {
+              await first.kv.set("k", 1);
+              minted = (await first.kv.getVersioned(KEY("k")))!.version;
+              throw new Error("rollback");
+            })
+          ).rejects.toThrow("rollback");
+          await second.kv.set("k", 2);
+          expect((await second.kv.getVersioned(KEY("k")))!.version).not.toBe(minted);
+          const stale = await second.kv.mutateAtomically({
+            conditions: [{ target: KEY("k"), expected: "version", version: minted! }],
+            operations: [{ op: "set", key: "k", value: 3 }],
+          });
+          expect(stale.status).toBe("conflict");
+        }));
+
+      it("never reissues a token minted by a rolled-back nested transaction", () =>
+        withDatabase(async ({ first }) => {
+          let minted: string | undefined;
+          await first.transaction(async () => {
+            await first
+              .transaction(async () => {
+                await first.kv.put("jobs", { id: "j", generation: 1 });
+                minted = (await first.kv.getVersioned(RECORD("jobs", "j")))!.version;
+                throw new Error("inner");
+              })
+              .catch(() => undefined);
+            await first.kv.put("jobs", { id: "j", generation: 2 });
+            expect((await first.kv.getVersioned(RECORD("jobs", "j")))!.version).not.toBe(minted);
+          });
+          const stale = await first.kv.mutateAtomically({
+            conditions: [{ target: RECORD("jobs", "j"), expected: "version", version: minted! }],
+            operations: [{ op: "remove", collection: "jobs", id: "j" }],
+          });
+          expect(stale.status).toBe("conflict");
+        }));
+    });
+
+    describe("scoping", () => {
+      it("queues parent calls behind a running nested transaction", () =>
+        withDatabase(async ({ first, second }) => {
+          await first.transaction(async () => {
+            const entered = gate();
+            const hold = gate();
+            const child = first.transaction(async () => {
+              await first.kv.set("child", 1);
+              entered.open();
+              await hold.wait;
+              throw new Error("child rollback");
+            });
+            await entered.wait;
+            const parentRead = first.kv.get("child");
+            const parentWrite = first.kv.set("parent", 2);
+            expect(await settledWithin(parentWrite, 30)).toBe("pending");
+            hold.open();
+            await expect(child).rejects.toThrow("child rollback");
+            expect(await parentRead).toBeNull();
+            await parentWrite;
+          });
+          expect(await second.kv.get("parent")).toBe(2);
+          expect(await second.kv.get("child")).toBeNull();
+        }));
+
+      it("rejects store calls from work that outlived its transaction", () =>
+        withDatabase(async ({ first, second }) => {
+          let leaked!: Promise<unknown>;
+          await first.transaction(() => {
+            leaked = new Promise((resolve) => setTimeout(resolve, 10)).then(() =>
+              first.kv.set("late", 1)
+            );
+          });
+          await expect(leaked).rejects.toThrow("transaction has ended");
+          expect(await second.kv.get("late")).toBeNull();
         }));
     });
 
