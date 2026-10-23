@@ -133,6 +133,7 @@ unconditional write removes its partial object. A failure before the writer clos
 capability refusals above, is thrown as `ObjectWriteRejectedError` from `@mirk/artifact` with the
 original error as `cause`: nothing of the write remains, so `ArtifactCoordinator` never deletes the
 key afterwards. A conditional write that fails while closing is `ObjectWriteIndeterminateError`.
+So is any failed write whose partial object the adapter cannot delete and confirm gone.
 
 Keys are validated with `assertObjectKey()` from `@mirk/artifact` on every call.
 
