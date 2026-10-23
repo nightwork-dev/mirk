@@ -6,6 +6,7 @@ import { createNodeEngines } from "@surrealdb/node";
 import { SurrealConnection } from "../src/index.js";
 import { collectionTable } from "../src/internal/identifiers.js";
 import { SurrealIdentifierError, SurrealStoreAdapter, SurrealValueError } from "../src/store.js";
+import { decodeLoneSurrogates, encodeLoneSurrogates } from "../src/internal/lone-surrogates.js";
 
 interface Project {
   id: string;
@@ -309,5 +310,25 @@ describe("SurrealStoreAdapter (AsyncStore)", () => {
     expect(await store.get("alive")).toBe(true);
     const second = await SurrealStoreAdapter.open(connection);
     expect(await second.get("alive")).toBe(true);
+  });
+});
+
+describe("lone-surrogate codec", () => {
+  it("decodes many marked strings in one pass", () => {
+    const value = { items: Array.from({ length: 50_000 }, (_, index) => `x${index}\ud800`) };
+    const { value: encoded, marker } = encodeLoneSurrogates(value);
+    const started = performance.now();
+    const decoded = decodeLoneSurrogates(encoded, marker);
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(decoded).toEqual(value);
+  });
+
+  it("decodes a __proto__ key as an own field without changing the prototype", () => {
+    const value = JSON.parse('{"__proto__": "\\ud800"}') as Record<string, unknown>;
+    const { value: encoded, marker } = encodeLoneSurrogates(value);
+    const decoded = decodeLoneSurrogates(encoded, marker) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(decoded)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(decoded, "__proto__")).toBe(true);
+    expect(decoded["__proto__"]).toBe("\ud800");
   });
 });

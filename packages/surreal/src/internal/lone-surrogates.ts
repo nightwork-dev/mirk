@@ -42,7 +42,14 @@ export function encodeLoneSurrogates<T>(value: T): EncodedValue<T> {
     if (Array.isArray(entry)) return entry.map((item, index) => visit(item, [...path, index]));
     if (isPlainObject(entry)) {
       const out: Record<string, unknown> = {};
-      for (const [key, field] of Object.entries(entry)) out[key] = visit(field, [...path, key]);
+      for (const [key, field] of Object.entries(entry)) {
+        Object.defineProperty(out, key, {
+          value: visit(field, [...path, key]),
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      }
       return out;
     }
     return entry;
@@ -60,9 +67,63 @@ export function encodeLoneSurrogates<T>(value: T): EncodedValue<T> {
 export function decodeLoneSurrogates<T>(value: T, marker: unknown): T {
   const paths = markerPaths(marker);
   if (paths.length === 0) return value;
-  let root: unknown = value;
-  for (const path of paths) root = replaceAt(root, path, 0);
-  return root as T;
+  return decodeNode(value, pathTree(paths)) as T;
+}
+
+interface PathNode {
+  encoded: boolean;
+  children: Map<string | number, PathNode>;
+}
+
+function pathTree(paths: readonly ValuePath[]): PathNode {
+  const root: PathNode = { encoded: false, children: new Map() };
+  for (const path of paths) {
+    let node = root;
+    for (const step of path) {
+      let child = node.children.get(step);
+      if (child === undefined) {
+        child = { encoded: false, children: new Map() };
+        node.children.set(step, child);
+      }
+      node = child;
+    }
+    node.encoded = true;
+  }
+  return root;
+}
+
+// One walk over the marked paths. A container is copied at most once, and
+// only when something under it decodes.
+function decodeNode(container: unknown, node: PathNode): unknown {
+  if (node.encoded) {
+    const bytes = bytesOf(container);
+    if (bytes !== undefined && bytes.length % 2 === 0) return utf16leString(bytes);
+  }
+  if (node.children.size === 0) return container;
+  if (Array.isArray(container)) {
+    let copy: unknown[] | undefined;
+    for (const [step, child] of node.children) {
+      if (typeof step !== "number" || !Number.isInteger(step) || step < 0 || step >= container.length) continue;
+      const next = decodeNode(container[step], child);
+      if (next === container[step]) continue;
+      copy ??= container.slice();
+      copy[step] = next;
+    }
+    return copy ?? container;
+  }
+  if (isPlainObject(container)) {
+    let copy: Record<string, unknown> | undefined;
+    for (const [step, child] of node.children) {
+      if (typeof step !== "string" || !Object.prototype.hasOwnProperty.call(container, step)) continue;
+      const next = decodeNode(container[step], child);
+      if (next === container[step]) continue;
+      copy ??= { ...container };
+      // defineProperty, so a "__proto__" key stays an own field.
+      Object.defineProperty(copy, step, { value: next, writable: true, enumerable: true, configurable: true });
+    }
+    return copy ?? container;
+  }
+  return container;
 }
 
 function markerPaths(marker: unknown): ValuePath[] {
@@ -71,23 +132,6 @@ function markerPaths(marker: unknown): ValuePath[] {
     (path): path is ValuePath =>
       Array.isArray(path) && path.every((step) => typeof step === "string" || typeof step === "number"),
   );
-}
-
-function replaceAt(container: unknown, path: ValuePath, depth: number): unknown {
-  if (depth === path.length) {
-    const bytes = bytesOf(container);
-    return bytes === undefined || bytes.length % 2 !== 0 ? container : utf16leString(bytes);
-  }
-  const step = path[depth]!;
-  if (Array.isArray(container) && typeof step === "number" && step < container.length) {
-    const copy = [...container];
-    copy[step] = replaceAt(container[step], path, depth + 1);
-    return copy;
-  }
-  if (isPlainObject(container) && typeof step === "string" && Object.prototype.hasOwnProperty.call(container, step)) {
-    return { ...container, [step]: replaceAt(container[step], path, depth + 1) };
-  }
-  return container;
 }
 
 function bytesOf(value: unknown): Uint8Array | undefined {
