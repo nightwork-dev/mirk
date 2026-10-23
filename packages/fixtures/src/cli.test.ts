@@ -168,6 +168,17 @@ describe("fixture CLI", () => {
     });
   });
 
+  it("documents the config as required exactly where the first argument is read as the config", async () => {
+    const help = await executeFixtureCli(["--help"]);
+    for (const command of ["show", "explain"]) {
+      const bare = await executeFixtureCli([command, "theme:dark"]);
+      expect(bare.exitCode).toBe(2);
+      const line = help.text.split("\n").find((l) => l.trim().startsWith(`mirk-fixtures ${command} `));
+      expect(line).toBeDefined();
+      expect(line).not.toContain("[config]");
+    }
+  });
+
   it("keeps validate output deterministic and aggregates every schema issue", async () => {
     const config = await writeModule(`
 const files = {

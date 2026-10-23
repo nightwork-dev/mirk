@@ -72,6 +72,12 @@ def parse_json_document(text: str) -> Any:
     return normalize_json_numbers(json.loads(text, parse_constant=_reject_json_constant))
 
 
+def _file_skip_key(source_id: str, relative_path: str) -> str:
+    """Skip sets hold whole source ids and, for a file that failed to read or
+    parse, that one file. The NUL keeps a file key from ever equalling an id."""
+    return f"{source_id}\u0000{relative_path}"
+
+
 class _FileCandidate(NamedTuple):
     layered: NormalizedLayeredSource
     entry: FixtureSourceEntry
@@ -236,6 +242,8 @@ class FixtureLoader:
                 )
                 if match is None:
                     continue
+                if _file_skip_key(layered.source.id, entry["relativePath"]) in skip_sources:
+                    continue
                 out.append(_FileCandidate(layered, entry, match[1], match[0]))
         return out
 
@@ -248,7 +256,9 @@ class FixtureLoader:
                 continue
             for entry in self._list_entries(layered):
                 match = self._match_entry(definition, entry)
-                if match is not None:
+                if match is not None and (
+                    _file_skip_key(layered.source.id, entry["relativePath"]) not in skip_sources
+                ):
                     out.append(_FileCandidate(layered, entry, match[1], match[0]))
         return out
 
@@ -852,6 +862,22 @@ class FixtureLoader:
             except FixtureError as error:
                 if error.diagnostic["code"] != "not-found":
                     raise
+                failed = self._failed_file_for(extracted["ref"], skip_sources)
+                if failed is not None:
+                    out.append(
+                        {
+                            "severity": "warning",
+                            "code": "unresolved-reference",
+                            "message": (
+                                f'Referenced fixture "{extracted["ref"]}" could not be checked: '
+                                f'it may be defined in "{failed[1]}" (source "{failed[0]}"), '
+                                "which failed to load."
+                            ),
+                            "fixture": fixture,
+                            "fieldPath": _path_string(extracted["fieldPath"]),
+                        }
+                    )
+                    continue
                 out.append(
                     {
                         "severity": "error",
@@ -878,6 +904,38 @@ class FixtureLoader:
 
         return {"ref": ref, "has": has, "loadRaw": load_raw}
 
+    @staticmethod
+    def _skip_failure(error: Exception, skipped: set[str]) -> bool:
+        """Skip what failed, no more: the one file when the error names a
+        file, else the whole source. False when there is nothing new to skip,
+        which ends the retry."""
+        if not isinstance(error, FixtureError):
+            return False
+        source = error.diagnostic.get("source")
+        if not source:
+            return False
+        path = error.diagnostic.get("path")
+        key = _file_skip_key(source, path.split("#")[0]) if path else source
+        if key in skipped:
+            return False
+        skipped.add(key)
+        return True
+
+    def _failed_file_for(self, ref: str, skipped: frozenset[str]) -> tuple[str, str] | None:
+        parsed = parse_ref(ref)
+        definition = self._registry.get(parsed.type)
+        if definition is None:
+            return None
+        for key in sorted(skipped):
+            source_id, separator, path = key.partition("\u0000")
+            if not separator:
+                continue
+            entry: FixtureSourceEntry = {"relativePath": path, "locator": path}
+            target = None if definition.get("document") is not None else parsed.id
+            if self._match_entry(definition, entry, target) is not None:
+                return source_id, path
+        return None
+
     def _discover_refs_for_validation(
         self, diagnostics: list[Diagnostic], skipped: set[str]
     ) -> list[str]:
@@ -893,19 +951,15 @@ class FixtureLoader:
             definition = self._registry.get(type_name)
             if definition is None:
                 continue
-            try:
-                for candidate in self._parsed_candidates(type_name, None, frozenset(skipped)):
-                    refs.add(f"{type_name}:{candidate.id}")
-            except Exception as error:
-                broken = error.diagnostic.get("source") if isinstance(error, FixtureError) else None
-                if broken:
-                    skipped.add(broken)
-                diagnostics.extend(diagnostics_from_error(type_name, error))
+            while True:
                 try:
                     for candidate in self._parsed_candidates(type_name, None, frozenset(skipped)):
                         refs.add(f"{type_name}:{candidate.id}")
-                except Exception as remaining:
-                    diagnostics.extend(diagnostics_from_error(type_name, remaining))
+                    break
+                except Exception as error:
+                    diagnostics.extend(diagnostics_from_error(type_name, error))
+                    if not self._skip_failure(error, skipped):
+                        break
 
             for layered in self._layered:
                 if layered.source.id in skipped:

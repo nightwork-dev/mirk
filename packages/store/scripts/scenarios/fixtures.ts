@@ -548,11 +548,31 @@ export const scenarios = [
   // scenario in this file, all of which raise a message Mirk itself writes.
   scenario(
     "layering/parse-error-degrades-in-validate",
-    "a malformed document is reported by validate() rather than thrown, and the source is skipped",
+    "a malformed document is reported by validate() rather than thrown",
     {
       types: [type("theme", "themes")],
       sources: [
         memory("pack", 0, { "themes/bad.json": "{ not json", "themes/good.json": { name: "Good" } }),
+      ],
+    },
+    [
+      {
+        op: "validateDiagnostics",
+        args: [],
+        expect: { ignoreFields: ["message"] },
+      },
+    ],
+  ),
+  scenario(
+    "layering/parse-error-keeps-neighbours-checked",
+    "a malformed document does not hide its neighbours: a sibling file is still checked, and a ref into the broken file is unresolved rather than missing",
+    {
+      types: [type("theme", "themes")],
+      sources: [
+        memory("pack", 0, {
+          "themes/bad.json": "{ not json",
+          "themes/child.json": { a: { $ref: "theme:bad" }, b: { $ref: "theme:nope" } },
+        }),
       ],
     },
     [
