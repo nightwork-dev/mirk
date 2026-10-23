@@ -1,6 +1,6 @@
 {
   "name": "@mirk/artifact-vercel-blob",
-  "version": "0.0.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Private Vercel Blob object-storage adapter for @mirk/artifact.",
   "license": "Apache-2.0",

@@ -5,6 +5,74 @@ distribution carries the same version and is bumped together, so "mirk 0.12.0" m
 thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
 This file records each release and repository-wide contract changes.
 
+## 0.13.0 — 2026-10-23
+
+### Breaking changes
+
+- `@mirk/artifact` — `ArtifactMaintenance` audits and repairs only the coordinator's namespace
+  (`artifacts` by default). Pass `namespace: null` to repair a whole store; on a shared bucket or
+  Blob store that would plan deletions of other applications' files.
+- `@mirk/store-postgres` orders keys and sorted strings by Unicode code point on every server, as
+  the store contract requires. Databases with a language collation return a different order than
+  before.
+- `@mirk/artifact-opendal` — `put` failures before the writer closes, including capability
+  refusals, arrive as `ObjectWriteRejectedError` with the original error as `cause`.
+
+### Hosted transactions
+
+- `@mirk/store` — the `AsyncStoreTransactions` contract: `transaction(work)` with nested savepoints,
+  and `afterCommit(notify)` callbacks that run once, in order, only after the outermost commit.
+  Callbacks are best-effort: one lost when a process dies between commit and callback is not
+  retried. `@mirk/store/transaction` provides the shared `AsyncTransactionCoordinator`. Both SQLite
+  adapters gain `asyncKv`, `asyncTransaction` and `afterCommit`; `namespaceAsyncStore` joins
+  `namespaceStore`.
+- `@mirk/store-postgres` — versioned reads, atomic mutations with durable idempotency receipts, and
+  transactions. Writes to one schema take turns on a transaction-scoped advisory lock, and
+  `transactionIdleTimeoutMs` (default 60 s) frees a lock held by a stalled host.
+- `@mirk/store-libsql` — the same contract and atomic writes, on local files, `sqld`, and Turso.
+  Writers take turns on the database's one write lock. Failures arrive as typed `LibsqlAdapterError`
+  codes. New `tablePrefix` and `busyTimeoutMs` options.
+- Version tokens are never reissued after a rollback, in any store.
+
+### Artifacts
+
+- `@mirk/artifact-vercel-blob` — first release. Private Vercel Blob object storage with a required
+  `root` prefix that it never reads, lists, or deletes outside.
+- `ObjectWriteRejectedError` (the write stored nothing, so the coordinator never deletes) and
+  `ObjectWriteIndeterminateError` (the outcome is unknown, so the object is kept), raised by the
+  memory, file, OpenDAL and Vercel Blob stores.
+- A retry adopts identical bytes left at its key; different bytes fail with `object-key-occupied`,
+  and maintenance removes such orphans.
+
+### Store
+
+- Optional idempotency-receipt expiry on every atomic store: `receiptRetentionMs`, with lazy bounded
+  pruning and `pruneExpiredReceipts()`. Off by default; receipts are kept forever unless a window is
+  set. The window must exceed the longest time a caller may retry or reconcile a request.
+- `@mirk/store/log` — an append-only log of JSON records per stream, with gap-free sequences
+  starting at 1. Implemented by the in-memory store, both SQLite adapters, and Python.
+- `SyncAtomicStore`, `AsyncAtomicStore`, `JsonCompatible`, and the `atomicSet`, `atomicPut` and
+  `jsonValue` helpers, so callers' own record types fit atomic requests without casts.
+
+### Fixtures and statements
+
+- `@mirk/fixtures` — `validate()` keeps checking a source's other files after one fails to parse;
+  positioned parsers add line and column ranges to diagnostics; the CLI help shows the config as
+  required for `show` and `explain`.
+- `@mirk/statements` — `sourceIds` filters before `limit`; `validAt` matches instant bounds only;
+  `db` without `path` takes an explicit coordinator.
+
+### Python
+
+All six distributions move to 0.13.0: the artifact write-ownership behaviour above, the maintenance
+namespace default, receipt expiry, and the append-only log, held to the same conformance scenarios
+as TypeScript.
+
+### Security
+
+- `zod` is pinned to 4.6.7 for GHSA-mrhx-c7xc-m3w5, which reached the workspace through
+  `@vercel/blob`.
+
 ## 0.12.0 — 2026-10-23
 
 The first release as one version set: every package moves to 0.12.0.

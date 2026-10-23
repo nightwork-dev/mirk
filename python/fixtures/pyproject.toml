@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-fixtures"
-version = "0.12.0"
+version = "0.13.0"
 description = "Authored fixture loading, layering and provenance. Python port of @mirk/fixtures."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["mirk-store>=0.12.0,<0.13"]
+dependencies = ["mirk-store>=0.13.0,<0.14"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
