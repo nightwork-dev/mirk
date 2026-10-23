@@ -1,0 +1,77 @@
+{
+  "id": "log/rolled-back-append-reuses-its-sequence",
+  "title": "an append whose transaction rolls back leaves no entry, and the next append gets its sequence",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "kept"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "appendRolledBack",
+      "args": [
+        "s",
+        "rolled back"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        2
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "next"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": "kept"
+          },
+          {
+            "sequence": 2,
+            "record": "next"
+          }
+        ]
+      }
+    }
+  ]
+}

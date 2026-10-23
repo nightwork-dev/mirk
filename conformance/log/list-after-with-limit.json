@@ -1,0 +1,235 @@
+{
+  "id": "log/list-after-with-limit",
+  "title": "list returns entries after a sequence, in order, at most limit of them",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "a"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "b"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "c"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "d"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "e"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {}
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "step": "a"
+            }
+          },
+          {
+            "sequence": 2,
+            "record": {
+              "step": "b"
+            }
+          },
+          {
+            "sequence": 3,
+            "record": {
+              "step": "c"
+            }
+          },
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          },
+          {
+            "sequence": 5,
+            "record": {
+              "step": "e"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 2
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 3,
+            "record": {
+              "step": "c"
+            }
+          },
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          },
+          {
+            "sequence": 5,
+            "record": {
+              "step": "e"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 2,
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 3,
+            "record": {
+              "step": "c"
+            }
+          },
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "limit": 1
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "step": "a"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 3,
+          "limit": 100
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          },
+          {
+            "sequence": 5,
+            "record": {
+              "step": "e"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "limit": 0
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 5
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 99,
+          "limit": 3
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    }
+  ]
+}
