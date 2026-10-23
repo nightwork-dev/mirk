@@ -1,6 +1,7 @@
 import { StoreFilterError, compareCodePoints } from "@mirk/store";
 import { sortAndPageStoreItems } from "@mirk/store/kv";
-import type { AsyncStore, AsyncStoreInQuery, StoreFilter, StoreMeta } from "@mirk/store/kv";
+import type { AsyncStore, AsyncStoreInQuery, AsyncStoreIndexes, StoreFilter, StoreMeta } from "@mirk/store/kv";
+import { inRange, whereCondition, type WhereCondition } from "@mirk/store/sql";
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
 import { cloneJson } from "./internal/clone-json.js";
@@ -32,11 +33,10 @@ interface CollectionRow {
 }
 
 const ORDER_SEQUENCE = "mirk_collection_order";
-const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
 const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
 const COLLECTION_FIELDS = "mirk_id, mirk_ordinal, mirk_codec, data";
 
-export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
+export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery, AsyncStoreIndexes {
   readonly meta: StoreMeta = { backend: "surrealdb" };
   private readonly initializedCollections = new Map<string, Promise<void>>();
   private initialized = false;
@@ -114,7 +114,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
     const rows = firstStatement<CollectionRow[]>(
       await this.connection.query(query.sql, { table, ...query.bindings }),
     );
-    return sortAndPageStoreItems(inInsertionOrder<T>(rows), filter);
+    return sortAndPageStoreItems(inRanges(inInsertionOrder<T>(rows), query.ranges), filter);
   }
 
   async listWhereIn<T>(
@@ -137,7 +137,12 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
         ...query.bindings,
       }),
     );
-    return sortAndPageStoreItems(inInsertionOrder<T>(rows), filter);
+    return sortAndPageStoreItems(inRanges(inInsertionOrder<T>(rows), query.ranges), filter);
+  }
+
+  /** Accepted and a no-op: this adapter declares no field indexes. */
+  async ensureIndex(collection: string, _field: string): Promise<void> {
+    await this.ensureCollection(collection);
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {
@@ -187,6 +192,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
   async count(collection: string, filter?: StoreFilter): Promise<number> {
     const table = await this.ensureCollection(collection);
     const query = buildCountQuery(filter);
+    if (query.ranges.length > 0) return (await this.list(collection, { where: filter?.where })).length;
     const rows = firstStatement<CountRow[]>(
       await this.connection.query(query.sql, { table, ...query.bindings }),
     );
@@ -261,44 +267,66 @@ function isJsonScalar(value: unknown): boolean {
   );
 }
 
-function buildSelectQuery(
-  filter?: StoreFilter,
-  baseWhere?: string,
-): { sql: string; bindings: Record<string, unknown> } {
+type Range = readonly [field: string, condition: WhereCondition & { kind: "range" }];
+
+interface Query {
+  sql: string;
+  bindings: Record<string, unknown>;
+  /** Range conditions, applied to the fetched rows. */
+  ranges: Range[];
+}
+
+function buildSelectQuery(filter?: StoreFilter, baseWhere?: string): Query {
   const where = buildWhereClauses(filter, baseWhere);
   return {
     sql: `SELECT ${COLLECTION_FIELDS} FROM type::table($table)${where.clause}`,
     bindings: where.bindings,
+    ranges: where.ranges,
   };
 }
 
-function buildCountQuery(filter?: StoreFilter): { sql: string; bindings: Record<string, unknown> } {
+function buildCountQuery(filter?: StoreFilter): Query {
   const where = buildWhereClauses(filter);
   return {
     sql: `SELECT count() FROM type::table($table)${where.clause} GROUP ALL`,
     bindings: where.bindings,
+    ranges: where.ranges,
   };
 }
 
 function buildWhereClauses(
   filter?: StoreFilter,
   baseWhere?: string,
-): { clause: string; bindings: Record<string, unknown> } {
+): { clause: string; bindings: Record<string, unknown>; ranges: Range[] } {
   const clauses: string[] = [];
   const bindings: Record<string, unknown> = {};
+  const ranges: Range[] = [];
   if (baseWhere) clauses.push(baseWhere);
 
   for (const [index, [field, value]] of Object.entries(filter?.where ?? {}).entries()) {
-    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
+    const condition = whereCondition(value);
     const fieldKey = `whereField${index}`;
+    bindings[fieldKey] = field;
+    if (condition.kind === "range") {
+      clauses.push(`$${fieldKey} INSIDE object::keys(data)`);
+      ranges.push([field, condition]);
+      continue;
+    }
     const valueKey = `whereValue${index}`;
     clauses.push(`$${fieldKey} INSIDE object::keys(data) AND data[$${fieldKey}] = $${valueKey}`);
-    bindings[fieldKey] = field;
     bindings[valueKey] = encodeLoneSurrogates(value).value;
   }
 
   return {
     clause: clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`,
     bindings,
+    ranges,
   };
+}
+
+function inRanges<T>(items: T[], ranges: Range[]): T[] {
+  if (ranges.length === 0) return items;
+  return items.filter((item) =>
+    ranges.every(([field, condition]) => inRange((item as Record<string, unknown>)[field], condition)),
+  );
 }

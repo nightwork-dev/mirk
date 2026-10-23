@@ -65,7 +65,7 @@ npm install @mirk/store-postgres
 | Capability | Covered | Notes |
 | --- | --- | --- |
 | Key-values | yes | `postgres.kv` implements `AsyncStore` |
-| Collections | yes | same facet, plus the optional `AsyncStoreInQuery` capability (`listWhereIn`) |
+| Collections | yes | same facet, plus the optional `AsyncStoreInQuery` (`listWhereIn`) and `AsyncStoreIndexes` (`ensureIndex`) capabilities |
 | Vectors | no | pgvector is not used |
 | Full-text search | no | PostgreSQL full-text search is not used |
 | Atomic writes | yes | `AsyncAtomicMutationStore`: versioned reads and declarative atomic mutations with idempotent receipts |
@@ -126,11 +126,13 @@ atomic writes: an older adapter writes without the lock or a new version.
 
 The schema name is quoted once at construction. Keys, collection names, record IDs, filter fields,
 and values are always bound query parameters; they never become SQL identifiers or create tables.
+The one exception is `ensureIndex`, whose field name is an escaped string literal inside the index
+expression, because an index on a bound parameter cannot exist.
 
 ### Contract semantics
 
-`postgres.kv` implements `AsyncStore`, the optional `AsyncStoreInQuery` capability, and
-`AsyncAtomicMutationStore`.
+`postgres.kv` implements `AsyncStore`, the optional `AsyncStoreInQuery` and `AsyncStoreIndexes`
+capabilities, and `AsyncAtomicMutationStore`.
 
 - Values and records must be JSON-serializable and round-trip through `jsonb`; `undefined`,
   functions, symbols, `bigint`, and non-finite numbers throw.
@@ -141,10 +143,31 @@ and values are always bound query parameters; they never become SQL identifiers 
   over UTF-8 is byte order and so code point order. Sorted reads order string values the same way.
 - `where` is exact top-level JSON equality and distinguishes a missing field from an explicit
   `null`. `listWhereIn` adds exact top-level membership on one field.
+- A range `where` value (`{ seenAt: { gte: since } }`) follows the reference: a number bound
+  compares `jsonb` numbers, and a string bound compares the text with `COLLATE "C"`, so string
+  ranges are in code point order on any server locale. A bound that is not a finite number or a
+  string throws `StoreFilterError`.
 - Unsorted reads return insertion order; updating a record does not move it. Sorted reads put
   missing and `null` values last and break ties by insertion order.
 - `count` applies `where` and ignores pagination and sorting. Negative or fractional `limit` and
   `offset` are rejected.
+
+### Declared indexes
+
+`postgres.kv.ensureIndex(collection, field)` creates two expression indexes on the shared
+`records` table in one round trip, with `CREATE INDEX IF NOT EXISTS`:
+
+```sql
+CREATE INDEX IF NOT EXISTS records_f_<hash> ON "<schema>".records (collection, (data -> 'field'));
+CREATE INDEX IF NOT EXISTS records_s_<hash> ON "<schema>".records (collection, ((data ->> 'field') COLLATE "C"));
+```
+
+`<hash>` is the first 32 hex digits of the SHA-256 of the collection name, a NUL, and the field.
+The first index serves equality, `listWhereIn` and number ranges; the second serves string ranges.
+`sortBy` orders by type, then by value, and no index serves that order. The indexes are built with
+a plain `CREATE INDEX`, which blocks writes to `records` while it runs: declare them at startup,
+before the table is large, or create them yourself with `CREATE INDEX CONCURRENTLY` under the same
+names.
 
 ### Atomic writes and versions
 

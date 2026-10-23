@@ -1,0 +1,225 @@
+{
+  "id": "store/where-range-strings-by-code-point",
+  "title": "a string bound compares only strings, by Unicode code point",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "s"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "upper",
+          "s": "B"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "lower",
+          "s": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "accent",
+          "s": "é"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "fullwidth",
+          "s": "～"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "astral",
+          "s": "😀"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "date",
+          "s": "2026-10-23T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "number",
+          "s": 7
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "empty",
+          "s": ""
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "gt": "B"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "lower",
+          "accent",
+          "fullwidth",
+          "astral"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "gte": "B"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "upper",
+          "lower",
+          "accent",
+          "fullwidth",
+          "astral"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "lt": "a"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "upper",
+          "date",
+          "empty"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "gt": "～"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "astral"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "lte": "z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "upper",
+          "lower",
+          "date",
+          "empty"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "s": {
+              "gte": "2026-10-23"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "upper",
+          "lower",
+          "accent",
+          "fullwidth",
+          "astral",
+          "date"
+        ]
+      }
+    }
+  ]
+}

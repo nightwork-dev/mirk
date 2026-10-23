@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from mirk.store import SqliteAdapterError, SqliteStore, hash_name
+from mirk.store import SqliteAdapterError, SqliteStore, StoreFilter, StoreFilterError, hash_name
 from mirk.store.sqlite import (
     REGISTRY_TABLE,
     is_table_registry_conflict,
@@ -581,3 +581,114 @@ def test_lone_surrogate_values_are_written_escaped(tmp_path: Path) -> None:
     store.put("s", {"id": "r", "text": "\ud800"})
     assert store.getById("s", "r") == {"id": "r", "text": "\ud800"}
     store.close()
+
+
+# ── Declared indexes ─────────────────────────────────────────────────────────
+
+
+def _plans_for_foreclose_reads(declare: bool) -> dict[str, tuple[str, str]]:
+    """Run each read through the store and EXPLAIN the statement it executed."""
+    connection = sqlite3.connect(":memory:")
+    executed: list[str] = []
+    store = SqliteStore(":memory:", connection=connection)
+    try:
+        fields = ("sourceRecordId", "seenAt", "rank")
+        if declare:
+            for field in fields:
+                store.ensureIndex("sightings", field)
+        for i in range(2000):
+            store.put(
+                "sightings",
+                {
+                    "id": f"s{i}",
+                    "sourceRecordId": f"r{i % 200}",
+                    "seenAt": f"2026-{1 + i % 10:02d}-{1 + i % 28:02d}",
+                    "rank": None if i % 7 == 0 else i,
+                },
+            )
+
+        def where(field: str, value: Any) -> StoreFilter:
+            return {"where": {field: value}}
+
+        reads: dict[str, tuple[str, Any]] = {
+            "where equality": (
+                "sourceRecordId",
+                lambda: store.list("sightings", where("sourceRecordId", "r7")),
+            ),
+            "listWhereIn": (
+                "sourceRecordId",
+                lambda: store.listWhereIn("sightings", "sourceRecordId", ["r1", "r2"]),
+            ),
+            "sortBy ascending": (
+                "rank",
+                lambda: store.list("sightings", {"sortBy": "rank", "limit": 10}),
+            ),
+            "sortBy descending": (
+                "rank",
+                lambda: store.list("sightings", {"sortBy": "rank", "sortDir": "desc", "limit": 10}),
+            ),
+            "string range gte": (
+                "seenAt",
+                lambda: store.list("sightings", where("seenAt", {"gte": "2026-10-20"})),
+            ),
+            "number range gt": (
+                "rank",
+                lambda: store.list("sightings", where("rank", {"gt": 1990})),
+            ),
+            "count over a range": (
+                "seenAt",
+                lambda: store.count("sightings", where("seenAt", {"gt": "2026-10-20"})),
+            ),
+        }
+        connection.set_trace_callback(executed.append)
+        plans: dict[str, tuple[str, str]] = {}
+        for label, (field, read) in reads.items():
+            executed.clear()
+            read()
+            reads_only = ("SELECT data", "SELECT COUNT")
+            statements = [sql for sql in executed if sql.startswith(reads_only)]
+            assert len(statements) == 1, (label, executed)
+            connection.set_trace_callback(None)
+            rows = connection.execute(f"EXPLAIN QUERY PLAN {statements[0]}").fetchall()
+            connection.set_trace_callback(executed.append)
+            plans[label] = (field, " | ".join(str(row[3]) for row in rows))
+        return plans
+    finally:
+        store.close()
+
+
+def test_every_foreclose_read_uses_the_declared_fields_index() -> None:
+    for label, (field, plan) in _plans_for_foreclose_reads(declare=True).items():
+        index = plan.split("USING INDEX ", 1)[1].split()[0] if "USING INDEX " in plan else ""
+        suffix = f"_{field.encode('utf-8').hex()}"
+        assert index.startswith("ix_") and index.endswith(suffix), (label, plan)
+
+
+def test_no_field_index_is_used_when_none_is_declared() -> None:
+    for label, (_, plan) in _plans_for_foreclose_reads(declare=False).items():
+        assert "USING INDEX ix_" not in plan, (label, plan)
+
+
+def test_ensure_index_is_idempotent() -> None:
+    connection = sqlite3.connect(":memory:")
+    store = SqliteStore(":memory:", connection=connection)
+    try:
+        for _ in range(3):
+            store.ensureIndex("sightings", "seenAt")
+        rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%'"
+        ).fetchall()
+        assert len(rows) == 1
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("bound", [float("nan"), float("inf"), float("-inf")])
+def test_a_range_bound_json_cannot_carry_is_rejected(bound: float) -> None:
+    store = SqliteStore(":memory:")
+    try:
+        with pytest.raises(StoreFilterError) as raised:
+            store.list("sightings", {"where": {"n": {"gte": bound}}})
+        assert raised.value.code == "invalid-range-bound"
+    finally:
+        store.close()

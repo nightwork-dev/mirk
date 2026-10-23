@@ -34,8 +34,19 @@ store = SqliteStore("data.db")
 store.set("greeting", {"hello": "world"})
 store.put("things", {"id": "t1", "weight": 2})
 store.list("things", {"sortBy": "weight", "sortDir": "desc"})
+store.ensureIndex("things", "weight")
+store.list("things", {"where": {"weight": {"gte": 2}}})
 store.close()
 ```
+
+`ensureIndex(collection, field)` declares a field that queries filter or sort
+on. It is idempotent; call it on every start. On `SqliteStore` it creates the
+same expression index as the TypeScript adapter, under the same name, so either
+language sees the other's index as present. `InMemoryStore` accepts it and does
+nothing. A `where` value made only of `gt`, `gte`, `lt` and `lte` bounds is a
+range, with the TypeScript semantics: a number bound matches only numbers, a
+string bound only strings by code point, and `None` or a missing field never
+matches.
 
 Method names keep the TypeScript camelCase spelling (`getById`, `listWhereIn`)
 so a corpus `op` string dispatches identically in both languages.
@@ -179,9 +190,9 @@ differing.
   (memory vs. SQLite) before this port; the corpus now pins one answer for
   both languages and both backends: `keys()` sorts by code point; `count`
   ignores `sortBy`/`limit`/`offset`; a negative `limit` returns nothing;
-  `where`/`listWhereIn` on an object or array value throws `Store filters
-  only support JSON scalar values.`; and `where {v: true}` never matches a
-  stored `1`.
+  `where`/`listWhereIn` on an object or array value that is not a range
+  throws `Store filters only support JSON scalar values.`; and `where {v:
+  true}` never matches a stored `1`.
 - **Sort ties** land in insertion order on both backends; SQLite achieves
   this with `rowid` as the final `ORDER BY` key, which is equivalent to
   insertion order for every observable case.

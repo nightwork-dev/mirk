@@ -201,6 +201,10 @@ Collection names are encoded into deterministic safe Surreal table names, so nam
 object keys; dotted names are not interpreted as paths. The adapter stores user records under a data
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
 
+A range `where` value (`{ seenAt: { gte: since } }`) has the reference semantics. The query selects
+the records that have the field, and the adapter applies the bounds to them, so a range is one
+statement but not served by an index. `ensureIndex` is accepted and does nothing.
+
 ### Ordering
 
 Collection sorting follows Mirk's rules: strings use Unicode code-point order, null and missing

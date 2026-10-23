@@ -88,7 +88,7 @@ ESM-only (there is no CommonJS build).
 | Capability | Covered | Where |
 | --- | --- | --- |
 | Key-values | yes | `adapter.kv` (`AsyncStore`) |
-| Collections | yes | `adapter.kv` (`AsyncStore`), plus `listWhereIn` (`AsyncStoreInQuery`) |
+| Collections | yes | `adapter.kv` (`AsyncStore`), plus `listWhereIn` (`AsyncStoreInQuery`) and `ensureIndex` (`AsyncStoreIndexes`) |
 | Vectors | yes | `adapter.vector` (`AsyncVectorStore`), needs `dimensions` |
 | Atomic writes | yes | `adapter.kv` (`AsyncAtomicMutationStore`): `getVersioned`, `mutateAtomically` |
 | Transactions | yes | the adapter implements `AsyncStoreTransactions`: `transaction()` and `afterCommit()` |
@@ -107,6 +107,11 @@ The in-memory and SQLite stores are the reference. Compared with them:
 - There is no search facet.
 - A server uses the portable atomic limits (128 operations per request); a local database uses the
   in-process limits, like `@mirk/store/sqlite`.
+
+Filters, ranges, `listWhereIn`, `sortBy` and `ensureIndex` use the same SQL as `@mirk/store/sqlite`,
+so a declared index serves the same queries (see
+[Indexes and query plans](../store/README.md#indexes-and-query-plans)). On a server with a
+`tablePrefix`, the index name starts with `ix_` followed by the prefixed table name.
 
 ## Engine-free remote entry
 

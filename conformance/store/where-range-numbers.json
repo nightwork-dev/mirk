@@ -1,0 +1,234 @@
+{
+  "id": "store/where-range-numbers",
+  "title": "a number bound compares only numbers; strings, booleans, null and missing never match",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "n"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "int",
+          "n": 5
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "real",
+          "n": 2.5
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "negative",
+          "n": -1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "zero",
+          "n": 0
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "text",
+          "n": "9"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "true",
+          "n": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "false",
+          "n": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "null",
+          "n": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "missing"
+        }
+      ]
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "n"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gte": 0
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "int",
+          "real",
+          "zero"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gt": 0
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "int",
+          "real"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "lt": 2.5
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "negative",
+          "zero"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "lte": 2.5
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "real",
+          "negative",
+          "zero"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gt": 1
+            }
+          },
+          "sortBy": "n",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "int",
+          "real"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gte": -1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": 4
+      }
+    }
+  ]
+}

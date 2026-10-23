@@ -1,5 +1,6 @@
 import { StoreFilterError, compareCodePoints } from "@mirk/store";
-import type { AsyncStore, StoreFilter, StoreMeta } from "@mirk/store";
+import type { AsyncStore, AsyncStoreIndexes, StoreFilter, StoreMeta } from "@mirk/store";
+import { assertWhere, inRange, whereCondition } from "@mirk/store/sql";
 import type {
   AsyncAtomicMutationStore,
   AsyncReceiptPruning,
@@ -44,8 +45,6 @@ const STORE_NAMES = [
   STORE_RECEIPTS,
   STORE_META,
 ] as const;
-
-const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
 
 type IndexedDbStoreName = (typeof STORE_NAMES)[number];
 
@@ -221,7 +220,7 @@ Object.defineProperty(IndexedDbBackupError.prototype, "name", {
   enumerable: false,
 });
 
-export type IndexedDbStore = AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning;
+export type IndexedDbStore = AsyncStore & AsyncStoreIndexes & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 type Fail = (error: unknown) => void;
 
@@ -384,11 +383,17 @@ export class IndexedDbAdapter implements IndexedDbStore {
 
   async list<T>(collection: string, filter?: StoreFilter): Promise<T[]> {
     assertCollectionName(collection);
-    if (filter?.where) assertScalarWhere(filter.where);
+    if (filter?.where) assertWhere(filter.where);
     return this.run([STORE_RECORDS], "readonly", (tx, finish, fail) => {
       const request = tx.objectStore(STORE_RECORDS).index(COLLECTION_INDEX).getAll(collection);
       onResult<RecordRow[]>(request, fail, (rows) => finish(applyFilter<T>(rows, filter)));
     });
+  }
+
+  /** Accepted and a no-op: records are filtered after one collection-index
+   *  read, so a field index would serve nothing. */
+  async ensureIndex(collection: string, _field: string): Promise<void> {
+    assertCollectionName(collection);
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {
@@ -439,7 +444,7 @@ export class IndexedDbAdapter implements IndexedDbStore {
   async count(collection: string, filter?: StoreFilter): Promise<number> {
     assertCollectionName(collection);
     const where = filter?.where;
-    if (where) assertScalarWhere(where);
+    if (where) assertWhere(where);
     return this.run([STORE_RECORDS], "readonly", (tx, finish, fail) => {
       const index = tx.objectStore(STORE_RECORDS).index(COLLECTION_INDEX);
       if (!where) {
@@ -1101,22 +1106,6 @@ function versionCounter(version: string): number | null {
   return safePositiveInteger(counter) ? counter : null;
 }
 
-function isJsonScalar(value: unknown): boolean {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  );
-}
-
-function assertScalarWhere(where: Record<string, unknown>): void {
-  for (const value of Object.values(where)) {
-    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
-  }
-}
-
 function valueKey(target: StoreTarget): IDBValidKey {
   return target.kind === "key" ? target.key : [target.collection, target.id];
 }
@@ -1162,7 +1151,10 @@ function cloneCondition(condition: StoreCondition): StoreCondition {
 function matchesWhere(item: unknown, where: Record<string, unknown>): boolean {
   if (typeof item !== "object" || item === null) return false;
   const record = item as Record<string, unknown>;
-  return Object.entries(where).every(([key, value]) => record[key] === value);
+  return Object.entries(where).every(([key, value]) => {
+    const condition = whereCondition(value);
+    return condition.kind === "range" ? inRange(record[key], condition) : record[key] === condition.value;
+  });
 }
 
 /** The reference store's filter semantics over one collection's rows. */
@@ -1174,7 +1166,7 @@ function applyFilter<T>(rows: readonly RecordRow[], filter?: StoreFilter): T[] {
   if (!filter) return items as T[];
   if (filter.where) {
     const where = filter.where;
-    assertScalarWhere(where);
+    assertWhere(where);
     items = items.filter((item) => matchesWhere(item, where));
   }
   if (filter.sortBy) {
@@ -1223,7 +1215,7 @@ function makeReadView(kvRows: KvRow[], recordRows: RecordRow[], versionRows: Ver
       [...kv.keys()].filter((key) => !prefix || key.startsWith(prefix)).sort(compareCodePoints),
     list: <T>(collection: string, filter?: StoreFilter) => {
       assertCollectionName(collection);
-      if (filter?.where) assertScalarWhere(filter.where);
+      if (filter?.where) assertWhere(filter.where);
       return applyFilter<T>(recordRows.filter((row) => row.collection === collection), filter);
     },
     getById: <T>(collection: string, id: string) => {

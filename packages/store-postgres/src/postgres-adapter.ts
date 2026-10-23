@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Pool, type PoolClient, type PoolConfig, type QueryResult } from "pg";
 
@@ -8,6 +8,7 @@ import type {
   AsyncReceiptPruning,
   AsyncStore,
   AsyncStoreInQuery,
+  AsyncStoreIndexes,
   AsyncStoreTransactions,
   AtomicCompletedMutationResult,
   AtomicMutationLimits,
@@ -26,6 +27,7 @@ import {
   resolveReceiptRetention,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
+import { whereCondition, type StoreRangeOperator } from "@mirk/store/sql";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 
 export type PostgresAdapterErrorCode =
@@ -133,7 +135,7 @@ interface Queryable {
   ): Promise<QueryResult<R>>;
 }
 
-type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning;
+type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 /** Transport failures after which a COMMIT may or may not have taken effect. */
 const INDETERMINATE_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01", "08000", "08003", "08006"]);
@@ -158,7 +160,7 @@ function isIndeterminateFailure(error: unknown): boolean {
 
 /**
  * PostgreSQL source adapter. `kv` implements `AsyncStore`, `AsyncStoreInQuery`,
- * and `AsyncAtomicMutationStore`; the adapter implements
+ * `AsyncStoreIndexes` and `AsyncAtomicMutationStore`; the adapter implements
  * `AsyncStoreTransactions`.
  *
  * Every write, and every transaction, holds a transaction-scoped advisory lock
@@ -444,6 +446,20 @@ class PostgresStoreFacet implements PostgresStore {
     const query = buildListQuery(this.recordsTable, collection, filter, { field, values });
     const result = await this.database.query<{ data: T }>(query.sql, query.values);
     return result.rows.map((row) => row.data);
+  }
+
+  /** Two expression indexes, created in one round trip: `data -> field` serves
+   *  equality, listWhereIn and number ranges; `(data ->> field) COLLATE "C"`
+   *  serves string ranges in code point order on any server locale. */
+  async ensureIndex(collection: string, field: string): Promise<void> {
+    const name = createHash("sha256").update(`${collection}\u0000${field}`).digest("hex").slice(0, 32);
+    const key = `E'${field.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+    await this.write(() =>
+      this.database.query(
+        `CREATE INDEX IF NOT EXISTS records_f_${name} ON ${this.recordsTable} (collection, (data -> ${key}));`
+          + ` CREATE INDEX IF NOT EXISTS records_s_${name} ON ${this.recordsTable} (collection, ((data ->> ${key}) COLLATE "C"))`,
+      ),
+    );
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {
@@ -836,11 +852,31 @@ function buildWhere(
   const values: unknown[] = [collection];
   const clauses = ["collection = $1"];
   for (const [field, value] of Object.entries(where ?? {})) {
+    const condition = whereCondition(value);
+    // A number bound compares jsonb numbers; a string bound compares the text in
+    // "C" collation, which is code point order. Bounds of both kinds match nothing.
+    const kinds = condition.kind === "range" ? new Set(condition.bounds.map(([, bound]) => typeof bound)) : undefined;
+    if (kinds !== undefined && kinds.size > 1) {
+      clauses.push("FALSE");
+      continue;
+    }
     values.push(field);
     const fieldParameter = `$${values.length}`;
-    values.push(encodeJson(value));
-    const valueParameter = `$${values.length}`;
-    clauses.push(`data ? ${fieldParameter} AND data -> ${fieldParameter} = ${valueParameter}::jsonb`);
+    if (condition.kind === "equals") {
+      values.push(encodeJson(value));
+      clauses.push(`data ? ${fieldParameter} AND data -> ${fieldParameter} = $${values.length}::jsonb`);
+      continue;
+    }
+    const numeric = kinds!.has("number");
+    clauses.push(`jsonb_typeof(data -> ${fieldParameter}) = '${numeric ? "number" : "string"}'`);
+    for (const [operator, bound] of condition.bounds) {
+      values.push(numeric ? encodeJson(bound) : bound);
+      clauses.push(
+        numeric
+          ? `(data -> ${fieldParameter}) ${RANGE_SQL[operator]} $${values.length}::jsonb`
+          : `(data ->> ${fieldParameter}) COLLATE "C" ${RANGE_SQL[operator]} $${values.length}`,
+      );
+    }
   }
   if (inQuery) {
     // `= ANY` over a jsonb[] parameter: jsonb equality keeps 1, "1" and true
@@ -855,6 +891,8 @@ function buildWhere(
   }
   return { sql: ` WHERE ${clauses.join(" AND ")}`, values };
 }
+
+const RANGE_SQL: Record<StoreRangeOperator, string> = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
 
 function encodeJson(value: unknown): string {
   const encoded = JSON.stringify(value, (_key, nested) => {
