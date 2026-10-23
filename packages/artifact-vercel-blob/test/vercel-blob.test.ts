@@ -1,14 +1,16 @@
-import { BlobNotFoundError, BlobPreconditionFailedError } from "@vercel/blob";
+import { BlobAccessError, BlobError, BlobNotFoundError, BlobPreconditionFailedError } from "@vercel/blob";
 import {
   ArtifactCoordinator,
   ArtifactWriteError,
   InMemoryArtifactRepository,
+  ObjectAlreadyExistsError,
   ObjectWriteIndeterminateError,
 } from "@mirk/artifact";
+import { ArtifactMaintenance } from "@mirk/artifact/maintenance";
 import { describe, expect, it } from "vitest";
 
 import { drain, objectStoreConformance } from "../../artifact/test/object-store-conformance.js";
-import { VercelBlobObjectStore, type VercelBlobSdk } from "../src/index.js";
+import { VercelBlobObjectStore, VercelBlobObjectStoreError, type VercelBlobSdk } from "../src/index.js";
 
 interface StoredBlob {
   bytes: Uint8Array;
@@ -36,7 +38,9 @@ function fakeSdk() {
         size += next.value.byteLength;
       }
       reader.releaseLock();
-      if (objects.has(key) && !options.allowOverwrite) throw new Error("This blob already exists");
+      if (objects.has(key) && !options.allowOverwrite) {
+        throw new BlobError("This blob already exists, use `allowOverwrite: true` if you want to overwrite it.");
+      }
       const bytes = new Uint8Array(size);
       let offset = 0;
       for (const part of parts) {
@@ -82,10 +86,30 @@ function fakeSdk() {
     },
     async del(key: string, options: Record<string, unknown>) {
       calls.push({ operation: "del", options });
-      if (options.ifMatch && objects.get(key)?.etag !== options.ifMatch) {
-        throw new BlobPreconditionFailedError();
-      }
+      const row = objects.get(key);
+      if (options.ifMatch && !row) throw new BlobNotFoundError();
+      if (options.ifMatch && row?.etag !== options.ifMatch) throw new BlobPreconditionFailedError();
       objects.delete(key);
+    },
+    async list(options: { prefix?: string; cursor?: string; limit?: number }) {
+      calls.push({ operation: "list", options });
+      const keys = [...objects.keys()].filter((key) => key.startsWith(options.prefix ?? "")).sort();
+      const start = Number(options.cursor ?? 0);
+      const limit = options.limit ?? 1000;
+      const page = keys.slice(start, start + limit);
+      const more = start + limit < keys.length;
+      return {
+        blobs: page.map((key) => ({
+          pathname: key,
+          size: objects.get(key)!.bytes.byteLength,
+          uploadedAt: new Date(0),
+          etag: objects.get(key)!.etag,
+          url: `https://private.invalid/${key}`,
+          downloadUrl: `https://private.invalid/${key}`,
+        })),
+        hasMore: more,
+        ...(more ? { cursor: String(start + limit) } : {}),
+      };
     },
   };
   return { sdk: sdk as unknown as VercelBlobSdk, raw: sdk, calls, objects };
@@ -140,7 +164,7 @@ describe("VercelBlobObjectStore", () => {
     expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
   });
 
-  it("keeps the winner when another writer creates the key after the preflight check", async () => {
+  it("reports a lost ifAbsent race as the existing object and keeps the winner", async () => {
     const fixture = fakeSdk();
     const put = fixture.raw.put;
     fixture.raw.put = async (key, source, options) => {
@@ -152,23 +176,42 @@ describe("VercelBlobObjectStore", () => {
     await expect(
       coordinator.write({ mediaType: "application/octet-stream", bytes: new Uint8Array([1]) }),
     ).rejects.toMatchObject({
-      cleanup: "preserved-indeterminate",
-      cause: expect.any(ObjectWriteIndeterminateError),
+      cleanup: "not-needed",
+      cause: expect.any(ObjectAlreadyExistsError),
     });
     expect(await drain(await store.get("artifacts/race"))).toEqual(new Uint8Array([9]));
     expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
   });
 
-  it("bounds the upload and reports the remote outcome as indeterminate", async () => {
+  it("reports a source over the byte limit as itself: nothing landed", async () => {
     const fixture = fakeSdk();
     const store = new VercelBlobObjectStore({ sdk: fixture.sdk, maxBytes: 2 });
-    await expect(store.put("too-large", new Uint8Array([1, 2, 3]))).rejects.toBeInstanceOf(
-      ObjectWriteIndeterminateError,
-    );
+    const failure = await store.put("too-large", new Uint8Array([1, 2, 3])).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(RangeError);
+    expect(failure).not.toBeInstanceOf(ObjectWriteIndeterminateError);
     expect(fixture.objects.size).toBe(0);
   });
 
-  it("deletes only the version it observed", async () => {
+  it("reports a request the service refused as itself", async () => {
+    const fixture = fakeSdk();
+    fixture.raw.put = async () => {
+      throw new BlobAccessError();
+    };
+    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const failure = await store.put("refused", new Uint8Array([1])).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BlobAccessError);
+    expect(failure).not.toBeInstanceOf(ObjectWriteIndeterminateError);
+  });
+
+  it("returns false to the loser of a delete race", async () => {
+    const fixture = fakeSdk();
+    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    await store.put("k", new Uint8Array([1]));
+    expect((await Promise.all([store.delete("k"), store.delete("k")])).sort()).toEqual([false, true]);
+    expect(fixture.objects.has("k")).toBe(false);
+  });
+
+  it("deletes only the version it observed and returns false after a concurrent overwrite", async () => {
     const fixture = fakeSdk();
     const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
     await store.put("k", new Uint8Array([1]));
@@ -178,8 +221,54 @@ describe("VercelBlobObjectStore", () => {
       fixture.objects.set(key, { bytes: new Uint8Array([2]), contentType: "application/octet-stream", etag: "newer" });
       return seen;
     };
-    await expect(store.delete("k")).rejects.toBeInstanceOf(BlobPreconditionFailedError);
+    expect(await store.delete("k")).toBe(false);
     expect(fixture.objects.get("k")?.etag).toBe("newer");
+  });
+
+  it("refuses to delete an object it cannot pin to a version", async () => {
+    const fixture = fakeSdk();
+    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    await store.put("k", new Uint8Array([1]));
+    const head = fixture.raw.head;
+    fixture.raw.head = async (key, options) => ({ ...(await head(key, options)), etag: "" });
+    const refusal = await store.delete("k").catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(VercelBlobObjectStoreError);
+    expect(refusal).toMatchObject({ code: "missing-etag" });
+    expect(fixture.objects.has("k")).toBe(true);
+    expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
+  });
+
+  it("lists objects by prefix across pages, in key order", async () => {
+    const fixture = fakeSdk();
+    const store = new VercelBlobObjectStore({ sdk: fixture.sdk, listPageSize: 2 });
+    for (const key of ["b/2", "a/1", "b/1", "b/3"]) await store.put(key, new Uint8Array([1]));
+    expect((await store.list("b/")).map((info) => info.key)).toEqual(["b/1", "b/2", "b/3"]);
+    expect((await store.list()).map((info) => info.key)).toEqual(["a/1", "b/1", "b/2", "b/3"]);
+  });
+
+  it("lets maintenance find and remove the object an indeterminate write kept", async () => {
+    const fixture = fakeSdk();
+    const put = fixture.raw.put;
+    fixture.raw.put = async (...args) => {
+      await put(...args);
+      throw new Error("reply lost");
+    };
+    const objects = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const repository = new InMemoryArtifactRepository();
+    const coordinator = new ArtifactCoordinator(objects, repository, { idFactory: () => "orphan" });
+    await expect(
+      coordinator.write({ mediaType: "application/octet-stream", bytes: new Uint8Array([7]) }),
+    ).rejects.toMatchObject({ cleanup: "preserved-indeterminate" });
+    fixture.raw.put = put;
+
+    const maintenance = new ArtifactMaintenance(objects, repository);
+    const report = await maintenance.audit();
+    expect(report.coverage).toBe("complete");
+    expect(report.findings.map((finding) => finding.code)).toEqual(["object-without-record"]);
+    const plan = await maintenance.planRepair(report);
+    expect(plan.actions.map((action) => action.operation)).toEqual(["delete-unreferenced-object"]);
+    expect((await maintenance.applyRepair(plan)).map((result) => result.status)).toEqual(["applied"]);
+    expect(fixture.objects.size).toBe(0);
   });
 
   it("rejects a non-positive byte limit", () => {
