@@ -284,7 +284,12 @@ export async function openIndexedDbAdapter(
       resolve(request.result);
     };
   });
-  return new IndexedDbAdapter(db, dbName, { ...options, versionIdentity });
+  try {
+    return new IndexedDbAdapter(db, dbName, { ...options, versionIdentity });
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 }
 
 /** IndexedDB source adapter. The `.kv` facet is the Mirk async store and atomic port. */
