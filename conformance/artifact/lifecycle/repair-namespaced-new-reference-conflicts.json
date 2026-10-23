@@ -1,6 +1,6 @@
 {
-  "id": "artifact/lifecycle/repair-new-reference-conflicts",
-  "title": "repair new reference conflicts",
+  "id": "artifact/lifecycle/repair-namespaced-new-reference-conflicts",
+  "title": "repair namespaced new reference conflicts",
   "ports": [
     "artifact"
   ],
@@ -15,7 +15,7 @@
     {
       "op": "putObject",
       "args": [
-        "orphan",
+        "artifacts/orphan",
         "aGVsbG8="
       ]
     },
@@ -31,7 +31,7 @@
       "op": "importArtifact",
       "args": [
         {
-          "objectKey": "orphan",
+          "objectKey": "artifacts/orphan",
           "mediaType": "text/plain"
         }
       ]

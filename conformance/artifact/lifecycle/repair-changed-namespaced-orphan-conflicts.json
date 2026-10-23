@@ -1,6 +1,6 @@
 {
-  "id": "artifact/lifecycle/repair-changed-orphan-conflicts",
-  "title": "repair changed orphan conflicts",
+  "id": "artifact/lifecycle/repair-changed-namespaced-orphan-conflicts",
+  "title": "repair changed namespaced orphan conflicts",
   "ports": [
     "artifact"
   ],
@@ -15,7 +15,7 @@
     {
       "op": "putObject",
       "args": [
-        "orphan",
+        "artifacts/orphan",
         "YmVmb3Jl"
       ]
     },
@@ -30,7 +30,7 @@
     {
       "op": "putObject",
       "args": [
-        "orphan",
+        "artifacts/orphan",
         "YWZ0ZXI="
       ]
     },

@@ -109,14 +109,14 @@ describe("artifact finalization hardening", () => {
       })(),
     });
     const objects = new InMemoryObjectStore();
-    await objects.put("orphan", bytes("orphan"));
+    await objects.put("artifacts/orphan", bytes("orphan"));
     const maintenance = new ArtifactMaintenance(objects, repository, {
       now: () => now,
     });
     const report = await maintenance.audit();
     const plan = await maintenance.planRepair(report, { createdAt: now });
     const lease = await repository.acquireObjectLease({
-      objectKey: "orphan",
+      objectKey: "artifacts/orphan",
       ownerId: "writer",
       mode: "shared-writer",
       now,
@@ -131,7 +131,7 @@ describe("artifact finalization hardening", () => {
     expect((await maintenance.applyRepair(plan))[0]).toMatchObject({
       status: "applied",
     });
-    expect(await objects.head("orphan")).toBeUndefined();
+    expect(await objects.head("artifacts/orphan")).toBeUndefined();
   });
 
   it("returns a partial audit without object enumeration", async () => {
@@ -241,7 +241,7 @@ describe("artifact finalization hardening", () => {
     });
     class BlockingObjects extends InMemoryObjectStore {
       override async get(key: string) {
-        if (block && key === "orphan") {
+        if (block && key === "artifacts/orphan") {
           entered();
           await releasePromise;
         }
@@ -250,7 +250,7 @@ describe("artifact finalization hardening", () => {
     }
     const objects = new BlockingObjects();
     const repository = new InMemoryArtifactRepository({ now: () => now });
-    await objects.put("orphan", bytes("orphan"));
+    await objects.put("artifacts/orphan", bytes("orphan"));
     const maintenance = new ArtifactMaintenance(objects, repository, {
       now: () => now,
       leaseTtlMs: 10,
@@ -262,7 +262,7 @@ describe("artifact finalization hardening", () => {
     await enteredPromise;
     now = 200;
     const successor = await repository.acquireObjectLease({
-      objectKey: "orphan",
+      objectKey: "artifacts/orphan",
       ownerId: "writer",
       mode: "shared-writer",
       now,
@@ -274,7 +274,7 @@ describe("artifact finalization hardening", () => {
       status: "conflict",
       reason: "lease-unavailable",
     });
-    expect(await objects.head("orphan")).toBeDefined();
+    expect(await objects.head("artifacts/orphan")).toBeDefined();
   });
 
   it("does not disguise object-store failures as repair conflicts", async () => {
@@ -287,7 +287,7 @@ describe("artifact finalization hardening", () => {
 
     const objects = new FailingDeleteObjects();
     const repository = new InMemoryArtifactRepository();
-    await objects.put("orphan", bytes("orphan"));
+    await objects.put("artifacts/orphan", bytes("orphan"));
     const maintenance = new ArtifactMaintenance(objects, repository);
     const report = await maintenance.audit();
     const plan = await maintenance.planRepair(report);
@@ -416,14 +416,14 @@ describe("artifact finalization hardening", () => {
             ownerId: "importer",
             leaseTtlMs: 10,
           });
-          await importer.import({ objectKey: "orphan", mediaType: "text/plain" });
+          await importer.import({ objectKey: "artifacts/orphan", mediaType: "text/plain" });
         }
         return page;
       }
     }
     const objects = new InMemoryObjectStore();
     const repository = new ExpiringRepository({ now: () => now });
-    await objects.put("orphan", bytes("orphan"));
+    await objects.put("artifacts/orphan", bytes("orphan"));
     const maintenance = new ArtifactMaintenance(objects, repository, {
       now: () => now,
       leaseTtlMs: 10,
@@ -435,7 +435,7 @@ describe("artifact finalization hardening", () => {
     const [result] = await maintenance.applyRepair(plan);
     expect(result).toMatchObject({ status: "conflict", reason: "lease-unavailable" });
     expect(await repository.get("imported")).toBeDefined();
-    expect(await objects.head("orphan")).toBeDefined();
+    expect(await objects.head("artifacts/orphan")).toBeDefined();
   });
 });
 

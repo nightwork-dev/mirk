@@ -317,26 +317,26 @@ export const scenarios = [
     step("putObject", "artifacts/artifact-1", text("longer")),
     check("verify", "artifact-1"),
   ]),
-  scenario("audit-and-repair-orphan", [
-    step("putObject", "orphan", text("orphan")),
+  scenario("audit-and-repair-namespaced-orphan", [
+    step("putObject", "artifacts/orphan", text("orphan")),
     check("audit"),
     check("planRepair"),
     check("applyRepair"),
     check("audit"),
   ]),
-  scenario("repair-changed-orphan-conflicts", [
-    step("putObject", "orphan", text("before")),
+  scenario("repair-changed-namespaced-orphan-conflicts", [
+    step("putObject", "artifacts/orphan", text("before")),
     step("audit"),
     step("planRepair"),
-    step("putObject", "orphan", text("after")),
+    step("putObject", "artifacts/orphan", text("after")),
     check("applyRepair"),
     check("audit"),
   ]),
-  scenario("repair-new-reference-conflicts", [
-    step("putObject", "orphan", text("hello")),
+  scenario("repair-namespaced-new-reference-conflicts", [
+    step("putObject", "artifacts/orphan", text("hello")),
     step("audit"),
     step("planRepair"),
-    step("importArtifact", { objectKey: "orphan", mediaType: "text/plain" }),
+    step("importArtifact", { objectKey: "artifacts/orphan", mediaType: "text/plain" }),
     check("applyRepair"),
     check("read", "artifact-1"),
   ]),
@@ -357,12 +357,28 @@ export const scenarios = [
     check("applyRepair"),
     check("get", "artifact-1"),
   ]),
-  scenario("repair-blocked-by-writer", [
-    step("putObject", "orphan", text("hello")),
+  scenario("repair-namespaced-blocked-by-writer", [
+    step("putObject", "artifacts/orphan", text("hello")),
     step("audit"),
     step("planRepair"),
-    step("acquireObjectLease", leaseInput),
+    step("acquireObjectLease", { ...leaseInput, objectKey: "artifacts/orphan" }),
     check("applyRepair"),
+  ]),
+  // Maintenance audits only the coordinator's namespace (`artifacts/`): an
+  // object anywhere else, including a key that merely shares the prefix
+  // text, is never a finding and survives repair.
+  scenario("repair-ignores-objects-outside-namespace", [
+    step("putObject", "orphan", text("bucket root")),
+    step("putObject", "other-app/upload", text("other app")),
+    step("putObject", "artifacts-archive/old", text("lookalike prefix")),
+    step("putObject", "artifacts/orphan", text("ours")),
+    check("audit"),
+    check("planRepair"),
+    check("applyRepair"),
+    check("deleteObject", "orphan"),
+    check("deleteObject", "other-app/upload"),
+    check("deleteObject", "artifacts-archive/old"),
+    check("deleteObject", "artifacts/orphan"),
   ]),
   scenario("shared-leases-exclude-delete", [
     check("acquireObjectLease", leaseInput),

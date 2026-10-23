@@ -1,6 +1,6 @@
 {
-  "id": "artifact/lifecycle/repair-blocked-by-writer",
-  "title": "repair blocked by writer",
+  "id": "artifact/lifecycle/repair-namespaced-blocked-by-writer",
+  "title": "repair namespaced blocked by writer",
   "ports": [
     "artifact"
   ],
@@ -15,7 +15,7 @@
     {
       "op": "putObject",
       "args": [
-        "orphan",
+        "artifacts/orphan",
         "aGVsbG8="
       ]
     },
@@ -31,7 +31,7 @@
       "op": "acquireObjectLease",
       "args": [
         {
-          "objectKey": "orphan",
+          "objectKey": "artifacts/orphan",
           "ownerId": "writer",
           "mode": "shared-writer",
           "ttlMs": 10

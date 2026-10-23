@@ -188,7 +188,7 @@ describe("injection points", () => {
 
   it("maintenance: options.ownerId is the ownerId used to acquire the repair lease", async () => {
     const objects = new InMemoryObjectStore();
-    await objects.put("orphan-key", bytes("orphan"));
+    await objects.put("artifacts/orphan-key", bytes("orphan"));
     const repository = new OwnerCapturingRepository();
     const maintenance = new ArtifactMaintenance(objects, repository, {
       ownerId: "custom-maintenance-owner",
@@ -202,7 +202,7 @@ describe("injection points", () => {
 
   it("maintenance: auditIdFactory (newly injectable) sets report.auditId and is embedded in repair action ids", async () => {
     const objects = new InMemoryObjectStore();
-    await objects.put("orphan-key", bytes("orphan"));
+    await objects.put("artifacts/orphan-key", bytes("orphan"));
     const repository = new InMemoryArtifactRepository();
 
     const maintenanceA = new ArtifactMaintenance(objects, repository, {
