@@ -509,6 +509,56 @@ def test_get_versioned_assigns_a_token_to_a_row_written_before_versions_existed(
         store.close()
 
 
+@pytest.mark.parametrize(
+    "target",
+    [{"kind": "key", "key": "old"}, {"kind": "record", "collection": "things", "id": "old"}],
+    ids=["key", "record"],
+)
+def test_versioning_an_old_row_on_read_holds_the_write_lock_while_it_mints(
+    tmp_path: Path, target: dict[str, Any]
+) -> None:
+    """Another process can never take a number between this mint's statements.
+
+    A second connection stands in for that process: it tries to mint whenever
+    the store's connection touches the version sequence. If the store has
+    released the write lock at that moment, the other connection takes a
+    number and this read could return a token another writer also holds.
+    """
+    path = str(tmp_path / "tokens.db")
+    store = SqliteStore(path, version_identity="local")
+    other = sqlite3.connect(path, timeout=0, isolation_level=None)
+    elsewhere: list[int] = []
+
+    def mint_elsewhere(statement: str) -> None:
+        if "_mirk_atomic_sequence" not in statement:
+            return
+        try:
+            row = other.execute(
+                "UPDATE _mirk_atomic_sequence SET value = value + 1 WHERE id = 1 RETURNING value"
+            ).fetchone()
+            elsewhere.append(int(row[0]))
+        except sqlite3.OperationalError:
+            pass  # The store still holds the write lock.
+
+    try:
+        store.set("old", 1)
+        store.put("things", {"id": "old"})
+        store.connection.execute("DELETE FROM _mirk_atomic_versions")
+        store.connection.set_trace_callback(mint_elsewhere)
+        try:
+            assigned = store.getVersioned(target)
+        finally:
+            store.connection.set_trace_callback(None)
+        assert assigned is not None
+        assert elsewhere == []
+        store.set("next", 2)
+        newer = store.getVersioned({"kind": "key", "key": "next"})
+        assert newer is not None and newer["version"] != assigned["version"]
+    finally:
+        other.close()
+        store.close()
+
+
 def test_integers_above_2_53_are_stored_as_the_nearest_double(tmp_path: Path) -> None:
     """The file must read the same from TypeScript, which only has float64."""
     store = SqliteStore(str(tmp_path / "big.db"))
