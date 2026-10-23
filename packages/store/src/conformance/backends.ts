@@ -15,6 +15,7 @@ import {
   sha256HexBytes,
 } from "../canonical.js";
 import { SqliteAdapter } from "../adapters/sqlite.js";
+import { NodeSqliteAdapter } from "../adapters/node-sqlite.js";
 import { fixturesApi, type FixturesBackendStore } from "./fixtures-target.js";
 import { artifactApi } from "./artifact-target.js";
 import { openMarkdownTarget } from "./markdown-target.js";
@@ -169,7 +170,8 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
     };
   }
 
-  const adapter = new SqliteAdapter(
+  const Adapter = backend === "node-sqlite" ? NodeSqliteAdapter : SqliteAdapter;
+  const adapter = new Adapter(
     kind === "vector"
       ? {
           path: ":memory:",

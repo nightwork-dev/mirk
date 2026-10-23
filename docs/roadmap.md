@@ -36,6 +36,7 @@ still open.
 | MR-24  | Python port of `@mirk/artifact`                           | `python/artifact` (`mirk-artifact`)  | unreleased |
 | MR-25  | Python Markdown storage adapter                          | `python/store-markdown`             | unreleased |
 | MR-26  | Python S3/OpenDAL artifact object adapter                 | `python/artifact-opendal`           | unreleased |
+| MR-27  | Built-in Node SQLite adapter and better-sqlite3 13 support | `@mirk/store/node-sqlite`, `@mirk/statements` | unreleased |
 
 "Shipped" means implemented and tested on the default branch. "Unreleased" means that
 the source and tests contain the feature without a release entry for it yet. Published

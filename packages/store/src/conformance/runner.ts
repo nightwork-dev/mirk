@@ -12,7 +12,7 @@
 
 import type { Scenario } from "./format.js";
 
-export type BackendName = "memory" | "sqlite" | "markdown";
+export type BackendName = "memory" | "sqlite" | "node-sqlite" | "markdown";
 
 /** Which target a scenario's `ports` select. `kv`, `collection` and `atomic`
  *  are one object (SyncStore), so they share the "store" target. `hash` binds a
@@ -37,11 +37,12 @@ export type StepOutcome =
 const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
   memory: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures", "artifact"],
   sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures", "artifact"],
+  "node-sqlite": ["kv", "collection", "atomic", "hash", "vector", "search", "graph", "fixtures", "artifact"],
   markdown: ["store_markdown"],
 };
 
 export function backendsForPorts(ports: readonly string[]): BackendName[] {
-  return ports.includes("store_markdown") ? ["markdown"] : ["memory", "sqlite"];
+  return ports.includes("store_markdown") ? ["markdown"] : ["memory", "sqlite", "node-sqlite"];
 }
 
 /** The ports a scenario names that this backend cannot bind. Empty is the only

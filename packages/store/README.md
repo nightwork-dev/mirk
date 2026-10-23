@@ -2,8 +2,9 @@
 
 Code-split storage **ports** + source **adapters** under one namespace. Import the whole
 namespace, or just the specific subpath you need — the interface ports and their in-memory
-reference implementations are zero-native, and only the SQLite adapter references native
-bindings (as optional peers).
+reference implementations are zero-native. SQLite source adapters are isolated behind their own
+subpaths: `/sqlite` uses the optional better-sqlite3 peer, while `/node-sqlite` uses Node's
+built-in synchronous SQLite implementation.
 
 ESM-only (the package exposes `import` entry points; there is no CommonJS build).
 
@@ -13,7 +14,10 @@ ESM-only (the package exposes `import` entry points; there is no CommonJS build)
 npm install @mirk/store
 # Using the SQLite adapter (@mirk/store/sqlite)? Add its peer:
 npm install better-sqlite3
+# The built-in adapter (@mirk/store/node-sqlite) needs no SQLite package.
 ```
+
+The `/sqlite` adapter accepts better-sqlite3 11, 12, or 13 as its optional peer.
 
 ## Subpaths
 
@@ -29,8 +33,9 @@ npm install better-sqlite3
 | `@mirk/store/coordination` | SQLite-backed async keyed coordinator with leases, renewal, fencing generations, and ownership-loss checks                                       | `better-sqlite3` (peer)                               |
 | `@mirk/store/encrypted`    | WebCrypto AES-256-GCM encrypted record envelopes for caller-owned vault keys                                                                      | none                                                  |
 | `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer)                               |
+| `@mirk/store/node-sqlite`  | the Node/Electron SQLite **source adapter** — the same facets and file schema using `node:sqlite` `DatabaseSync`                                      | Node.js 24+ (`node:sqlite`)                          |
 
-Source adapters are reached **only** through their own subpath (e.g. `/sqlite`) — the root and the
+Source adapters are reached **only** through their own subpath (e.g. `/sqlite` or `/node-sqlite`) — the root and the
 port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
 `/graph` never drags a native binding into a consumer bundle.
 
@@ -326,6 +331,22 @@ db.transaction(() => {
 db.close();
 ```
 
+For Node 24+ and Electron builds that expose `node:sqlite`, use the built-in adapter without a
+native package install. It has the same facets, transaction modes, schema, and file compatibility.
+In Electron, open the adapter in the main process and expose storage operations through IPC:
+
+```ts
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
+
+const db = new NodeSqliteAdapter({ path: "data.db" });
+db.kv.set("user:1", { name: "Ada" });
+db.close();
+```
+
+`NodeSqliteAdapter` accepts a `node:sqlite` `DatabaseSync` instance through `db` when the host owns
+connection setup. `SqliteAdapter` accepts a better-sqlite3 `Database` through the corresponding
+option. Both adapters can reopen files written by the other.
+
 ### `SqliteAdapter` options
 
 | Option          | Type       | Notes                                                                                                                                                          |
@@ -333,7 +354,7 @@ db.close();
 | `path`          | `string`   | DB file path, or `":memory:"`.                                                                                                                                 |
 | `db`            | `Database` | Reuse an existing `better-sqlite3` connection instead of opening one.                                                                                          |
 | `dimensions`    | `number`   | Optional embedding dimensionality. If omitted, inferred and persisted from the first vector `upsert` / `upsertMany`; `search` still requires known dimensions. |
-| `busyTimeoutMs` | `number`   | Bounded wait for another SQLite writer. Defaults to 30 seconds and applies to owned or caller-supplied connections.                                            |
+| `busyTimeoutMs` | `number`   | Bounded wait for another SQLite writer. Defaults to 30 seconds; accepts `0` through `2_147_483_647` ms and applies to owned or caller-supplied connections. |
 | `atomicLimits`  | `Partial<AtomicMutationLimits>` | Override the in-process atomic request bounds (see above).                                                                                    |
 | `versionIdentity` | `string` | Prefix for atomic version tokens, written once when the file is initialized; a file that already has one keeps it. Defaults to a random UUID.                |
 
