@@ -1,8 +1,55 @@
 # Changelog
 
-Mirk packages are versioned independently. This file records coordinated public releases and
-repository-wide contract changes; package-specific changes remain described by Changesets before
-versioning.
+Mirk releases as one version set. Every `@mirk/*` npm package and every `mirk-*` Python
+distribution carries the same version and is bumped together, so "mirk 0.12.0" means the same
+thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
+This file records each release and repository-wide contract changes.
+
+## 0.12.0 — 2026-10-23
+
+The first release as one version set: every package moves to 0.12.0.
+
+### Security
+
+Every package now requires a patched Node release: 22.23.4, 24.22.1, or 26.12.1 and later
+(CVE-2026-111497). Build and test tooling is updated so `pnpm audit` reports no findings. The
+remaining upstream gaps (libSQL's bundled SQLite, and older native TLS libraries in the OpenDAL and
+SurrealDB engines) are documented in those packages' READMEs.
+
+### Changes
+
+- `@mirk/store` — `@mirk/store/node-sqlite`, a built-in SQLite adapter on `node:sqlite` with the
+  same facets and file format as the better-sqlite3 adapter; better-sqlite3 13 support; a
+  transaction whose work returns a promise is rolled back and rejected; the shared
+  `sortAndPageStoreItems` helper and code point comparator are exported.
+- `@mirk/surreal` — **breaking for older remote servers:** the store now keeps insertion order
+  using a SurrealDB sequence, so a remote server must support sequences. Records written by earlier
+  versions still load. The store now passes every applicable shared store scenario: empty ids, lone
+  surrogates in values, and non-scalar filters now behave as in the other stores. The embedded
+  engines are pinned to 3.3.4 and need their separate `node-native` or `wasm-native` peer.
+- `@mirk/store-libsql` — `@mirk/store-libsql/remote`, an engine-free remote entry; native vector
+  search now runs (the neighbour count was sent as a float and silently fell back to a full scan),
+  and native search errors are reported instead of hidden.
+- `@mirk/vector-qdrant` — first public release. Async Qdrant vector adapter with exact cosine
+  scores, metadata filters, and the storage format shared with the Python adapter.
+- `@mirk/artifact` — artifact commits are bound to matching object leases, and direct deletion is
+  protected from concurrent writers.
+- `@mirk/store-markdown` — empty keys are rejected, index filename collisions and case aliases are
+  guarded, and Git commits include only each mutation's own files.
+- `@mirk/artifact-opendal` requires OpenDAL Node binding 0.49.13 or later. The other packages
+  carry the patched Node baseline and dependency updates.
+
+### Python
+
+- `mirk-artifact`, `mirk-store-markdown`, `mirk-artifact-opendal`, and `mirk-vector-qdrant` are
+  new distributions sharing storage formats and conformance scenarios with their TypeScript
+  packages. All six Python distributions move to 0.12.0 with the version set.
+
+### Documentation
+
+- Every README is rewritten for first-time readers. Each opens with why you would use the package
+  and a runnable example, and keeps its full contract below.
+- The Electron compatibility harness is removed; Mirk targets Node runtimes.
 
 ## 2026-09-22
 
