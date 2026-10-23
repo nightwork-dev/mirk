@@ -334,7 +334,10 @@ const graph = await loader.referenceGraph();
 `validate()` loads every listed fixture, runs schema validation, checks every extracted reference,
 and runs each type's `validateReferences` hook. It returns `{ ok, diagnostics }`, where `ok` means
 no diagnostic has severity `error`. It keeps going after a failure: one bad file or one failing
-source contributes diagnostics while the rest of the pack is still checked. Missing targets are `missing-reference`; malformed refs are `invalid-ref`.
+source contributes diagnostics while the rest of the pack is still checked. Missing targets are `missing-reference`; malformed refs are `invalid-ref`. A file that fails to
+read or parse yields its own diagnostic and is left out of the run; every other file, including the
+rest of its source, is still checked. A reference that could point into a file left out that way is
+reported as the warning `unresolved-reference` instead of `missing-reference`.
 
 `referenceGraph()` returns `{ nodes, edges, diagnostics }`. Nodes are `{ ref, type, id, resolved }`;
 edges are `{ from, to, fieldPath }`. Dangling targets stay in the graph as `resolved: false`, and
@@ -498,7 +501,9 @@ const loader = createFixtureLoader({
 A parser is a function from text to a value, and may be async. A parser can also be a
 `{ kind, parse }` entry where `kind` is `plain`, `async`, `positioned`, or `async-positioned`. A
 positioned parser returns `{ value, positionFor(path) }`, which adds a line/column `range` to
-diagnostics. Positions only enrich diagnostics; correctness never depends on them.
+diagnostics about a field of that document: schema failures, `missing-reference` and
+`invalid-ref`. Positions only enrich diagnostics; a parser whose `positionFor` throws or returns
+nothing leaves the `range` off and changes no result.
 
 A matching file with no parser for its extension is a `no-parser` diagnostic. A parse failure is a
 `parse-failed` diagnostic carrying the source id, relative path, and the parser's message.

@@ -11,6 +11,7 @@ import type {
   FixtureProvenanceLayer,
   FixtureSourceEntry,
   FixtureTypeDefinition,
+  SourceRange,
   JsonSchemaDocument,
   JsonSchemaValidator,
   LayeredSource,
@@ -22,6 +23,7 @@ import type {
   ReferenceGraph,
   ReferenceMode,
   ValidationContext,
+  StandardSchemaV1Issue,
   ValidationReport,
 } from "./types.js";
 
@@ -38,6 +40,14 @@ interface ParsedLayer extends FileCandidate {
   sourcePath: string;
 }
 
+/** Skip sets hold whole source ids and, for a file that failed to read or
+ *  parse, that one file. The NUL keeps a file key from ever equalling an id. */
+function fileSkipKey(sourceId: string, relativePath: string): string {
+  return `${sourceId}\u0000${relativePath}`;
+}
+
+type PositionFor = (path: ReadonlyArray<PropertyKey>) => SourceRange | undefined;
+
 const BUILTIN_PARSERS: Record<string, ParserEntry> = {
   ".json": { kind: "plain", parse: (content: string) => JSON.parse(content) as unknown },
 };
@@ -49,6 +59,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
   const rawCache = new Map<string, LoadedFixture>();
   const materialCache = new Map<string, unknown>();
   const parsedDocumentCache = new Map<string, unknown>();
+  const positionIndex = new Map<string, PositionFor>();
   // One compiled validator per type definition. The factory is the caller's,
   // so compilation cost is theirs to pay once, not once per fixture.
   const jsonSchemaValidators = new Map<FixtureTypeDefinition, JsonSchemaValidator>();
@@ -144,6 +155,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       for (const entry of entries) {
         const match = matchEntry(def, entry, def.document ? undefined : id);
         if (!match) continue;
+        if (skipSources.has(fileSkipKey(layered.source.id, entry.relativePath))) continue;
         out.push({ layered, entry, ext: match.ext, fileId: match.id });
       }
     }
@@ -191,7 +203,14 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
 
     try {
       const result = await parseWith(parser, content);
-      const value = isPositionedResult(result) ? result.value : result;
+      let value = result;
+      if (isPositionedResult(result)) {
+        value = result.value;
+        positionIndex.set(
+          fileSkipKey(candidate.layered.source.id, candidate.entry.relativePath),
+          result.positionFor.bind(result),
+        );
+      }
       parsedDocumentCache.set(cacheKey, value);
       return value;
     } catch (error) {
@@ -331,7 +350,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       }
       for (const entry of entries) {
         const match = matchEntry(def, entry);
-        if (match) {
+        if (match && !skipSources.has(fileSkipKey(layered.source.id, entry.relativePath))) {
           out.push({
             layered,
             entry,
@@ -362,6 +381,46 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     return validator;
   }
 
+  /** A position is decoration. A missing index, a parser that throws or one
+   *  that returns nonsense yields no range and changes nothing else. */
+  function rangeAt(sourceId: string, sourcePath: string, fieldPath: ReadonlyArray<PropertyKey>): SourceRange | undefined {
+    const hash = sourcePath.indexOf("#");
+    const file = hash < 0 ? sourcePath : sourcePath.slice(0, hash);
+    const positionFor = positionIndex.get(fileSkipKey(sourceId, file));
+    if (!positionFor) return undefined;
+    try {
+      const range = positionFor(hash < 0 ? fieldPath : [sourcePath.slice(hash + 1), ...fieldPath]);
+      return range && typeof range === "object" && typeof range.start?.line === "number" ? range : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function issueRanges(
+    sourceId: string,
+    sourcePath: string,
+    issues: ReadonlyArray<StandardSchemaV1Issue>,
+  ): Array<SourceRange | undefined> {
+    return issues.map((issue) =>
+      issue.path
+        ? rangeAt(sourceId, sourcePath, issue.path.map((part) => (typeof part === "object" && part !== null ? part.key : part)))
+        : undefined
+    );
+  }
+
+  function rangeInLayers(
+    layers: ReadonlyArray<FixtureProvenanceLayer>,
+    fieldPath: ReadonlyArray<PropertyKey>,
+  ): SourceRange | undefined {
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      if (!layer || layer.kind === "shadowed") continue;
+      const range = rangeAt(layer.sourceId, layer.path, fieldPath);
+      if (range) return range;
+    }
+    return undefined;
+  }
+
   /** The whole validation surface, in order: the cross-language `jsonSchema`
    *  first, then the optional Standard Schema, whose OUTPUT becomes the value.
    *  Both failure modes are one error type and one diagnostic code, so callers,
@@ -376,13 +435,19 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     if (def.jsonSchema !== undefined) {
       const issues = jsonSchemaValidatorFor(def, def.jsonSchema)(parsed);
       if (issues.length > 0) {
-        throw new FixtureValidationError(ref, sourceId, relativePath, issues);
+        throw new FixtureValidationError(ref, sourceId, relativePath, issues, issueRanges(sourceId, relativePath, issues));
       }
     }
     if (!def.schema) return parsed;
     const result = await def.schema["~standard"].validate(parsed);
     if ("issues" in result && result.issues) {
-      throw new FixtureValidationError(ref, sourceId, relativePath, result.issues);
+      throw new FixtureValidationError(
+        ref,
+        sourceId,
+        relativePath,
+        result.issues,
+        issueRanges(sourceId, relativePath, result.issues),
+      );
     }
     return result.value;
   }
@@ -586,7 +651,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     for (const currentRef of refs) {
       try {
         const loaded = await loadRawInternal(currentRef, skippedSources);
-        diagnostics.push(...await validateExtractedReferences(loaded.ref, loaded.value, opts.registry.get(loaded.type), skippedSources));
+        diagnostics.push(...await validateExtractedReferences(loaded.ref, loaded.value, opts.registry.get(loaded.type), skippedSources, loaded.provenance.layers));
         const def = opts.registry.get(loaded.type);
         if (def?.validateReferences) {
           const issues = await def.validateReferences(loaded.value, makeValidationContext(loaded.ref, skippedSources));
@@ -675,11 +740,13 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       rawCache.clear();
       materialCache.clear();
       parsedDocumentCache.clear();
+      positionIndex.clear();
       return;
     }
     rawCache.delete(ref);
     materialCache.clear();
     parsedDocumentCache.clear();
+    positionIndex.clear();
   }
 
   function bareRefsEnabledFor(ref: string, expectedType: string | undefined): boolean {
@@ -694,19 +761,14 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     for (const typeName of opts.registry.types()) {
       const def = opts.registry.get(typeName);
       if (!def) continue;
-      try {
-        const candidates = await parsedCandidates(typeName, undefined, skippedSources);
-        for (const candidate of candidates) refs.add(`${typeName}:${candidate.id}`);
-      } catch (error) {
-        if (error instanceof FixtureError && error.diagnostic.source) {
-          skippedSources.add(error.diagnostic.source);
-        }
-        diagnostics.push(...diagnosticsFromError(typeName, error));
+      for (;;) {
         try {
-          const remaining = await parsedCandidates(typeName, undefined, skippedSources);
-          for (const candidate of remaining) refs.add(`${typeName}:${candidate.id}`);
-        } catch (remainingError) {
-          diagnostics.push(...diagnosticsFromError(typeName, remainingError));
+          const candidates = await parsedCandidates(typeName, undefined, skippedSources);
+          for (const candidate of candidates) refs.add(`${typeName}:${candidate.id}`);
+          break;
+        } catch (error) {
+          diagnostics.push(...diagnosticsFromError(typeName, error));
+          if (!skipFailure(error, skippedSources)) break;
         }
       }
       for (const layered of layeredSources) {
@@ -740,6 +802,34 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     return [...refs].sort(compareCodePoints);
   }
 
+  /** Skip what failed, no more: the one file when the error names a file,
+   *  else the whole source. False when there is nothing new to skip, which
+   *  ends the retry. */
+  function skipFailure(error: unknown, skipped: Set<string>): boolean {
+    if (!(error instanceof FixtureError)) return false;
+    const { source, path } = error.diagnostic;
+    if (!source) return false;
+    const key = path ? fileSkipKey(source, path.split("#")[0] ?? path) : source;
+    if (skipped.has(key)) return false;
+    skipped.add(key);
+    return true;
+  }
+
+  function failedFileFor(ref: string, skipped: ReadonlySet<string>): { sourceId: string; path: string } | undefined {
+    const { type, id } = parseRef(ref);
+    const def = opts.registry.get(type);
+    if (!def) return undefined;
+    for (const key of skipped) {
+      const split = key.indexOf("\u0000");
+      if (split < 0) continue;
+      const path = key.slice(split + 1);
+      if (matchEntry(def, { relativePath: path, locator: path }, def.document ? undefined : id)) {
+        return { sourceId: key.slice(0, split), path };
+      }
+    }
+    return undefined;
+  }
+
   function makeValidationContext(ref: string, skipSources: ReadonlySet<string>): ValidationContext {
     return {
       ref,
@@ -761,6 +851,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     value: unknown,
     def: FixtureTypeDefinition | undefined,
     skipSources: ReadonlySet<string>,
+    layers: ReadonlyArray<FixtureProvenanceLayer>,
   ): Promise<Diagnostic[]> {
     const out: Diagnostic[] = [];
     for (const extracted of extractReferences(value, def)) {
@@ -773,6 +864,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
           message: `Invalid fixture ref "${extracted.ref}".`,
           fixture,
           fieldPath: pathString(extracted.fieldPath),
+          ...rangeProp(rangeInLayers(layers, extracted.fieldPath)),
         });
         continue;
       }
@@ -781,13 +873,24 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         await loadRawInternal(extracted.ref, skipSources);
       } catch (error) {
         if (error instanceof FixtureError && error.diagnostic.code === "not-found") {
-          out.push({
-            severity: "error",
-            code: "missing-reference",
-            message: `Missing referenced fixture "${extracted.ref}".`,
-            fixture,
-            fieldPath: pathString(extracted.fieldPath),
-          });
+          const failed = failedFileFor(extracted.ref, skipSources);
+          out.push(failed
+            ? {
+              severity: "warning",
+              code: "unresolved-reference",
+              message: `Referenced fixture "${extracted.ref}" could not be checked: it may be defined in "${failed.path}" (source "${failed.sourceId}"), which failed to load.`,
+              fixture,
+              fieldPath: pathString(extracted.fieldPath),
+              ...rangeProp(rangeInLayers(layers, extracted.fieldPath)),
+            }
+            : {
+              severity: "error",
+              code: "missing-reference",
+              message: `Missing referenced fixture "${extracted.ref}".`,
+              fixture,
+              fieldPath: pathString(extracted.fieldPath),
+              ...rangeProp(rangeInLayers(layers, extracted.fieldPath)),
+            });
         } else {
           throw error;
         }
@@ -918,6 +1021,10 @@ function dedupeReferences(refs: ExtractedReference[]): ExtractedReference[] {
     out.push(ref);
   }
   return out;
+}
+
+function rangeProp(range: SourceRange | undefined): { range?: SourceRange } {
+  return range ? { range } : {};
 }
 
 function pathString(path: ReadonlyArray<PropertyKey>): string {

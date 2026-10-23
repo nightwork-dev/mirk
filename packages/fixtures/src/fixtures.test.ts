@@ -948,6 +948,7 @@ describe("a malformed document", () => {
     } as FixtureTypeDefinition);
     const loader = createFixtureLoader({
       registry,
+      jsonSchemaValidator: () => () => [],
       sources: [
         createMemoryFixtureSource({
           id: "pack",
@@ -964,5 +965,136 @@ describe("a malformed document", () => {
     expect(report.ok).toBe(false);
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["parse-failed"]);
     expect(report.diagnostics[0]?.message.startsWith("Parse error: ")).toBe(true);
+  });
+});
+
+describe("one bad file among its neighbours", () => {
+  const weightSchema: StandardSchemaV1<unknown, unknown> = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: (value) => {
+        const weight = (value as { weight?: unknown }).weight;
+        return weight === undefined || typeof weight === "number"
+          ? { value }
+          : { issues: [{ message: "weight must be a number", path: ["weight"] }] };
+      },
+    },
+  };
+
+  function pack(files: Record<string, string>) {
+    const registry = createFixtureRegistry();
+    registry.register({ type: "theme", directory: "themes", schema: weightSchema } as FixtureTypeDefinition);
+    return createFixtureLoader({
+      registry,
+      sources: [createMemoryFixtureSource({ id: "pack", files })],
+    });
+  }
+
+  it("still checks every other file in the same source", async () => {
+    const loader = pack({
+      "themes/bad.json": "{ not json",
+      "themes/heavy.json": '{"weight":"heavy"}',
+      "themes/good.json": '{"weight":1}',
+    });
+    const report = await loader.validate();
+    expect(report.ok).toBe(false);
+    expect(report.diagnostics.map((d) => [d.code, d.path ?? d.fixture])).toEqual([
+      ["parse-failed", "themes/bad.json"],
+      ["schema-invalid", "themes/heavy.json"],
+    ]);
+  });
+
+  it("reports a reference into the unparseable file as unresolved, not missing", async () => {
+    const loader = pack({
+      "themes/bad.json": "{ not json",
+      "themes/child.json": '{"a":{"$ref":"theme:bad"},"b":{"$ref":"theme:nope"}}',
+    });
+    const report = await loader.validate();
+    const byCode = Object.fromEntries(report.diagnostics.map((d) => [d.code, d]));
+    expect(byCode["parse-failed"]).toBeDefined();
+    expect(byCode["unresolved-reference"]).toMatchObject({ severity: "warning", fixture: "theme:child", fieldPath: "a" });
+    expect(byCode["missing-reference"]).toMatchObject({ fixture: "theme:child", fieldPath: "b" });
+    expect(report.diagnostics).toHaveLength(3);
+  });
+
+  it("treats a reference into an unparseable map document as unresolved", async () => {
+    const registry = createFixtureRegistry();
+    registry.register({ type: "palette", directory: "palettes", document: {}, schema: anySchema } as unknown as FixtureTypeDefinition);
+    registry.register({ type: "theme", directory: "themes", schema: anySchema } as FixtureTypeDefinition);
+    const loader = createFixtureLoader({
+      registry,
+      sources: [
+        createMemoryFixtureSource({
+          id: "pack",
+          files: { "palettes/all.json": "{ not json", "themes/t.json": '{"p":{"$ref":"palette:red"}}' },
+        }),
+      ],
+    });
+    const report = await loader.validate();
+    expect(report.diagnostics.map((d) => d.code).sort()).toEqual(["parse-failed", "unresolved-reference"]);
+  });
+});
+
+describe("positions in diagnostics", () => {
+  function lineColumn(text: string, index: number) {
+    const before = text.slice(0, index);
+    return { line: before.split("\n").length, column: index - before.lastIndexOf("\n") };
+  }
+  function positionedJson(content: string) {
+    return {
+      value: JSON.parse(content) as unknown,
+      positionFor(path: ReadonlyArray<PropertyKey>) {
+        const key = path[path.length - 1];
+        const index = content.indexOf(`"${String(key)}"`);
+        return index < 0 ? undefined : { start: lineColumn(content, index) };
+      },
+    };
+  }
+  const weightSchema: StandardSchemaV1<unknown, unknown> = {
+    "~standard": {
+      version: 1,
+      vendor: "test",
+      validate: (value) =>
+        typeof (value as { weight?: unknown }).weight === "string"
+          ? { issues: [{ message: "weight must be a number", path: ["weight"] }] }
+          : { value },
+    },
+  };
+  const text = '{\n  "name": "x",\n  "weight": "heavy",\n  "link": { "$ref": "theme:gone" }\n}';
+
+  function loaderWith(parse: (content: string) => unknown, schema?: StandardSchemaV1<unknown, unknown>) {
+    const registry = createFixtureRegistry();
+    registry.register({ type: "theme", directory: "themes", schema: schema ?? anySchema } as FixtureTypeDefinition);
+    return createFixtureLoader({
+      registry,
+      sources: [createMemoryFixtureSource({ id: "pack", files: { "themes/a.json": text } })],
+      parsers: { ".json": { kind: "positioned", parse: parse as never } },
+    });
+  }
+
+  it("attaches the line and column of the failing field", async () => {
+    const report = await loaderWith(positionedJson, weightSchema).validate();
+    expect(report.diagnostics).toHaveLength(1);
+    expect(report.diagnostics[0]).toMatchObject({ code: "schema-invalid", fieldPath: "weight", range: { start: { line: 3, column: 3 } } });
+  });
+
+  it("attaches positions to reference diagnostics", async () => {
+    const report = await loaderWith(positionedJson).validate();
+    expect(report.diagnostics[0]).toMatchObject({ code: "missing-reference", fieldPath: "link", range: { start: { line: 4 } } });
+  });
+
+  it("is never what decides the result", async () => {
+    const throwing = (content: string) => ({
+      value: JSON.parse(content) as unknown,
+      positionFor: () => {
+        throw new Error("boom");
+      },
+    });
+    const withPositions = await loaderWith(positionedJson, weightSchema).validate();
+    const broken = await loaderWith(throwing, weightSchema).validate();
+    const stripped = withPositions.diagnostics.map(({ range: _range, ...rest }) => rest);
+    expect(broken.diagnostics).toEqual(stripped);
+    expect(broken.diagnostics[0]?.range).toBeUndefined();
   });
 });

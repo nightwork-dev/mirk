@@ -1,4 +1,4 @@
-import type { Diagnostic, StandardSchemaV1Issue } from "./types.js";
+import type { Diagnostic, SourceRange, StandardSchemaV1Issue } from "./types.js";
 
 export class FixtureError extends Error {
   declare readonly name: string;
@@ -20,12 +20,14 @@ Object.defineProperty(FixtureError.prototype, "name", {
 export class FixtureValidationError extends FixtureError {
   declare readonly name: "FixtureValidationError";
   readonly issues: ReadonlyArray<StandardSchemaV1Issue>;
+  readonly ranges: ReadonlyArray<SourceRange | undefined>;
 
   constructor(
     fixture: string,
     source: string,
     path: string,
     issues: ReadonlyArray<StandardSchemaV1Issue>,
+    ranges: ReadonlyArray<SourceRange | undefined> = [],
   ) {
     super({
       severity: "error",
@@ -35,8 +37,10 @@ export class FixtureValidationError extends FixtureError {
       source,
       path,
       fieldPath: issues[0]?.path ? formatIssuePath(issues[0].path) : undefined,
+      ...(ranges[0] ? { range: ranges[0] } : {}),
     });
     this.issues = issues;
+    this.ranges = ranges;
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
@@ -49,7 +53,7 @@ Object.defineProperty(FixtureValidationError.prototype, "name", {
 
 export function diagnosticsFromError(fixture: string | undefined, error: unknown): Diagnostic[] {
   if (error instanceof FixtureValidationError) {
-    return error.issues.map((issue) => ({
+    return error.issues.map((issue, index) => ({
       severity: "error",
       code: "schema-invalid",
       message: issue.message,
@@ -57,6 +61,7 @@ export function diagnosticsFromError(fixture: string | undefined, error: unknown
       source: error.diagnostic.source,
       path: error.diagnostic.path,
       fieldPath: issue.path ? formatIssuePath(issue.path) : undefined,
+      ...(error.ranges[index] ? { range: error.ranges[index] } : {}),
     }));
   }
 
