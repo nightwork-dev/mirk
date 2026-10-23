@@ -276,15 +276,17 @@ export type AsyncAtomicStore = AsyncStore & AsyncAtomicMutationStore;
  *  `undefined` when receipts are kept forever. */
 export interface SyncReceiptPruning {
   readonly receiptRetentionMs: number | undefined;
-  /** Delete every expired receipt, in short batches, and return how many were
-   *  deleted. Returns 0 when receipts are kept forever. */
+  /** Delete every expired receipt and return how many were deleted. Database
+   *  stores delete in short transactions; in-memory stores delete them at once.
+   *  Returns 0 when receipts are kept forever. */
   pruneExpiredReceipts(): number;
 }
 
 export interface AsyncReceiptPruning {
   readonly receiptRetentionMs: number | undefined;
-  /** Delete every expired receipt, in short batches, and return how many were
-   *  deleted. Resolves to 0 when receipts are kept forever. */
+  /** Delete every expired receipt and return how many were deleted. Database
+   *  stores delete in short transactions; in-memory stores delete them at once.
+   *  Resolves to 0 when receipts are kept forever. */
   pruneExpiredReceipts(): Promise<number>;
 }
 
