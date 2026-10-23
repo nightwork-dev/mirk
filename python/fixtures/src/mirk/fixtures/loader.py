@@ -926,7 +926,7 @@ class FixtureLoader:
         definition = self._registry.get(parsed.type)
         if definition is None:
             return None
-        for key in sorted(skipped):
+        for key in sorted(skipped):  # code point order, as in TypeScript
             source_id, separator, path = key.partition("\u0000")
             if not separator:
                 continue
@@ -939,11 +939,12 @@ class FixtureLoader:
     def _discover_refs_for_validation(
         self, diagnostics: list[Diagnostic], skipped: set[str]
     ) -> list[str]:
-        """Discover every ref, degrading one broken source at a time.
+        """Discover every ref, degrading one broken file at a time.
 
-        A source that fails is added to `skipped` and the type is retried once
-        without it, so one bad source yields a diagnostic instead of aborting
-        the whole report.
+        What fails is added to `skipped` (the one file when the error names a
+        file, else the whole source) and the type is retried until nothing new
+        fails, so a broken file yields a diagnostic instead of aborting the
+        whole report.
         """
         refs: set[str] = set()
         seen_no_parser: set[str] = set()

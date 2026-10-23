@@ -819,7 +819,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     const { type, id } = parseRef(ref);
     const def = opts.registry.get(type);
     if (!def) return undefined;
-    for (const key of skipped) {
+    for (const key of [...skipped].sort(compareCodePoints)) {
       const split = key.indexOf("\u0000");
       if (split < 0) continue;
       const path = key.slice(split + 1);

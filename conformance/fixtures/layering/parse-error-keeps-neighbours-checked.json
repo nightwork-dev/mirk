@@ -41,6 +41,18 @@
             "code": "parse-failed",
             "source": "pack",
             "path": "themes/bad.json"
+          },
+          {
+            "severity": "warning",
+            "code": "unresolved-reference",
+            "fixture": "theme:child",
+            "fieldPath": "a"
+          },
+          {
+            "severity": "error",
+            "code": "missing-reference",
+            "fixture": "theme:child",
+            "fieldPath": "b"
           }
         ],
         "ignoreFields": [
