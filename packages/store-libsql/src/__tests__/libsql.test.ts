@@ -201,6 +201,21 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
     expect(res[1]!.score).toBeGreaterThan(res[2]!.score);
   });
 
+  it("surfaces native index failures instead of silently scanning the collection", async () => {
+    const client = createClient({ url: ":memory:" });
+    const native = await LibsqlAdapter.open({ url: ":memory:", client, dimensions: DIMS });
+    try {
+      await native.vector.upsert("docs", { id: "near", vector: v(1, 0, 0, 0) });
+      expect((await native.vector.search("docs", v(1, 0, 0, 0))).map((hit) => hit.id)).toEqual(["near"]);
+      await client.execute("DROP INDEX vectors_vec_idx");
+      await expect(native.vector.search("docs", v(1, 0, 0, 0))).rejects.toThrow(/index/i);
+      expect(await native.vector.search("docs", v(1, 0, 0, 0), { where: { kind: "missing" } })).toEqual([]);
+    } finally {
+      native.close();
+      client.close();
+    }
+  });
+
   it("minScore floors out weak matches", async () => {
     await adapter.vector.upsertMany("docs", [
       { id: "near", vector: v(1, 0, 0, 0) },
