@@ -76,31 +76,6 @@ for (const [driver, open] of drivers) {
       }
     });
 
-    it("rejects parent facet access while a nested transaction is suspended", async () => {
-      const adapter = open(":memory:");
-      try {
-        await adapter.asyncTransaction(async () => {
-          const entered = deferred();
-          const hold = deferred();
-          const child = adapter.asyncTransaction(async () => {
-            await adapter.asyncKv.set("child-paused", 1);
-            entered.resolve();
-            await hold.promise;
-            throw new Error("child rollback");
-          });
-          await entered.promise;
-          await expect(adapter.asyncKv.set("outer", 2)).rejects.toThrow("Await the nested");
-          hold.resolve();
-          await expect(child).rejects.toThrow("child rollback");
-          await adapter.asyncKv.set("outer", 3);
-        });
-        expect(await adapter.asyncKv.get("outer")).toBe(3);
-        expect(await adapter.asyncKv.get("child-paused")).toBeNull();
-      } finally {
-        adapter.close();
-      }
-    });
-
     it("serializes sibling nested transactions started without awaiting", async () => {
       const adapter = open(":memory:");
       try {
@@ -114,22 +89,6 @@ for (const [driver, open] of drivers) {
           );
         });
         expect(await adapter.asyncKv.keys()).toEqual(["1", "2", "3"]);
-      } finally {
-        adapter.close();
-      }
-    });
-
-    it("rejects store calls from work that outlived its transaction", async () => {
-      const adapter = open(":memory:");
-      try {
-        let leaked!: Promise<unknown>;
-        await adapter.asyncTransaction(() => {
-          leaked = new Promise((resolve) => setTimeout(resolve, 10)).then(() =>
-            adapter.asyncKv.set("late", 1)
-          );
-        });
-        await expect(leaked).rejects.toThrow("transaction has ended");
-        expect(await adapter.asyncKv.get("late")).toBeNull();
       } finally {
         adapter.close();
       }

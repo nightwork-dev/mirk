@@ -36,7 +36,7 @@ export interface AsyncTransactionBackend<C> {
 export class TransactionScopeError extends Error {
   declare readonly name: "TransactionScopeError";
   constructor(
-    readonly code: "transaction-ended" | "nested-transaction-active",
+    readonly code: "transaction-ended",
     message: string
   ) {
     super(message);
@@ -68,19 +68,12 @@ function ended(): TransactionScopeError {
   );
 }
 
-function childActive(): TransactionScopeError {
-  return new TransactionScopeError(
-    "nested-transaction-active",
-    "Await the nested transaction before using its parent transaction."
-  );
-}
-
 /**
  * Implements {@link AsyncStoreTransactions} over an adapter's backend.
  *
- * Store operations ask {@link current} for the connection of the transaction
- * that the calling async context is inside, and use their own connection when
- * there is none.
+ * Store operations run through {@link withConnection}, which hands them the
+ * connection of the transaction the calling async context is inside, or
+ * `undefined` so they use their own connection.
  */
 export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
   readonly #scopes = new AsyncLocalStorage<Scope<C>>();
@@ -88,15 +81,27 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
 
   constructor(private readonly backend: AsyncTransactionBackend<C>) {}
 
-  /** The open transaction's connection for the calling async context, or
-   *  `undefined` outside a transaction. Throws if that transaction has ended
-   *  or a nested transaction is still running in it. */
-  current(): C | undefined {
+  /** Run `op` with the open transaction's connection for the calling async
+   *  context, or with `undefined` outside a transaction. While a nested
+   *  transaction of that scope is running, `op` waits for it to finish, so the
+   *  statement never lands inside a savepoint that may roll back. `op` is
+   *  invoked synchronously after the final check. Throws
+   *  `TransactionScopeError` if the transaction has ended. */
+  async withConnection<T>(
+    op: (connection: C | undefined) => T | Promise<T>
+  ): Promise<T> {
     const scope = this.#scopes.getStore();
-    if (!scope) return undefined;
-    if (!scope.active) throw ended();
-    if (scope.childActive) throw childActive();
-    return scope.connection;
+    if (!scope) return op(undefined);
+    for (;;) {
+      if (!scope.active) throw ended();
+      if (!scope.childActive) return op(scope.connection);
+      await scope.tail;
+    }
+  }
+
+  /** True when the calling async context is inside an open transaction. */
+  inTransaction(): boolean {
+    return this.#scopes.getStore()?.active === true;
   }
 
   /** True when the calling async context is inside an open transaction that

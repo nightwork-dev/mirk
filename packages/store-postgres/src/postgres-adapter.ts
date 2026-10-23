@@ -28,7 +28,8 @@ import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 export type PostgresAdapterErrorCode =
   | "conflicting-pool-options"
   | "empty-schema"
-  | "adapter-closed";
+  | "adapter-closed"
+  | "invalid-timeout";
 
 /** Thrown for invalid adapter options, or for a transaction after `close()`. */
 export class PostgresAdapterError extends Error {
@@ -103,6 +104,11 @@ export interface PostgresAdapterOptions {
   /** The prefix version tokens carry when this schema is first provisioned.
    *  A schema that already has one keeps it. Defaults to a fresh UUID. */
   versionIdentity?: string;
+  /** How long, in milliseconds, a transaction may sit idle between
+   *  statements before PostgreSQL ends its session and releases its locks.
+   *  This bounds how long a frozen or killed host can block other writers.
+   *  Defaults to 60000; 0 disables the limit. */
+  transactionIdleTimeoutMs?: number;
 }
 
 interface Queryable {
@@ -116,6 +122,11 @@ type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
 
 /** Transport failures after which a COMMIT may or may not have taken effect. */
 const INDETERMINATE_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01", "08000", "08003", "08006"]);
+
+/** A server that ends a session (for example after the idle-in-transaction
+ *  timeout) makes node-postgres emit `error` on the client. Without a listener
+ *  that event would crash the process; the failed query already reports it. */
+const ignoreConnectionError = (): void => undefined;
 
 function isIndeterminateFailure(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -146,14 +157,17 @@ export class PostgresAdapter implements AsyncStoreTransactions {
     options: PostgresAdapterOptions,
   ) {
     const lockKey = `mirk:${schema}`;
+    const idleTimeoutMs = options.transactionIdleTimeoutMs ?? 60_000;
     this.transactions = new AsyncTransactionCoordinator<PoolClient>({
       begin: async () => {
         if (this.closed) throw new PostgresAdapterError("adapter-closed", "The PostgreSQL adapter is closed.");
         const client = await pool.connect();
+        client.on("error", ignoreConnectionError);
         try {
-          await client.query("BEGIN");
+          await client.query(`BEGIN; SET LOCAL idle_in_transaction_session_timeout = ${idleTimeoutMs}`);
           await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey]);
         } catch (error) {
+          client.removeListener("error", ignoreConnectionError);
           client.release(true);
           throw error;
         }
@@ -178,12 +192,13 @@ export class PostgresAdapter implements AsyncStoreTransactions {
         await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
       },
       end: (client, cleanupError) => {
+        client.removeListener("error", ignoreConnectionError);
         client.release(cleanupError === undefined ? undefined : true);
       },
     });
     const database: Queryable = {
       query: async (text, values) =>
-        (this.transactions.current() ?? pool).query(text, values as unknown[]),
+        this.transactions.withConnection((client) => (client ?? pool).query(text, values as unknown[])),
     };
     this.kv = new PostgresStoreFacet(
       database,
@@ -199,8 +214,13 @@ export class PostgresAdapter implements AsyncStoreTransactions {
     }
     const schema = options.schema ?? "mirk";
     if (schema.length === 0) throw new PostgresAdapterError("empty-schema", "PostgreSQL schema must not be empty.");
+    const idleTimeoutMs = options.transactionIdleTimeoutMs;
+    if (idleTimeoutMs !== undefined && (!Number.isSafeInteger(idleTimeoutMs) || idleTimeoutMs < 0 || idleTimeoutMs > 2_147_483_647)) {
+      throw new PostgresAdapterError("invalid-timeout", "transactionIdleTimeoutMs must be an integer from 0 to 2147483647.");
+    }
     const ownsPool = options.pool === undefined;
     const pool = options.pool ?? new Pool({ ...options.poolConfig, connectionString: options.connectionString });
+    if (ownsPool) pool.on("error", ignoreConnectionError);
     const adapter = new PostgresAdapter(pool, ownsPool, schema, options);
     try {
       await adapter.transaction(() =>
@@ -240,6 +260,7 @@ class PostgresStoreFacet implements PostgresStore {
   private readonly recordsTable: string;
   private readonly receiptsTable: string;
   private readonly stateTable: string;
+  private readonly versionSequence: string;
   /** One statement that consumes the next version token. */
   private readonly mint: string;
 
@@ -254,8 +275,11 @@ class PostgresStoreFacet implements PostgresStore {
     this.recordsTable = `${quotedSchema}.records`;
     this.receiptsTable = `${quotedSchema}.atomic_receipts`;
     this.stateTable = `${quotedSchema}.atomic_state`;
-    this.mint = `UPDATE ${this.stateTable} SET sequence = sequence + 1 WHERE id = 1
-      RETURNING identity || '-v' || sequence AS version`;
+    this.versionSequence = `${quotedSchema}.atomic_versions`;
+    // nextval is not transactional, so a rolled-back write never gives its
+    // token to a later one.
+    this.mint = `SELECT (SELECT identity FROM ${this.stateTable} WHERE id = 1)
+      || '-v' || nextval('${this.versionSequence.replaceAll("'", "''")}') AS version`;
   }
 
   async init(schema: string, versionIdentity: string): Promise<void> {
@@ -265,7 +289,8 @@ class PostgresStoreFacet implements PostgresStore {
       CREATE TABLE IF NOT EXISTS ${this.kvTable} (
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        version TEXT
       )
     `);
     await this.database.query(`
@@ -275,6 +300,7 @@ class PostgresStoreFacet implements PostgresStore {
         data JSONB NOT NULL,
         ordinal BIGINT GENERATED ALWAYS AS IDENTITY,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        version TEXT,
         PRIMARY KEY (collection, id)
       )
     `);
@@ -288,31 +314,31 @@ class PostgresStoreFacet implements PostgresStore {
     await this.database.query(`
       CREATE TABLE IF NOT EXISTS ${this.stateTable} (
         id INTEGER PRIMARY KEY CHECK (id = 1),
-        identity TEXT NOT NULL,
-        sequence BIGINT NOT NULL
+        identity TEXT NOT NULL
       )
     `);
+    await this.database.query(`CREATE SEQUENCE IF NOT EXISTS ${this.versionSequence}`);
     await this.database.query(
-      `INSERT INTO ${this.stateTable} (id, identity, sequence) VALUES (1, $1, 0) ON CONFLICT (id) DO NOTHING`,
+      `INSERT INTO ${this.stateTable} (id, identity) VALUES (1, $1) ON CONFLICT (id) DO NOTHING`,
       [versionIdentity],
     );
-    for (const table of [this.kvTable, this.recordsTable]) {
-      await this.database.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS version TEXT`);
-    }
-    // Earlier hand-patched deployments used a UUID version column with a
-    // default. Tokens are opaque text here, and every write mints one.
-    const legacy = await this.database.query<{ table_name: string }>(
-      `SELECT table_name FROM information_schema.columns
-       WHERE table_schema = $1 AND table_name IN ('kv', 'records') AND column_name = 'version' AND data_type <> 'text'`,
+    // Tables from an earlier release have no version column, and earlier
+    // hand-patched deployments used a UUID column with a default. Alter only
+    // what needs it: ALTER TABLE locks the table even when it changes nothing.
+    const columns = await this.database.query<{ table_name: string; data_type: string }>(
+      `SELECT table_name, data_type FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name IN ('kv', 'records') AND column_name = 'version'`,
       [schema],
     );
-    for (const row of legacy.rows) {
-      const table = `${quotedSchema}.${quoteIdentifier(row.table_name)}`;
+    for (const name of ["kv", "records"]) {
+      const type = columns.rows.find((row) => row.table_name === name)?.data_type;
+      if (type === "text") continue;
+      const table = `${quotedSchema}.${quoteIdentifier(name)}`;
       await this.database.query(
-        `ALTER TABLE ${table} ALTER COLUMN version DROP DEFAULT, ALTER COLUMN version TYPE TEXT USING version::text`,
+        type === undefined
+          ? `ALTER TABLE ${table} ADD COLUMN version TEXT`
+          : `ALTER TABLE ${table} ALTER COLUMN version DROP DEFAULT, ALTER COLUMN version DROP NOT NULL, ALTER COLUMN version TYPE TEXT USING version::text`,
       );
-    }
-    for (const table of [this.kvTable, this.recordsTable]) {
       await this.database.query(
         `UPDATE ${table} SET version = (SELECT identity FROM ${this.stateTable} WHERE id = 1) || '-u' || gen_random_uuid()
          WHERE version IS NULL`,
@@ -420,7 +446,7 @@ class PostgresStoreFacet implements PostgresStore {
 
   async mutateAtomically(request: AtomicMutationRequest): Promise<AtomicMutationResult> {
     const validated = validateAtomicRequest(request, this.atomicLimits);
-    const outermost = this.transactions.current() === undefined;
+    const outermost = !this.transactions.inTransaction();
     try {
       return await this.write(() => this.decideAtomic(validated));
     } catch (error) {
@@ -523,8 +549,7 @@ class PostgresStoreFacet implements PostgresStore {
 
   /** Every write holds the schema lock: alone in its own transaction, or as a
    *  savepoint of the caller's, so a failed statement leaves it usable. */
-  private async write<T>(work: () => Promise<T>): Promise<T> {
-    this.transactions.current();
+  private write<T>(work: () => Promise<T>): Promise<T> {
     return this.transactions.transaction(work);
   }
 
@@ -569,14 +594,14 @@ class PostgresStoreFacet implements PostgresStore {
     const result = target.kind === "key"
       ? await this.database.query<{ version: string }>(
           `WITH minted AS (${this.mint})
-           UPDATE ${this.kvTable} SET version = COALESCE(version, minted.version) FROM minted
-           WHERE key = $1 RETURNING ${this.kvTable}.version`,
+           UPDATE ${this.kvTable} AS target_row SET version = COALESCE(target_row.version, minted.version) FROM minted
+           WHERE target_row.key = $1 RETURNING target_row.version`,
           [target.key],
         )
       : await this.database.query<{ version: string }>(
           `WITH minted AS (${this.mint})
-           UPDATE ${this.recordsTable} SET version = COALESCE(version, minted.version) FROM minted
-           WHERE collection = $1 AND id = $2 RETURNING ${this.recordsTable}.version`,
+           UPDATE ${this.recordsTable} AS target_row SET version = COALESCE(target_row.version, minted.version) FROM minted
+           WHERE target_row.collection = $1 AND target_row.id = $2 RETURNING target_row.version`,
           [target.collection, target.id],
         );
     return result.rows[0]?.version ?? null;

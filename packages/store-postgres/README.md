@@ -115,7 +115,8 @@ mirk.records(collection text, id text, data jsonb not null,
              ordinal bigint generated always as identity, updated_at timestamptz not null,
              version text, primary key (collection, id))
 mirk.atomic_receipts(key text primary key, request_digest text not null, result jsonb not null)
-mirk.atomic_state(id integer primary key, identity text not null, sequence bigint not null)
+mirk.atomic_state(id integer primary key, identity text not null)
+mirk.atomic_versions  -- sequence
 ```
 
 Opening an adapter adds the `version` columns to tables created by an earlier release and gives
@@ -147,9 +148,10 @@ and values are always bound query parameters; they never become SQL identifiers 
 
 `postgres.kv` implements `AsyncAtomicMutationStore`. Version tokens read `<identity>-v<n>`, where
 `identity` is the `versionIdentity` option recorded when the schema is first provisioned (a random
-UUID by default) and `n` is a per-schema sequence. Every `set` and `put`, plain or atomic, takes
-the next number; `delete` and `remove` take none, and a conflict or rollback takes none. Treat
-tokens as opaque.
+UUID by default) and `n` comes from a per-schema PostgreSQL sequence. Every `set` and `put`, plain
+or atomic, takes the next number; `delete`, `remove`, and a conflict take none. A rolled-back
+write keeps its number, so no later write can reissue a token a caller already saw. Treat tokens
+as opaque.
 
 Idempotency receipts are durable rows. They survive other writes to the same target and adapter
 restarts, so a retried request with the same key replays the first result. A connection failure
@@ -171,10 +173,17 @@ row locks cannot cover. Reads do not take the lock and see committed data. The c
 throughput: one writer per schema at a time. Use separate schemas for independent data.
 
 Keep transactions short and database-only. A transaction holds a pooled client and the schema lock
-until it ends, and a lock wait has no timeout of its own: set `lock_timeout` or
-`statement_timeout` in `poolConfig` if a stuck holder must not block others indefinitely. Do not
-await another adapter's writes to the same schema inside a transaction; they wait for the lock this
-transaction holds.
+until it ends. A host that freezes or dies mid-transaction cannot hold the lock for long: each
+transaction sets `idle_in_transaction_session_timeout` (option `transactionIdleTimeoutMs`, default
+60000 ms, `0` disables), so PostgreSQL ends a session that sits idle that long and releases its
+locks; that transaction then fails. Waiting for the lock behind a holder that is still working has
+no limit of its own; set `lock_timeout` in `poolConfig` if you need one. Do not await another
+adapter's writes to the same schema inside a transaction; they wait for the lock this transaction
+holds.
+
+An adapter that owns its pool listens for connection errors, so a session the server ends cannot
+crash the process. If you pass your own `pool`, attach a `pool.on("error", …)` listener as
+node-postgres recommends.
 
 ### Not supported
 
