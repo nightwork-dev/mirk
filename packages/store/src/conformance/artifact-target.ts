@@ -25,7 +25,10 @@ type Config = {
   concurrency?: ArtifactCoordinatorConcurrency;
 };
 
-type PutFault = { outcome: "rejected" | "indeterminate"; landed?: string };
+type PutFault = {
+  outcome: "rejected" | "indeterminate";
+  landed?: string | null;
+};
 
 /** An in-memory object store whose next `put` can fail the way a remote store
  *  does. `landed` bytes are stored at the key before the failure is thrown:
@@ -42,7 +45,7 @@ class FaultingObjectStore extends InMemoryObjectStore {
     const fault = this.fault;
     if (!fault) return super.put(key, source, options);
     this.fault = undefined;
-    if (fault.landed !== undefined)
+    if (fault.landed != null)
       await super.put(key, Buffer.from(fault.landed, "base64"));
     throw fault.outcome === "rejected"
       ? new ObjectWriteRejectedError(key)
@@ -166,8 +169,8 @@ export function artifactApi(
       await objects.put(key, Buffer.from(bytes, "base64"));
     },
     deleteObject: (key: string) => objects.delete(key),
-    failNextPut(outcome: PutFault["outcome"], landed?: string) {
-      objects.fault = { outcome, ...(landed === undefined ? {} : { landed }) };
+    failNextPut(outcome: PutFault["outcome"], landed?: string | null) {
+      objects.fault = { outcome, landed };
     },
     async audit() {
       report = await maintenance.audit();

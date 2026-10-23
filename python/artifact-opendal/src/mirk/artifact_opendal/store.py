@@ -110,36 +110,44 @@ class OpenDalObjectStore(ListableObjectStore):
                 writer.close()
             raise ObjectAlreadyExistsError(key) from exc
         except BaseException as source_error:
+            interrupted = not isinstance(source_error, Exception)
             try:
                 writer.close()
             except (AlreadyExists, ConditionNotMatch) as close_error:
-                if not isinstance(source_error, Exception):
+                if interrupted:
                     raise source_error from close_error
                 if options.get("ifAbsent"):
                     raise ObjectAlreadyExistsError(key) from close_error
-                raise
+                if not self._remove_partial(key):
+                    raise ObjectWriteIndeterminateError(key) from close_error
+                raise source_error from close_error
             except BaseException as close_error:
+                if interrupted:
+                    raise source_error from close_error
                 # The close result is indeterminate. Preserve a conditional
                 # object because its ownership cannot be proved.
-                if not isinstance(source_error, Exception):
-                    raise source_error from close_error
-                if options.get("ifAbsent"):
+                if options.get("ifAbsent") or not self._remove_partial(key):
                     raise ObjectWriteIndeterminateError(key) from close_error
-                self._delete_owned(key)
                 raise source_error from close_error
-            self._delete_owned(key, preserve_interrupt=not isinstance(source_error, Exception))
+            # The close may have committed a partial object of this write.
+            if interrupted:
+                self._delete_owned(key, preserve_interrupt=True)
+                raise source_error
+            if not self._remove_partial(key):
+                raise ObjectWriteIndeterminateError(key) from source_error
             raise source_error
         try:
             writer.close()
         except (AlreadyExists, ConditionNotMatch) as exc:
-            if not options.get("ifAbsent"):
-                self._delete_owned(key)
+            if not options.get("ifAbsent") and not self._remove_partial(key):
+                raise ObjectWriteIndeterminateError(key) from exc
             raise ObjectAlreadyExistsError(key) from exc
         except BaseException as close_error:
-            if not options.get("ifAbsent"):
-                self._delete_owned(key, preserve_interrupt=not isinstance(close_error, Exception))
-                raise
             if not isinstance(close_error, Exception):
+                if not options.get("ifAbsent"):
+                    self._delete_owned(key, preserve_interrupt=True)
+                raise
+            if not options.get("ifAbsent") and self._remove_partial(key):
                 raise
             raise ObjectWriteIndeterminateError(key) from close_error
 
@@ -211,6 +219,15 @@ class OpenDalObjectStore(ListableObjectStore):
         if metadata:
             result["user_metadata"] = metadata
         return result
+
+    def _remove_partial(self, key: str) -> bool:
+        """Remove this write's partial object; True only if the key is confirmed empty."""
+        with suppress(Exception):
+            self.operator.delete(key)
+        try:
+            return not self.operator.exists(key)
+        except Exception:
+            return False
 
     def _delete_owned(self, key: str, *, preserve_interrupt: bool = False) -> None:
         cleanup_errors = BaseException if preserve_interrupt else Exception

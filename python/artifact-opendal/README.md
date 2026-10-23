@@ -60,5 +60,7 @@ error as `__cause__`. The write removes any partial object it created, so the co
 deletes the key afterwards. A conditional write that fails while it closes raises
 `ObjectWriteIndeterminateError` and keeps the object, because its owner cannot be proved.
 An unconditional write that fails removes its partial object.
+When the adapter cannot delete a partial object of the write and confirm it gone, it raises
+`ObjectWriteIndeterminateError` instead of `ObjectWriteRejectedError`.
 Reads are lazy byte iterators. The optional `digest_metadata_key` buffers a source once to hash it
 before opening the writer. Stored digest metadata is advisory. Artifact verification hashes the actual bytes.

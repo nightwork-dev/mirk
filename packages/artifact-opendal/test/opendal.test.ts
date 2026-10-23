@@ -7,6 +7,7 @@ import {
 import {
   ArtifactCoordinator,
   InMemoryArtifactRepository,
+  ObjectWriteIndeterminateError,
   ObjectWriteRejectedError,
 } from "@mirk/artifact";
 import { OpenDalObjectStore, OpenDalObjectStoreError } from "../src/index.js";
@@ -124,4 +125,69 @@ describe("OpenDalObjectStore", () => {
     });
     expect(new TextDecoder().decode(await drain(await store.get("artifacts/same")))).toBe("winner");
   });
+
+  // A backend whose writer lands bytes before close, whose close can fail
+  // after committing, and whose delete can be refused.
+  function partialOperator(options: { closeFails?: boolean; deleteFails: boolean }): Operator {
+    const operator = new Operator("memory");
+    return new Proxy(operator, {
+      get(target, property) {
+        if (property === "delete")
+          return async (path: string) => {
+            if (options.deleteFails) throw new Error("delete refused");
+            await target.delete(path);
+          };
+        if (property === "writer")
+          return async (path: string) => {
+            const parts: Buffer[] = [];
+            return {
+              async write(chunk: Buffer) {
+                parts.push(Buffer.from(chunk));
+                await target.write(path, Buffer.concat(parts));
+              },
+              async close() {
+                if (options.closeFails) throw new Error("connection reset after upload");
+              },
+            };
+          };
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  async function* partialThenFailure(): AsyncIterable<Uint8Array> {
+    yield new TextEncoder().encode("partial-");
+    throw new Error("source failed");
+  }
+
+  it.each([true, false])(
+    "reports a partial it could not remove as indeterminate (ifAbsent %s)",
+    async (ifAbsent) => {
+      const store = new OpenDalObjectStore(partialOperator({ deleteFails: true }));
+      await expect(store.put("objects/a", partialThenFailure(), { ifAbsent })).rejects.toBeInstanceOf(
+        ObjectWriteIndeterminateError
+      );
+      expect(new TextDecoder().decode(await drain(await store.get("objects/a")))).toBe("partial-");
+    }
+  );
+
+  it("keeps a partial the coordinator could not prove gone", async () => {
+    const store = new OpenDalObjectStore(partialOperator({ deleteFails: true }));
+    const coordinator = new ArtifactCoordinator(store, new InMemoryArtifactRepository(), { idFactory: () => "same" });
+    await expect(coordinator.write({ bytes: partialThenFailure(), mediaType: "text/plain" })).rejects.toMatchObject({
+      cleanup: "preserved-indeterminate",
+    });
+  });
+
+  it.each([false, true])(
+    "an unconditional write that fails at close removes its object, else is indeterminate (delete fails %s)",
+    async (deleteFails) => {
+      const store = new OpenDalObjectStore(partialOperator({ closeFails: true, deleteFails }));
+      await expect(store.put("objects/a", new TextEncoder().encode("whole"))).rejects.toBeInstanceOf(
+        deleteFails ? ObjectWriteIndeterminateError : ObjectWriteRejectedError
+      );
+      expect((await store.head("objects/a")) === undefined).toBe(!deleteFails);
+    }
+  );
 });
