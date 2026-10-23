@@ -19,6 +19,7 @@ import type {
   AsyncAtomicMutationStore,
   AsyncReceiptPruning,
   AsyncStore,
+  AsyncStoreInQuery,
   AsyncStoreTransactions,
   AtomicCompletedMutationResult,
   AtomicMutationLimits,
@@ -63,6 +64,7 @@ import {
   buildWhereClause,
   buildOrderBy,
   buildLimitOffset,
+  buildInClause,
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
   INSERT_REGISTERED_TABLE_SQL,
@@ -169,7 +171,7 @@ export type LibsqlClientFactory = (config: {
 }) => Client;
 export type LibsqlClient = Client;
 
-type LibsqlKvStore = AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning;
+type LibsqlKvStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 /** Multi-capability libSQL source adapter. The concrete entry point supplies the
  *  client factory so this shared core has no runtime dependency on a driver.
@@ -1022,6 +1024,25 @@ class LibsqlKvFacet implements LibsqlKvStore {
     const rs = await this.db.execute({
       sql,
       args: [...where.params, ...orderBy.params],
+    });
+    return rs.rows.map((r) => JSON.parse(r.data as string) as T);
+  }
+
+  async listWhereIn<T>(
+    collection: string,
+    field: string,
+    values: readonly unknown[],
+    filter?: StoreFilter,
+  ): Promise<T[]> {
+    if (values.length === 0) return [];
+    const where = buildWhereClause(filter);
+    const inWhere = buildInClause(field, values, where.clause.length > 0);
+    const table = await this.ensureTable(collection);
+    const orderBy = buildOrderBy(filter);
+    const limitOffset = buildLimitOffset(filter);
+    const rs = await this.db.execute({
+      sql: `SELECT data FROM ${table}${where.clause}${inWhere.clause}${orderBy.clause}${limitOffset}`,
+      args: [...where.params, ...inWhere.params, ...orderBy.params],
     });
     return rs.rows.map((r) => JSON.parse(r.data as string) as T);
   }

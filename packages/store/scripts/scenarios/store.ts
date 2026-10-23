@@ -799,6 +799,65 @@ export const scenarios = [
   }),
 
   defineScenario({
+    id: "store/list-where-in-mixed-kinds",
+    title: "strings, numbers, booleans and null in one values list each match only their own type",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "num", f: 1 }] },
+      { op: "put", args: ["items", { id: "real", f: 1.5 }] },
+      { op: "put", args: ["items", { id: "text", f: "1" }] },
+      { op: "put", args: ["items", { id: "yes", f: true }] },
+      { op: "put", args: ["items", { id: "no", f: false }] },
+      { op: "put", args: ["items", { id: "zero", f: 0 }] },
+      { op: "put", args: ["items", { id: "nil", f: null }] },
+      { op: "put", args: ["items", { id: "missing" }] },
+      { op: "listWhereIn", args: ["items", "f", ["1", true, null, 1.5]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [1, false]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", [true, false, null]], expect: { ids: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/list-where-in-quoted-field-names",
+    title: "field names containing a single quote or a dot name one top-level key",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "a", "it's": "x", "a.b": "dot" }] },
+      { op: "put", args: ["items", { id: "b", "it's": "y", a: { b: "dot" } }] },
+      { op: "listWhereIn", args: ["items", "it's", ["x"]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "a.b", ["dot"]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "x') OR 1=1 --", ["x"]], expect: { ids: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/list-where-in-sorted-and-paged",
+    title: "listWhereIn applies where, sortBy, limit and offset to the matching rows",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "1", f: "a", rank: 3, kind: "keep" }] },
+      { op: "put", args: ["items", { id: "2", f: "b", rank: 1, kind: "keep" }] },
+      { op: "put", args: ["items", { id: "3", f: "c", rank: 2, kind: "keep" }] },
+      { op: "put", args: ["items", { id: "4", f: "a", rank: 4, kind: "drop" }] },
+      { op: "put", args: ["items", { id: "5", f: "b", kind: "keep" }] },
+      { op: "put", args: ["items", { id: "6", f: "z", rank: 0, kind: "keep" }] },
+      {
+        op: "listWhereIn",
+        args: ["items", "f", ["a", "b", "c"], { where: { kind: "keep" }, sortBy: "rank", sortDir: "desc" }],
+        expect: { ids: true },
+      },
+      {
+        op: "listWhereIn",
+        args: ["items", "f", ["a", "b", "c"], { where: { kind: "keep" }, sortBy: "rank", limit: 2, offset: 1 }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+
+  defineScenario({
     id: "store/list-where-in-non-scalar-value-throws",
     title: "an object or array among the values is rejected, not treated as no match",
     ports: ["collection"],

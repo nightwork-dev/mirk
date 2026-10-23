@@ -1,0 +1,148 @@
+{
+  "id": "store/list-where-in-mixed-kinds",
+  "title": "strings, numbers, booleans and null in one values list each match only their own type",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "num",
+          "f": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "real",
+          "f": 1.5
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "text",
+          "f": "1"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "yes",
+          "f": true
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "no",
+          "f": false
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "zero",
+          "f": 0
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "nil",
+          "f": null
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "missing"
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          "1",
+          true,
+          null,
+          1.5
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "real",
+          "text",
+          "yes",
+          "nil"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          1,
+          false
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "num",
+          "no"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "f",
+        [
+          true,
+          false,
+          null
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "yes",
+          "no",
+          "nil"
+        ]
+      }
+    }
+  ]
+}

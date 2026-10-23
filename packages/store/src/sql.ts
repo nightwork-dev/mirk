@@ -11,8 +11,8 @@
 import type { StoreFilter } from "./types.js";
 
 /** A bound SQL parameter — the common subset both better-sqlite3 and @libsql/client
- *  accept. Booleans never appear here: `where` compares them by json_type alone, and
- *  the IN builder converts them to 0/1 (better-sqlite3 rejects a raw boolean). */
+ *  accept. Booleans never appear here (better-sqlite3 rejects a raw boolean): `where`
+ *  compares them by json_type alone, and the IN builder writes them as SQL 1/0. */
 export type SqlParam = string | number | bigint | null;
 
 /** A field name is ONE top-level JSON key, never a nested path. Build the JSON path
@@ -81,6 +81,65 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
     }
   }
   return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
+}
+
+/** `jsonPath(field)` as a quoted SQL string literal, for SQL that must name the
+ *  path in its text: an expression index on `json_extract(data, <literal>)` only
+ *  serves a query that spells the same literal, never a bound parameter. Single
+ *  quotes are doubled, which is the only escape a SQLite string literal has.
+ *  Returns null for a field containing NUL, which SQL text cannot carry. */
+export function jsonPathLiteral(field: string): string | null {
+  if (field.includes("\u0000")) return null;
+  return `'${jsonPath(field).replace(/'/g, "''")}'`;
+}
+
+export const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
+
+/** The `listWhereIn` condition as one index-friendly expression.
+ *
+ *  Strings and numbers go into a single `json_extract(data, path) IN (...)`.
+ *  SQLite never equates a TEXT with an INTEGER or REAL, so "1" and 1 stay apart
+ *  without help, but json_extract collapses a JSON boolean to 1/0; the
+ *  `json_type ... IN ('integer', 'real', 'text')` guard keeps a stored true out
+ *  of `[1]`. A boolean value is its own `= 1`/`= 0` term guarded by its
+ *  json_type, and null is `IS NULL` guarded by `json_type = 'null'`, which a
+ *  missing field (json_type SQL NULL) never satisfies. Every term leads with
+ *  `json_extract(data, path)`, so an expression index on it serves each one.
+ *
+ *  The path is inlined as a literal so that index can match; see
+ *  `jsonPathLiteral`. Fields that cannot be a literal are bound instead. */
+export function buildInClause(
+  field: string,
+  values: readonly unknown[],
+  hasPriorWhere: boolean,
+): { clause: string; params: SqlParam[] } {
+  const literal = jsonPathLiteral(field);
+  const pathParams: SqlParam[] = literal === null ? [jsonPath(field)] : [];
+  const path = literal ?? "?";
+  const scalars: SqlParam[] = [];
+  const kinds = new Set<"true" | "false" | "null">();
+  for (const value of values) {
+    if (value === null) kinds.add("null");
+    else if (typeof value === "boolean") kinds.add(value ? "true" : "false");
+    else if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") scalars.push(value);
+    else throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
+  }
+
+  const extract = `json_extract(data, ${path})`;
+  const type = `json_type(data, ${path})`;
+  const terms: string[] = [];
+  const params: SqlParam[] = [];
+  if (scalars.length > 0) {
+    terms.push(`(${extract} IN (${scalars.map(() => "?").join(", ")}) AND ${type} IN ('integer', 'real', 'text'))`);
+    params.push(...pathParams, ...scalars, ...pathParams);
+  }
+  for (const kind of kinds) {
+    const match = kind === "null" ? "IS NULL" : kind === "true" ? "= 1" : "= 0";
+    terms.push(`(${extract} ${match} AND ${type} = '${kind}')`);
+    params.push(...pathParams, ...pathParams);
+  }
+  const condition = terms.length === 1 ? terms[0]! : `(${terms.join(" OR ")})`;
+  return { clause: `${hasPriorWhere ? " AND" : " WHERE"} ${condition}`, params };
 }
 
 export function buildOrderBy(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
