@@ -74,11 +74,12 @@ Each test creates and removes its own physical collection.
 
 ## Electron SQLite acceptance
 
-The Electron workflow tests both SQLite adapters in an Electron 45 main process.
-It checks all facets, atomic receipts, nested rollback, and files reopened across drivers.
-The harness opens no browser window and uses temporary database files.
+The Electron workflow opens both SQLite adapters in an Electron 45 main process. Each driver writes
+key-value, vector, and full-text search data to one temporary file. The other driver reopens and reads
+that data, then the write direction is reversed. The harness also checks nested key-value rollback
+and opens no browser window.
 
-After building the store and statements packages, run the harness with an Electron 45 binary:
+After building the store package, run the harness with an Electron 45 binary:
 
 ```bash
 /path/to/electron scripts/check-electron-sqlite.cjs
