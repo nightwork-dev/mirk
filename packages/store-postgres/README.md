@@ -1,7 +1,7 @@
 # @mirk/store-postgres
 
-> **Mirk's records in PostgreSQL, shared by every process that needs them.** Key-values and
-> collections, with many writers at once.
+> **Mirk's records in PostgreSQL, shared by every process that needs them.** Key-values,
+> collections, atomic writes, and transactions, with many hosts at once.
 
 ## Why
 
@@ -17,8 +17,8 @@ What you give up compared with the SQLite file in `@mirk/store`:
 
 - **Every call is async.**
 - **Only key-values and collections.** No vectors, no full-text search, no links.
-- **No atomic batches and no transactions** through the store interface.
-- **You run a Postgres server**, and the role needs permission to create two tables.
+- **Writes to one schema are serialized.** Every write holds a schema-wide lock until it commits.
+- **You run a Postgres server**, and the role needs permission to create the adapter's tables.
 
 ## A first look
 
@@ -39,6 +39,19 @@ const both = await postgres.kv.listWhereIn("projects", "id", ["mirk", "gonk"]);
 await postgres.close();
 ```
 
+Two hosts can claim a job without both winning, and notify only when the claim commits:
+
+```ts
+await postgres.transaction(async () => {
+  const job = await postgres.kv.getVersioned({ kind: "record", collection: "jobs", id: "job-1" });
+  const claimed = await postgres.kv.mutateAtomically({
+    conditions: [{ target: { kind: "record", collection: "jobs", id: "job-1" }, expected: "version", version: job!.version }],
+    operations: [{ op: "put", collection: "jobs", item: { id: "job-1", holder: "host-a" } }],
+  });
+  if (claimed.status === "applied") postgres.afterCommit(() => wakeWorker("job-1"));
+});
+```
+
 ## Install
 
 ```bash
@@ -55,7 +68,8 @@ npm install @mirk/store-postgres
 | Collections | yes | same facet, plus the optional `AsyncStoreInQuery` capability (`listWhereIn`) |
 | Vectors | no | pgvector is not used |
 | Full-text search | no | PostgreSQL full-text search is not used |
-| Atomic writes | no | no atomic mutation, versioned reads, or transactions |
+| Atomic writes | yes | `AsyncAtomicMutationStore`: versioned reads and declarative atomic mutations with idempotent receipts |
+| Transactions | yes | the adapter implements `AsyncStoreTransactions`: `transaction()` and `afterCommit()` |
 
 ### Where it differs from the reference
 
@@ -64,8 +78,14 @@ ordering, and counting (see [Contract semantics](#contract-semantics)). The diff
 
 - Calls are async.
 - Values and records round-trip through `jsonb`, so they must be JSON-serializable.
-- `keys(prefix)` orders under the database's collation.
-- No vectors, search, or atomic mutation.
+- `keys(prefix)` and sorted strings order under the database's collation.
+- Lone surrogates cannot be stored in `jsonb`.
+- The atomic request limits default to the portable remote limits (`DEFAULT_ATOMIC_LIMITS`), not
+  the in-process ones. Override them with the `atomicLimits` option.
+- No vectors or search.
+
+The adapter replays the shared store conformance corpus, including the atomic scenarios. Its test
+suite names each skipped scenario with one of the differences above.
 
 ## Connection and ownership
 
@@ -86,22 +106,29 @@ const postgres = await PostgresAdapter.open({ pool, schema: "mirk" });
 
 ### Physical model
 
-The adapter provisions two fixed tables in the configured schema (default `mirk`) with
+The adapter provisions fixed tables in the configured schema (default `mirk`) with
 `CREATE ... IF NOT EXISTS`, so the role needs permission to create them unless they already exist:
 
 ```sql
-mirk.kv(key text primary key, value jsonb not null, updated_at timestamptz not null)
+mirk.kv(key text primary key, value jsonb not null, updated_at timestamptz not null, version text)
 mirk.records(collection text, id text, data jsonb not null,
              ordinal bigint generated always as identity, updated_at timestamptz not null,
-             primary key (collection, id))
+             version text, primary key (collection, id))
+mirk.atomic_receipts(key text primary key, request_digest text not null, result jsonb not null)
+mirk.atomic_state(id integer primary key, identity text not null, sequence bigint not null)
 ```
+
+Opening an adapter adds the `version` columns to tables created by an earlier release and gives
+existing rows a version token. Upgrade every process that writes to a schema before relying on
+atomic writes: an older adapter writes without the lock or a new version.
 
 The schema name is quoted once at construction. Keys, collection names, record IDs, filter fields,
 and values are always bound query parameters; they never become SQL identifiers or create tables.
 
 ### Contract semantics
 
-`postgres.kv` implements `AsyncStore` and the optional `AsyncStoreInQuery` capability.
+`postgres.kv` implements `AsyncStore`, the optional `AsyncStoreInQuery` capability, and
+`AsyncAtomicMutationStore`.
 
 - Values and records must be JSON-serializable and round-trip through `jsonb`; `undefined`,
   functions, symbols, `bigint`, and non-finite numbers throw.
@@ -116,12 +143,44 @@ and values are always bound query parameters; they never become SQL identifiers 
 - `count` applies `where` and ignores pagination and sorting. Negative or fractional `limit` and
   `offset` are rejected.
 
+### Atomic writes and versions
+
+`postgres.kv` implements `AsyncAtomicMutationStore`. Version tokens read `<identity>-v<n>`, where
+`identity` is the `versionIdentity` option recorded when the schema is first provisioned (a random
+UUID by default) and `n` is a per-schema sequence. Every `set` and `put`, plain or atomic, takes
+the next number; `delete` and `remove` take none, and a conflict or rollback takes none. Treat
+tokens as opaque.
+
+Idempotency receipts are durable rows. They survive other writes to the same target and adapter
+restarts, so a retried request with the same key replays the first result. A connection failure
+while a standalone `mutateAtomically` commits leaves the outcome unknown; the call throws
+`AtomicMutationIndeterminateError`, and retrying with the same idempotency key is safe.
+
+### Transactions
+
+`postgres.transaction(work)` runs `work` in one transaction on one pooled client. It implements the
+[`AsyncStoreTransactions`](../store/README.md#async-transactions) contract: `kv` calls inside
+`work` join it, a nested call is a savepoint, and `afterCommit` callbacks run once, in order, after
+the outermost commit. **`afterCommit` is best effort:** if the process dies between the commit
+and the callback, the notification is lost.
+
+Serialization is per schema. Every transaction, and every write outside one, takes a
+transaction-scoped advisory lock on the schema name (`pg_advisory_xact_lock`), so writers on any
+connection or host take turns. This includes conditions on targets that do not exist yet, which
+row locks cannot cover. Reads do not take the lock and see committed data. The cost is write
+throughput: one writer per schema at a time. Use separate schemas for independent data.
+
+Keep transactions short and database-only. A transaction holds a pooled client and the schema lock
+until it ends, and a lock wait has no timeout of its own: set `lock_timeout` or
+`statement_timeout` in `poolConfig` if a stuck holder must not block others indefinitely. Do not
+await another adapter's writes to the same schema inside a transaction; they wait for the lock this
+transaction holds.
+
 ### Not supported
 
-- Atomic mutation, versioned reads, or transactions.
 - `LISTEN`/`NOTIFY` change streams.
 - PostgreSQL full-text search or pgvector facets.
-- Schema migrations beyond the idempotent initial provisioning above.
+- Schema migrations beyond the idempotent provisioning above.
 
 ## License
 
