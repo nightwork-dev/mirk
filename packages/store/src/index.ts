@@ -139,6 +139,13 @@ export { tokenize, sanitizeFtsQuery } from "./search/tokenize.js";
 export { SearchInputError } from "./search/fields.js";
 export type { SearchInputErrorCode } from "./search/fields.js";
 
+// Log port + in-memory reference
+export type { LogStore, AsyncLogStore, LogEntry, LogListOptions } from "./log/types.js";
+export { InMemoryLogStore } from "./log/memory.js";
+export { toAsyncLog } from "./log/to-async-log.js";
+export { LogInputError } from "./log/validate.js";
+export type { LogInputErrorCode } from "./log/validate.js";
+
 // Graph contract types. The traversal helpers remain available from /graph.
 export type {
   Edge,

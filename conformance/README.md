@@ -58,6 +58,7 @@ conformance/
   store/atomic/*.json    versioned reads and atomic mutation scenarios
   vector/*.json          vector scenarios
   search/*.json          full-text search scenarios
+  log/*.json             append-only log scenarios
   graph/*.json           graph traversal scenarios
   artifact/hashing/canonical-json/*.json   canonical text and its digest
   artifact/hashing/bytes/*.json            content digests over raw bytes
@@ -175,8 +176,8 @@ the port is explicitly allowed. The current allow-list is empty.
 A skipped case cannot retire a scenario from the accepted run. This rule catches
 both a typo in `ports` and a capability that stopped loading.
 
-- `ports` are the ten port names. `kv`, `collection`, `atomic`, `hash`,
-  `vector`, `search`, `graph`, `fixtures`, and `artifact` run on the memory and
+- `ports` are the eleven port names. `kv`, `collection`, `atomic`, `hash`,
+  `vector`, `search`, `log`, `graph`, `fixtures`, and `artifact` run on the memory and
   SQLite backends. `store_markdown` runs on the separate `markdown` filesystem
   backend. The runner uses `store` as the internal target kind for store-only
   scenarios; scenario inputs use the specific store port names.
@@ -187,6 +188,13 @@ both a typo in `ports` and a capability that stopped loading.
   below. `artifact` binds the artifact lifecycle coordinator over the backend
   store and an object store. An unsatisfiable port on a selected backend is a
   corpus error.
+- `log` binds the backend's log: `append`, `get`, `list` and `lastSequence`,
+  plus the target op `appendRolledBack(stream, record)`. That op appends
+  inside the backend's own transaction (`SqliteAdapter.transaction`, a raw
+  `BEGIN IMMEDIATE` on the Python connection, or `InMemoryLogStore.transaction`),
+  rolls the transaction back, and returns the sequence the append was given.
+  Files exchanged between the two languages are checked by
+  `python/store/tests/test_sqlite_compat.py`, not by the corpus.
 - `capabilities` are the optional ones. The only known name today is
   `listWhereIn`; anything else is a typo and fails the same way. Each runner
   declares, per backend, which capabilities that backend has **right now**,

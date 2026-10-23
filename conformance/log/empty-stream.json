@@ -1,0 +1,57 @@
+{
+  "id": "log/empty-stream",
+  "title": "a stream nothing was appended to lists nothing and its last sequence is 0",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "list",
+      "args": [
+        "never"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "never",
+        {
+          "after": 0,
+          "limit": 10
+        }
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "never"
+      ],
+      "expect": {
+        "value": 0
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "other",
+        1
+      ]
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "never"
+      ],
+      "expect": {
+        "value": 0
+      }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # mirk-store
 
 The Python port of `@mirk/store`: substrate-agnostic key-value and collection
-storage primitives: the KV, collection, vector, search, and graph ports over two
-backends, an in-memory reference and SQLite.
+storage primitives: the KV, collection, vector, search, append-only log, and
+graph ports over two backends, an in-memory reference and SQLite.
 
 The SQLite adapter opens files the TypeScript adapter wrote and writes files it
 can read. Same tables, same pragmas, same JSON encoding, and the same atomic
@@ -65,6 +65,30 @@ window first prunes, so it expires one full window later.
 reconcile a request**: a retry after it applies the mutation again. A host that
 reconciles old receipts after an expired job lease should leave expiry off or
 use a window of days.
+
+## Append-only log
+
+`mirk.store.log` is the Python side of `@mirk/store/log`: per-stream sequences
+that start at 1, with no gaps among committed appends.
+
+```python
+from mirk.store import SqliteStore
+from mirk.store.sqlite_log import SqliteLogFacet
+
+store = SqliteStore("data.db")
+log = SqliteLogFacet(store)  # shares the store's connection and file
+log.append("deliveries", {"kind": "submitted", "id": "d1"})  # 1
+log.list("deliveries", {"after": 0, "limit": 100})
+log.lastSequence("deliveries")  # 1
+```
+
+`InMemoryLogStore` is the in-memory reference; its `transaction()` context
+manager undoes the appends made inside a block that raises. On SQLite, an
+append inside a transaction already open on the connection joins it and rolls
+back with it, and a rolled-back append's sequence goes to the next append. The
+facet reads and writes the same `_mirk_log` table as the TypeScript adapter, so
+either language can continue a log the other wrote. The guarantees and limits
+are in the [`@mirk/store` README](../../packages/store/README.md#append-only-log).
 
 ## Threads and transactions
 

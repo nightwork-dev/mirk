@@ -28,6 +28,7 @@ from mirk.store import SqliteStore, hash_name
 from mirk.store.atomic import validate_atomic_request
 from mirk.store.conformance import repo_root
 from mirk.store.search import InMemorySearchStore, SearchInputError
+from mirk.store.sqlite_log import SqliteLogFacet
 from mirk.store.sqlite_search import SqliteSearchFacet
 from mirk.store.sqlite_vector import SqliteVectorFacet
 
@@ -1099,3 +1100,65 @@ def test_plain_writes_carry_version_tokens_across_languages(tmp_path: Path) -> N
     read_back: dict[str, Any] = run_node_script(LEGACY_TS_READ_SCRIPT, tmp_path, str(py_db))
     assert read_back["key"] == expected_key
     assert read_back["record"] == expected_record
+
+
+LOG_WRITE_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+const given = [
+  adapter.log.append("events", {{ kind: "submitted", text: "é 🔥", n: 1.5 }}),
+  adapter.log.append("events", {{ kind: "settled", at: null }}),
+  adapter.log.append("other", [1, "two"]),
+];
+adapter.close();
+console.log(JSON.stringify(given));
+"""
+
+LOG_READ_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+const out = {{
+  last: adapter.log.lastSequence("events"),
+  entries: adapter.log.list("events"),
+  next: adapter.log.append("events", "from typescript"),
+  third: adapter.log.get("events", 3),
+}};
+adapter.close();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_python_reads_and_continues_the_log_typescript_wrote(tmp_path: Path) -> None:
+    db = tmp_path / "exchange.sqlite"
+    assert run_node_script(LOG_WRITE_SCRIPT, tmp_path, str(db)) == [1, 2, 1]
+    with SqliteStore(str(db)) as store:
+        log = SqliteLogFacet(store)
+        assert log.lastSequence("events") == 2
+        assert log.list("events") == [
+            {"sequence": 1, "record": {"kind": "submitted", "text": "é 🔥", "n": 1.5}},
+            {"sequence": 2, "record": {"kind": "settled", "at": None}},
+        ]
+        assert log.list("other", {"after": 0, "limit": 5}) == [
+            {"sequence": 1, "record": [1, "two"]}
+        ]
+        assert log.append("events", {"kind": "from python"}) == 3
+
+
+def test_typescript_reads_and_continues_the_log_python_wrote(tmp_path: Path) -> None:
+    db = tmp_path / "exchange.sqlite"
+    with SqliteStore(str(db)) as store:
+        log = SqliteLogFacet(store)
+        log.append("events", {"kind": "submitted", "whole": 2.0})
+        log.append("events", {"kind": "settled", "text": "é 🔥"})
+    out = run_node_script(LOG_READ_SCRIPT, tmp_path, str(db))
+    assert out == {
+        "last": 2,
+        "entries": [
+            {"sequence": 1, "record": {"kind": "submitted", "whole": 2}},
+            {"sequence": 2, "record": {"kind": "settled", "text": "é 🔥"}},
+        ],
+        "next": 3,
+        "third": {"sequence": 3, "record": "from typescript"},
+    }
+    with SqliteStore(str(db)) as store:
+        assert SqliteLogFacet(store).lastSequence("events") == 3

@@ -50,7 +50,7 @@ if (CORPUS_DIR !== DEFAULT_CORPUS_DIR) {
 const BACKENDS: BackendName[] = ["memory", "sqlite", "node-sqlite", "markdown"];
 /** Directories the generator owns. A directory that exists must carry at least
  *  one scenario AND have at least one of them executed by every backend. */
-const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures", "markdown"] as const;
+const KNOWN_DIRS = ["store", "vector", "search", "log", "graph", "artifact", "fixtures", "markdown"] as const;
 
 function jsonFiles(dir: string): string[] {
   const out: string[] = [];

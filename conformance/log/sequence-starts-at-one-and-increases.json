@@ -1,0 +1,80 @@
+{
+  "id": "log/sequence-starts-at-one-and-increases",
+  "title": "the first append to a stream gets 1 and each later append gets the next integer",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "lastSequence",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": 0
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "first"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "second"
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "third"
+      ],
+      "expect": {
+        "value": 3
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": 3
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": "first"
+          },
+          {
+            "sequence": 2,
+            "record": "second"
+          },
+          {
+            "sequence": 3,
+            "record": "third"
+          }
+        ]
+      }
+    }
+  ]
+}

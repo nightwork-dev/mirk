@@ -14,6 +14,9 @@ import {
   sha256Hex,
   sha256HexBytes,
 } from "../canonical.js";
+import { InMemoryLogStore } from "../log/memory.js";
+import type { LogStore } from "../log/types.js";
+import type { JsonValue } from "../atomic.js";
 import { SqliteAdapter } from "../adapters/sqlite.js";
 import { NodeSqliteAdapter } from "../adapters/node-sqlite.js";
 import { fixturesApi, type FixturesBackendStore } from "./fixtures-target.js";
@@ -74,6 +77,33 @@ function hashApi(): Record<string, unknown> {
 const VECTOR_METHODS = ["upsert", "upsertMany", "get", "has", "remove", "count", "search"] as const;
 
 const SEARCH_METHODS = ["index", "indexMany", "remove", "search"] as const;
+
+const LOG_METHODS = ["append", "get", "list", "lastSequence"] as const;
+
+/** The log target: the port's methods, plus `appendRolledBack(stream,
+ *  record)`, which appends inside the backend's own transaction, rolls that
+ *  transaction back, and returns the sequence the append was given. */
+function logApi(
+  log: LogStore,
+  transaction: (work: () => void) => void,
+): Record<string, unknown> {
+  return {
+    ...methodApi(log, LOG_METHODS),
+    appendRolledBack: (stream: string, record: JsonValue) => {
+      const rollback = new Error("roll back");
+      let sequence: number | undefined;
+      try {
+        transaction(() => {
+          sequence = log.append(stream, record);
+          throw rollback;
+        });
+      } catch (error) {
+        if (error !== rollback) throw error;
+      }
+      return sequence;
+    },
+  };
+}
 
 function methodApi(instance: object, names: readonly string[]): Record<string, unknown> {
   const api: Record<string, unknown> = {};
@@ -165,6 +195,13 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
       const store = new InMemorySearchStore();
       return { target: { kind, api: methodApi(store, SEARCH_METHODS) }, dispose: () => {} };
     }
+    if (kind === "log") {
+      const log = new InMemoryLogStore();
+      return {
+        target: { kind, api: logApi(log, (work) => log.transaction(work)) },
+        dispose: () => {},
+      };
+    }
     const setup = scenarioStoreSetup(scenario);
     const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY, ...setup.options });
     return {
@@ -204,6 +241,12 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   }
   if (kind === "search") {
     return { target: { kind, api: methodApi(adapter.search, SEARCH_METHODS) }, dispose };
+  }
+  if (kind === "log") {
+    return {
+      target: { kind, api: logApi(adapter.log, (work) => adapter.transaction(work)) },
+      dispose,
+    };
   }
   return {
     target: {

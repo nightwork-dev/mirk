@@ -1,0 +1,151 @@
+{
+  "id": "log/streams-are-independent",
+  "title": "each stream numbers its own appends, and reads see only their stream",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "jobs",
+        {
+          "n": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "jobs",
+        {
+          "n": 2
+        }
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "流 / events",
+        {
+          "n": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "jobs",
+        {
+          "n": 3
+        }
+      ],
+      "expect": {
+        "value": 3
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "Jobs",
+        {
+          "n": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "jobs"
+      ],
+      "expect": {
+        "value": 3
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "流 / events"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "Jobs"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "jobs"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "n": 1
+            }
+          },
+          {
+            "sequence": 2,
+            "record": {
+              "n": 2
+            }
+          },
+          {
+            "sequence": 3,
+            "record": {
+              "n": 3
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "流 / events"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "n": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "Jobs",
+        2
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

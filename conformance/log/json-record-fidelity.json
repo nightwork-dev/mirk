@@ -1,0 +1,221 @@
+{
+  "id": "log/json-record-fidelity",
+  "title": "every JSON value comes back as it was appended",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "j",
+        null
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        true
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        0
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        -1.5
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        1e+300
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        9007199254740991
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        ""
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        "é 🔥 \u0000 \"quoted\" \\ \n"
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        []
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        {}
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "j",
+        {
+          "10": "numeric-looking key",
+          "kind": "submitted",
+          "zeta": [
+            1,
+            "two",
+            null,
+            false,
+            {
+              "deep": [
+                []
+              ]
+            }
+          ],
+          "alpha": {
+            "": "empty key",
+            "key with spaces": 0.1
+          }
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "j"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": null
+          },
+          {
+            "sequence": 2,
+            "record": true
+          },
+          {
+            "sequence": 3,
+            "record": 0
+          },
+          {
+            "sequence": 4,
+            "record": -1.5
+          },
+          {
+            "sequence": 5,
+            "record": 1e+300
+          },
+          {
+            "sequence": 6,
+            "record": 9007199254740991
+          },
+          {
+            "sequence": 7,
+            "record": ""
+          },
+          {
+            "sequence": 8,
+            "record": "é 🔥 \u0000 \"quoted\" \\ \n"
+          },
+          {
+            "sequence": 9,
+            "record": []
+          },
+          {
+            "sequence": 10,
+            "record": {}
+          },
+          {
+            "sequence": 11,
+            "record": {
+              "10": "numeric-looking key",
+              "kind": "submitted",
+              "zeta": [
+                1,
+                "two",
+                null,
+                false,
+                {
+                  "deep": [
+                    []
+                  ]
+                }
+              ],
+              "alpha": {
+                "": "empty key",
+                "key with spaces": 0.1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "j",
+        1
+      ],
+      "expect": {
+        "value": {
+          "sequence": 1,
+          "record": null
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "j",
+        11
+      ],
+      "expect": {
+        "value": {
+          "sequence": 11,
+          "record": {
+            "10": "numeric-looking key",
+            "kind": "submitted",
+            "zeta": [
+              1,
+              "two",
+              null,
+              false,
+              {
+                "deep": [
+                  []
+                ]
+              }
+            ],
+            "alpha": {
+              "": "empty key",
+              "key with spaces": 0.1
+            }
+          }
+        }
+      }
+    }
+  ]
+}
