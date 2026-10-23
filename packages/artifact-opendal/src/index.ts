@@ -73,10 +73,11 @@ export class OpenDalObjectStore implements ListableObjectStore {
     }
   }
 
-  /** A failure before the writer closes leaves nothing of this write: the
-   *  backend commits an object on close, and the write removes any partial
-   *  one. It is reported as `ObjectWriteRejectedError` so a caller never
-   *  deletes the key, which may by then hold another writer's object. */
+  /** A failure before the writer closes leaves nothing of this write once the
+   *  write has removed, and confirmed gone, any partial object. It is reported
+   *  as `ObjectWriteRejectedError` so a caller never deletes the key, which
+   *  may by then hold another writer's object. When a partial object cannot
+   *  be confirmed gone, the outcome is `ObjectWriteIndeterminateError`. */
   async put(
     key: string,
     source: ByteSource,
@@ -173,8 +174,11 @@ export class OpenDalObjectStore implements ListableObjectStore {
     } catch (error) {
       // A failed conditional write may mean the object pre-existed. Never
       // "clean it up" and accidentally delete another writer's object.
-      if (!options.ifAbsent || wroteAny)
-        await this.operator.delete(key).catch(() => undefined);
+      if (
+        (!options.ifAbsent || wroteAny) &&
+        !(await this.#removePartial(key))
+      )
+        throw new ObjectWriteIndeterminateError(key, { cause: error });
       throw error;
     }
     try {
@@ -183,11 +187,23 @@ export class OpenDalObjectStore implements ListableObjectStore {
       // Conditional existence is checked by some services at close time. At
       // that point ownership is indeterminate, so preserve the pre-existing
       // object and let the caller reconcile the failed write.
-      if (!options.ifAbsent) {
-        await this.operator.delete(key).catch(() => undefined);
-        throw error;
-      }
+      if (!options.ifAbsent && (await this.#removePartial(key))) throw error;
       throw new ObjectWriteIndeterminateError(key, { cause: error });
+    }
+  }
+
+  /** Remove this write's partial object. True only when the key is confirmed
+   *  empty afterwards; otherwise bytes of this write may remain. */
+  async #removePartial(key: string): Promise<boolean> {
+    try {
+      await this.operator.delete(key);
+    } catch {
+      // Confirmed below.
+    }
+    try {
+      return !(await this.operator.exists(key));
+    } catch {
+      return false;
     }
   }
 

@@ -10,6 +10,7 @@ from mirk.artifact.coordinator import ArtifactCoordinator, ArtifactWriteError
 from mirk.artifact.errors import ObjectWriteIndeterminateError, ObjectWriteRejectedError
 from mirk.artifact.memory import InMemoryArtifactRepository, ObjectAlreadyExistsError
 from mirk.artifact.types import ByteSource, ObjectInfo, ObjectPutOptions
+from opendal.exceptions import AlreadyExists  # pyright: ignore[reportMissingModuleSource]
 
 from mirk.artifact_opendal import OpenDalObjectStore, OpenDalObjectStoreError
 
@@ -148,3 +149,88 @@ def test_conditional_close_failure_is_indeterminate_and_the_coordinator_keeps_th
     assert caught.value.cleanup == "preserved-indeterminate"
     assert drain(store.get("artifacts/uncertain")) == b"maybe"
     assert repository.get("uncertain") is None
+
+
+class _CommitOnClose:
+    """An operator whose writers buffer and commit on close, like S3 multipart.
+
+    ``close_error`` is raised after the commit; ``delete_fails`` makes deletes
+    raise while leaving the object in place.
+    """
+
+    def __init__(
+        self,
+        operator: opendal.Operator,
+        *,
+        close_error: BaseException | None = None,
+        delete_fails: bool = False,
+    ) -> None:
+        self._operator = operator
+        self.close_error = close_error
+        self.delete_fails = delete_fails
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._operator, name)
+
+    def delete(self, path: str) -> None:
+        if self.delete_fails:
+            raise OSError("delete refused")
+        self._operator.delete(path)
+
+    def open(self, path: str, mode: str, **options: Any) -> Any:
+        if mode != "wb":
+            return self._operator.open(path, mode, **options)
+        double = self
+        parts: list[bytes] = []
+
+        class Writer:
+            def write(self, chunk: bytes) -> None:
+                parts.append(bytes(chunk))
+
+            def close(self) -> None:
+                double._operator.write(path, b"".join(parts))
+                if double.close_error is not None:
+                    raise double.close_error
+
+        return Writer()
+
+
+def _partial_then_failure() -> Iterator[bytes]:
+    yield b"partial-"
+    raise RuntimeError("source failed")
+
+
+@pytest.mark.parametrize("if_absent", [True, False])
+def test_a_committed_partial_that_cannot_be_removed_is_indeterminate(if_absent: bool) -> None:
+    operator = _CommitOnClose(opendal.Operator("memory"), delete_fails=True)
+    store = OpenDalObjectStore(operator)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(ObjectWriteIndeterminateError):
+        store.put("objects/a", _partial_then_failure(), {"ifAbsent": if_absent})
+    assert drain(store.get("objects/a")) == b"partial-"
+
+
+def test_coordinator_keeps_a_partial_it_could_not_remove() -> None:
+    operator = _CommitOnClose(opendal.Operator("memory"), delete_fails=True)
+    store = OpenDalObjectStore(operator)  # pyright: ignore[reportArgumentType]
+    coordinator = ArtifactCoordinator(
+        store, InMemoryArtifactRepository(), id_factory=lambda: "same"
+    )
+    with pytest.raises(ArtifactWriteError) as caught:
+        coordinator.write({"bytes": _partial_then_failure(), "mediaType": "text/plain"})
+    assert caught.value.cleanup == "preserved-indeterminate"
+
+
+@pytest.mark.parametrize("delete_fails", [False, True])
+def test_unconditional_write_removes_its_partial_after_a_close_conflict(
+    delete_fails: bool,
+) -> None:
+    operator = _CommitOnClose(
+        opendal.Operator("memory"),
+        close_error=AlreadyExists("conflict at close"),
+        delete_fails=delete_fails,
+    )
+    store = OpenDalObjectStore(operator)  # pyright: ignore[reportArgumentType]
+    expected = ObjectWriteIndeterminateError if delete_fails else ObjectWriteRejectedError
+    with pytest.raises(expected):
+        store.put("objects/a", _partial_then_failure())
+    assert (store.head("objects/a") is None) is not delete_fails
