@@ -93,7 +93,24 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
     collection: string,
     doc: VectorDocument<M>,
   ): Promise<void> {
-    await this.ensureDimensions(collection, doc.vector);
+    await this.ensureDimensions(collection, [doc.vector]);
+    await this.writeDocument(collection, doc);
+  }
+
+  async upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
+    collection: string,
+    docs: ReadonlyArray<VectorDocument<M>>,
+  ): Promise<void> {
+    await this.ensureDimensions(collection, docs.map((doc) => doc.vector));
+    for (const doc of docs) {
+      await this.writeDocument(collection, doc);
+    }
+  }
+
+  private async writeDocument<M extends Record<string, unknown>>(
+    collection: string,
+    doc: VectorDocument<M>,
+  ): Promise<void> {
     await this.connection.query(
       `
       DELETE FROM ${this.documentsTable} WHERE collection = $collection AND doc_id = $id;
@@ -110,18 +127,6 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
         metadata: doc.metadata ?? {},
       },
     );
-  }
-
-  async upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    docs: ReadonlyArray<VectorDocument<M>>,
-  ): Promise<void> {
-    for (const doc of docs) {
-      await this.ensureDimensions(collection, doc.vector);
-    }
-    for (const doc of docs) {
-      await this.upsert(collection, doc);
-    }
   }
 
   async get<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -222,14 +227,18 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
     `);
   }
 
-  private async ensureDimensions(collection: string, vector: Vector): Promise<void> {
-    if (!isUsableVector(vector)) {
-      throw new SurrealVectorError("invalid-vector", "Vector must contain only finite numbers and have non-zero magnitude.");
+  private async ensureDimensions(collection: string, vectors: readonly Vector[]): Promise<void> {
+    const [first] = vectors;
+    if (first === undefined) return;
+    for (const vector of vectors) {
+      if (!isUsableVector(vector)) {
+        throw new SurrealVectorError("invalid-vector", "Vector must contain only finite numbers and have non-zero magnitude.");
+      }
     }
     const existing = await this.dimensionsFor(collection);
     if (existing === 0) {
-      const dimensions = this.meta.dimensions || vector.length;
-      assertDimensions(vector, dimensions);
+      const dimensions = this.meta.dimensions || first.length;
+      for (const vector of vectors) assertDimensions(vector, dimensions);
       await this.connection.query(
         `
         DELETE FROM ${this.dimensionsTable} WHERE collection = $collection;
@@ -240,7 +249,7 @@ export class SurrealVectorAdapter implements AsyncVectorStore {
       this.meta.dimensions = dimensions;
       return;
     }
-    assertDimensions(vector, existing);
+    for (const vector of vectors) assertDimensions(vector, existing);
     if (this.meta.dimensions === 0) this.meta.dimensions = existing;
   }
 
