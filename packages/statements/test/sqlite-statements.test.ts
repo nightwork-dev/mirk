@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import { createSqliteCoordinator } from "@mirk/store/coordination";
 import { describe, expect, it, afterEach } from "vitest";
 
 import {
@@ -468,3 +469,85 @@ function provenance(
 function ref(statementId: string) {
   return { worldId: "example-world", branchId: "main", statementId };
 }
+
+describe("@mirk/statements lens and construction", () => {
+  const sourceOf = (sourceId: string): StatementProvenance => ({
+    sources: [{ sourceId }],
+    origin: { source: "authored", modelInvolved: false },
+  });
+
+  it("filters by source before it applies the limit", async () => {
+    const store = testStore(new AllowAuthority());
+    const recordings: Array<[string, string, string]> = [
+      ["old-1", "2026-01-01T00:00:00.000Z", "source:wanted"],
+      ["old-2", "2026-01-02T00:00:00.000Z", "source:wanted"],
+      ["new-1", "2026-02-01T00:00:00.000Z", "source:other"],
+      ["new-2", "2026-02-02T00:00:00.000Z", "source:other"],
+      ["new-3", "2026-02-03T00:00:00.000Z", "source:other"],
+    ];
+    for (const [statementId, recordedAt, sourceId] of recordings) {
+      await store.admit(
+        admission({ idempotencyKey: statementId, statementId, recordedAt, provenance: sourceOf(sourceId) })
+      );
+    }
+    const found = store.query({
+      worldId: "example-world",
+      branchId: "main",
+      sourceIds: ["source:wanted"],
+      limit: 2,
+    });
+    expect(found.map((item) => item.statementId)).toEqual(["old-2", "old-1"]);
+    store.close();
+  });
+
+  it("returns only statements with instant bounds for a validAt lens", async () => {
+    const store = testStore(new AllowAuthority());
+    const anchor = { anchorId: "event-1" };
+    await store.admit(admission({ idempotencyKey: "plain", statementId: "plain" }));
+    await store.admit(
+      admission({
+        idempotencyKey: "from-anchor",
+        statementId: "from-anchor",
+        validTime: { from: { kind: "after", anchor }, to: { kind: "unbounded" } },
+      })
+    );
+    await store.admit(
+      admission({
+        idempotencyKey: "to-anchor",
+        statementId: "to-anchor",
+        validTime: { from: { kind: "unbounded" }, to: { kind: "before", anchor } },
+      })
+    );
+    const lens = { worldId: "example-world", branchId: "main" };
+    const at = store.query({ ...lens, validAt: "1910-01-01T00:00:00.000Z" });
+    expect(at.map((item) => item.statementId)).toEqual(["plain"]);
+    const all = store.query(lens);
+    expect(all.map((item) => item.statementId).sort()).toEqual(["from-anchor", "plain", "to-anchor"]);
+    store.close();
+  });
+
+  it("takes an open database with an explicit coordinator and no path", async () => {
+    const path = testStorePath();
+    const db = new Database(path);
+    const coordinator = createSqliteCoordinator({ path, namespace: "mirk-statements" });
+    const store = createSqliteStatementStore({ db, coordinator, authority: new AllowAuthority() });
+    const result = await store.admit(admission({ idempotencyKey: "db-only" }));
+    expect(result.ok).toBe(true);
+    store.close();
+    db.close();
+  });
+
+  it("refuses an open database with neither a path nor a coordinator", () => {
+    const db = new Database(testStorePath());
+    expect(() => createSqliteStatementStore({ db, authority: new AllowAuthority() })).toThrowError(
+      expect.objectContaining({ code: "missing-coordinator" })
+    );
+    db.close();
+  });
+
+  it("still requires a path when no database is given", () => {
+    expect(() => createSqliteStatementStore({ authority: new AllowAuthority() })).toThrowError(
+      expect.objectContaining({ code: "missing-database-path" })
+    );
+  });
+});
