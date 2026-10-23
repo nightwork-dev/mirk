@@ -532,6 +532,24 @@ export const scenarios = [
     ],
   }),
 
+  defineScenario({
+    id: "store/field-names-with-json-escapes",
+    title: "field names holding a double quote, a backslash or a newline name that key in where, sortBy and listWhereIn",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "a", 'q"uote': "x", "back\\slash": 2, "new\nline": "b" }] },
+      { op: "put", args: ["items", { id: "b", 'q"uote': "y", "back\\slash": 1, "new\nline": "a" }] },
+      { op: "put", args: ["items", { id: "c", "back\\slash": 3 }] },
+      { op: "list", args: ["items", { where: { 'q"uote': "x" } }], expect: { ids: true } },
+      { op: "count", args: ["items", { where: { "back\\slash": 1 } }], expect: { value: true } },
+      { op: "list", args: ["items", { sortBy: "back\\slash", sortDir: "desc" }], expect: { ids: true } },
+      { op: "list", args: ["items", { sortBy: "new\nline" }], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", 'q"uote', ["y"]], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "new\nline", ["a", "b"]], expect: { ids: true } },
+    ],
+  }),
+
   // ── sortBy / sortDir ────────────────────────────────────────────────────
   defineScenario({
     id: "store/sort-ties-keep-insertion-order",
