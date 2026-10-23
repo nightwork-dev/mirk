@@ -59,6 +59,7 @@ dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your 
 | `@mirk/store/graph`      | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal)                                                                      | none                                                                              |
 | `@mirk/store/encrypted`  | authenticated AES-GCM record envelopes bound to a caller-owned storage context                                                                                    | none                                                                              |
 | `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
+| `@mirk/store/node-sqlite` | built-in Node SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets (Node 24+) | none |
 | `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer)                                                           |
 | `@mirk/store-libsql`     | async libSQL/Turso source adapter — one client, `.kv` + `.vector` facets                                                                                          | none                                                                              |
 | `@mirk/vector-qdrant`    | async Qdrant vector adapter with exact cosine scores, metadata filters, and shared Python storage format | `@qdrant/js-client-rest` (peer) |
@@ -115,6 +116,7 @@ where a remote backend genuinely requires it.
 
 ```bash
 npm install @mirk/store
+# Using @mirk/store/node-sqlite on Node 24+? No extra dependency.
 # Using @mirk/store/sqlite? Add its peer:
 npm install better-sqlite3
 ```

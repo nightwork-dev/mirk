@@ -47,7 +47,7 @@ const CORPUS_DIR = process.env.MIRK_CONFORMANCE_DIR
 if (CORPUS_DIR !== DEFAULT_CORPUS_DIR) {
   console.log(`conformance corpus overridden by MIRK_CONFORMANCE_DIR: ${CORPUS_DIR}`);
 }
-const BACKENDS: BackendName[] = ["memory", "sqlite", "markdown"];
+const BACKENDS: BackendName[] = ["memory", "sqlite", "node-sqlite", "markdown"];
 /** Directories the generator owns. A directory that exists must carry at least
  *  one scenario AND have at least one of them executed by every backend. */
 const KNOWN_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures", "markdown"] as const;
@@ -326,7 +326,7 @@ describe("ajvValidatorFactory", () => {
 describe("targetKindFor", () => {
   it("selects the filesystem backend only for the Markdown adapter contract", () => {
     expect(backendsForPorts(["store_markdown"])).toEqual(["markdown"]);
-    expect(backendsForPorts(["atomic"])).toEqual(["memory", "sqlite"]);
+    expect(backendsForPorts(["atomic"])).toEqual(["memory", "sqlite", "node-sqlite"]);
     expect(unsupportedPorts("markdown", ["atomic"])).toEqual(["atomic"]);
     expect(unsupportedCapabilities("markdown", ["listWhereIn"])).toEqual(["listWhereIn"]);
     expect(targetKindFor(["store_markdown"])).toBe("store_markdown");

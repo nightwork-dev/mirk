@@ -1,0 +1,66 @@
+name: Electron SQLite adapters
+
+on:
+  push:
+    paths:
+      - "packages/store/**"
+      - "packages/statements/**"
+      - "packages/fixtures/**"
+      - "scripts/check-electron-sqlite.cjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/electron-sqlite.yml"
+  pull_request:
+    paths:
+      - "packages/store/**"
+      - "packages/statements/**"
+      - "packages/fixtures/**"
+      - "scripts/check-electron-sqlite.cjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/electron-sqlite.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  electron-sqlite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build store package
+        run: pnpm --filter @mirk/store build
+
+      - name: Build statements package
+        run: pnpm --filter @mirk/statements build
+
+      - name: Install Electron 45 in an isolated directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/mirk-electron"
+          pnpm add --dir "$RUNNER_TEMP/mirk-electron" --save-dev electron@45.0.0
+
+      - name: Run Electron main-process SQLite acceptance
+        env:
+          MIRK_ROOT: ${{ github.workspace }}
+        run: |
+          electron_dir="$RUNNER_TEMP/mirk-electron"
+          user_data_dir="$(mktemp -d "$RUNNER_TEMP/mirk-electron-user-data.XXXXXX")"
+          trap 'rm -rf "$user_data_dir"' EXIT
+          xvfb-run -a "$electron_dir/node_modules/.bin/electron" \
+            --no-sandbox \
+            --user-data-dir="$user_data_dir" \
+            "$GITHUB_WORKSPACE/scripts/check-electron-sqlite.cjs"

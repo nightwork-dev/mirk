@@ -5,10 +5,18 @@
 /** True for SQLite's busy and locked error codes, including extended codes
  *  such as `SQLITE_BUSY_SNAPSHOT` and `SQLITE_LOCKED_SHAREDCACHE`. */
 export function isSqliteBusyOrLocked(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
+  const record = error as { code?: unknown; errcode?: unknown } | null;
+  const code = record?.code;
+  const errcode = record?.errcode;
+  const sqlitePrimaryCode =
+    typeof errcode === "number" && Number.isInteger(errcode)
+      ? errcode & 0xff
+      : undefined;
   return (
-    typeof code === "string" &&
-    (code.startsWith("SQLITE_BUSY") || code.startsWith("SQLITE_LOCKED"))
+    (typeof code === "string" &&
+      (code.startsWith("SQLITE_BUSY") || code.startsWith("SQLITE_LOCKED"))) ||
+    sqlitePrimaryCode === 5 ||
+    sqlitePrimaryCode === 6
   );
 }
 

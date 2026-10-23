@@ -22,7 +22,7 @@ type Config = {
 
 /** Corpus-only adapter. Production store entry points never import this module. */
 export function artifactApi(
-  backend: "memory" | "sqlite",
+  backend: "memory" | "sqlite" | "node-sqlite",
   store: SyncStore
 ): Record<string, unknown> {
   let clock = 1_000;
