@@ -9,6 +9,7 @@ overrides:
   nanoid@>=3 <3.3.18: 3.3.20
   fast-uri@>=3 <3.1.8: 3.1.9
   source-map-js@<1.2.2: 1.2.2
+  zod@>=4 <4.6.6: 4.6.7
 
 importers:
 
@@ -1721,8 +1722,8 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
-  zod@4.1.11:
-    resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -2227,7 +2228,7 @@ snapshots:
   '@vercel/cli-config@0.3.1':
     dependencies:
       xdg-app-paths: 5.5.1
-      zod: 4.1.11
+      zod: 4.6.7
 
   '@vercel/cli-exec@1.0.1':
     dependencies:
@@ -2970,4 +2971,4 @@ snapshots:
 
   yaml@2.9.0: {}
 
-  zod@4.1.11: {}
+  zod@4.6.7: {}
