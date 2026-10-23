@@ -83,13 +83,13 @@ for (const [name, open] of stores) {
 }
 
 describe("ArtifactMaintenance namespace", () => {
-  it("plans deletions only inside its namespace and leaves everything else alone", async () => {
+  it("by default plans deletions only inside the coordinator's namespace", async () => {
     const objects = new InMemoryObjectStore();
     const repository = new InMemoryArtifactRepository();
     await objects.put("artifacts/orphan", text("orphan"));
     await objects.put("other-app/upload", text("not ours"));
     await objects.put("artifacts-archive/old", text("not ours either"));
-    const maintenance = new ArtifactMaintenance(objects, repository, { namespace: "artifacts" });
+    const maintenance = new ArtifactMaintenance(objects, repository);
     const report = await maintenance.audit();
     expect(report.findings.map((finding) => finding.code)).toEqual(["object-without-record"]);
     const plan = await maintenance.planRepair(report);
@@ -98,5 +98,14 @@ describe("ArtifactMaintenance namespace", () => {
     expect(await objects.head("artifacts/orphan")).toBeUndefined();
     expect(await read(objects, "other-app/upload")).toBe("not ours");
     expect(await read(objects, "artifacts-archive/old")).toBe("not ours either");
+  });
+
+  it("audits the whole store only when namespace is null", async () => {
+    const objects = new InMemoryObjectStore();
+    await objects.put("artifacts/orphan", text("orphan"));
+    await objects.put("other-app/upload", text("not ours"));
+    const maintenance = new ArtifactMaintenance(objects, new InMemoryArtifactRepository(), { namespace: null });
+    const report = await maintenance.audit();
+    expect(report.findings.map((finding) => finding.code)).toEqual(["object-without-record", "object-without-record"]);
   });
 });

@@ -311,7 +311,7 @@ describe("VercelBlobObjectStore", () => {
     expect((await objects.list()).map((info) => info.key)).toEqual(["artifacts/orphan", "imports/elsewhere"]);
     expect(await objects.head("other-app/upload")).toBeUndefined();
 
-    const maintenance = new ArtifactMaintenance(objects, new InMemoryArtifactRepository(), { namespace: "artifacts" });
+    const maintenance = new ArtifactMaintenance(objects, new InMemoryArtifactRepository());
     const plan = await maintenance.planRepair(await maintenance.audit());
     expect(plan.actions.map((action) => action.operation)).toEqual(["delete-unreferenced-object"]);
     await maintenance.applyRepair(plan);

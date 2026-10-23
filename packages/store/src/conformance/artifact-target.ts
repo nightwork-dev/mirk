@@ -56,6 +56,7 @@ export function artifactApi(
       concurrency: config.concurrency ?? { mode: "repository-atomic" },
     });
     maintenance = new ArtifactMaintenance(objects, repository, {
+      namespace: config.namespace ?? "artifacts",
       now,
       ownerId: "conformance-maintenance",
       auditIdFactory: () => `audit-${++audit}`,
