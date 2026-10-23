@@ -69,10 +69,45 @@ async function settledWithin<T>(
   promise: Promise<T>,
   ms: number
 ): Promise<"pending" | "settled"> {
-  const timeout = new Promise<"pending">((resolve) =>
-    setTimeout(() => resolve("pending"), ms)
-  );
-  return Promise.race([promise.then(() => "settled" as const, () => "settled" as const), timeout]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"pending">((resolve) => {
+    timer = setTimeout(() => resolve("pending"), ms);
+  });
+  try {
+    return await Promise.race([
+      promise.then(() => "settled" as const, () => "settled" as const),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Run `call` after `depth` chained microtasks, without awaiting it. */
+function afterMicrotasks<T>(depth: number, call: () => Promise<T>): Promise<T> {
+  let chain: Promise<void> = Promise.resolve();
+  for (let step = 0; step < depth; step += 1) chain = chain.then(() => undefined);
+  return chain.then(call);
+}
+
+type Leak = { key: string; outcome: Promise<{ ok: true } | { ok: false; message: string }> };
+
+/** Start un-awaited writes at increasing microtask depths, so some land while
+ *  the transaction is finishing. */
+function leakWrites(handle: TransactionContractHandle, prefix: string): Leak[] {
+  return Array.from({ length: 12 }, (_, depth) => {
+    const key = `${prefix}-${depth}`;
+    return {
+      key,
+      outcome: afterMicrotasks(depth, () => handle.kv.set(key, depth)).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({
+          ok: false as const,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      ),
+    };
+  });
 }
 
 export function asyncTransactionContract(
@@ -371,6 +406,61 @@ export function asyncTransactionContract(
           });
           expect(await second.kv.get("parent")).toBe(2);
           expect(await second.kv.get("child")).toBeNull();
+        }));
+
+      it("commits or refuses a write started without await, never runs it outside", () =>
+        withDatabase(async ({ first, second }) => {
+          let leaks: Leak[] = [];
+          await first.transaction(() => {
+            leaks = leakWrites(first, "committed");
+          });
+          for (const leak of leaks) {
+            const outcome = await leak.outcome;
+            if (outcome.ok) {
+              expect(await second.kv.get(leak.key), leak.key).not.toBeNull();
+            } else {
+              expect(outcome.message, leak.key).toContain("transaction has ended");
+              expect(await second.kv.get(leak.key), leak.key).toBeNull();
+            }
+          }
+        }));
+
+      it("rolls back or refuses a write started without await in a failed transaction", () =>
+        withDatabase(async ({ first, second }) => {
+          let leaks: Leak[] = [];
+          await expect(
+            first.transaction(() => {
+              leaks = leakWrites(first, "rolled-back");
+              throw new Error("rollback");
+            })
+          ).rejects.toThrow("rollback");
+          for (const leak of leaks) {
+            const outcome = await leak.outcome;
+            if (!outcome.ok) expect(outcome.message, leak.key).toContain("transaction has ended");
+            expect(await second.kv.get(leak.key), leak.key).toBeNull();
+          }
+        }));
+
+      it("absorbs the failure of a nested transaction nobody awaited", () =>
+        withDatabase(async ({ first, second }) => {
+          const unhandled: unknown[] = [];
+          const record = (reason: unknown) => unhandled.push(reason);
+          process.on("unhandledRejection", record);
+          try {
+            await first.transaction(async () => {
+              await first.kv.set("outer", 1);
+              void first.transaction(async () => {
+                await first.kv.set("orphan", 1);
+                throw new Error("nested nobody awaited");
+              });
+            });
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          } finally {
+            process.off("unhandledRejection", record);
+          }
+          expect(unhandled).toEqual([]);
+          expect(await second.kv.get("outer")).toBe(1);
+          expect(await second.kv.get("orphan")).toBeNull();
         }));
 
       it("rejects store calls from work that outlived its transaction", () =>

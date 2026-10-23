@@ -147,8 +147,8 @@ and values are always bound query parameters; they never become SQL identifiers 
 ### Atomic writes and versions
 
 `postgres.kv` implements `AsyncAtomicMutationStore`. Version tokens read `<identity>-v<n>`, where
-`identity` is the `versionIdentity` option recorded when the schema is first provisioned (a random
-UUID by default) and `n` comes from a per-schema PostgreSQL sequence. Every `set` and `put`, plain
+`identity` is a random UUID recorded when the schema is first provisioned and `n` comes from a
+per-schema PostgreSQL sequence. Every `set` and `put`, plain
 or atomic, takes the next number; `delete`, `remove`, and a conflict take none. A rolled-back
 write keeps its number, so no later write can reissue a token a caller already saw. Treat tokens
 as opaque.
@@ -156,7 +156,9 @@ as opaque.
 Idempotency receipts are durable rows. They survive other writes to the same target and adapter
 restarts, so a retried request with the same key replays the first result. A connection failure
 while a standalone `mutateAtomically` commits leaves the outcome unknown; the call throws
-`AtomicMutationIndeterminateError`, and retrying with the same idempotency key is safe.
+`AtomicMutationIndeterminateError`, and retrying with the same idempotency key is safe. A failure
+before COMMIT was sent, such as a connection that could not be opened, is reported as the
+underlying error: nothing was applied.
 
 ### Transactions
 

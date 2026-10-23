@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compareExpect } from "../../store/src/conformance/compare.js";
 import { executeStep, targetKindFor } from "../../store/src/conformance/runner.js";
 import type { Scenario } from "../../store/src/conformance/format.js";
-import { PostgresAdapter } from "./postgres-adapter.js";
+import { PostgresAdapter, type PostgresAdapterTestOptions } from "./postgres-adapter.js";
 
 const connectionString = process.env.MIRK_POSTGRES_TEST_URL;
 const describePostgres = connectionString ? describe : describe.skip;
@@ -81,7 +81,8 @@ describePostgres("PostgreSQL replays the store conformance corpus", () => {
       expect(targetKindFor(scenario.ports)).toBe("store");
       const schema = `mirk_conformance_${randomUUID().replaceAll("-", "")}`;
       schemas.push(schema);
-      const adapter = await PostgresAdapter.open({ pool, schema, versionIdentity: "conformance" });
+      const options: PostgresAdapterTestOptions = { pool, schema, versionIdentity: "conformance" };
+      const adapter = await PostgresAdapter.open(options);
       const store = adapter.kv as unknown as Record<string, (...args: unknown[]) => unknown>;
       const api = Object.fromEntries(METHODS.map((name) => [name, store[name]!.bind(store)]));
       try {
