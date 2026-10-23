@@ -89,7 +89,14 @@ behavior that is outside this matrix.
 - A dotted `where` field such as `"a.b"` is one literal top-level key, never a nested path. Filters
   match JSON scalars only; `where { v: null }` matches a stored `null`, never a missing field.
 - Sorted results put `null` and missing values last, ascending and descending; `0` is a value and
-  sorts before `null`.
+  sorts before `null`. String values sort by Unicode code point, and equal values keep their input
+  order.
+- `offset` and `limit` apply after sorting. Fractional values truncate toward zero, a negative
+  offset has no effect, and a negative limit returns no rows.
+
+Adapters that filter collection rows in their backend can use
+`sortAndPageStoreItems(items, filter)` from `@mirk/store/kv` to apply the same local sort and
+pagination rules.
 
 ## Optional atomic mutation
 

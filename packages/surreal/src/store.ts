@@ -1,4 +1,5 @@
 import { compareCodePoints } from "@mirk/store";
+import { sortAndPageStoreItems } from "@mirk/store/kv";
 import type { AsyncStore, AsyncStoreInQuery, StoreFilter, StoreMeta } from "@mirk/store/kv";
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
@@ -84,7 +85,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
   async list<T>(collection: string, filter?: StoreFilter): Promise<T[]> {
     const table = await this.ensureCollection(collection);
     const rows = await this.selectFiltered<T>(table, filter);
-    return applySortLimitOffset(rows, filter);
+    return sortAndPageStoreItems(rows, filter);
   }
 
   async listWhereIn<T>(
@@ -104,7 +105,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
         ...query.bindings,
       }),
     );
-    return applySortLimitOffset(rows, filter);
+    return sortAndPageStoreItems(rows, filter);
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {
@@ -213,40 +214,4 @@ function buildWhereClauses(
     clause: clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`,
     bindings,
   };
-}
-
-function applySortLimitOffset<T>(items: T[], filter?: StoreFilter): T[] {
-  let result = items;
-  if (filter?.sortBy !== undefined) {
-    const field = filter.sortBy;
-    const dir = filter.sortDir === "desc" ? -1 : 1;
-    result = [...result].sort((a, b) => {
-      const aHas = hasOwn(a, field);
-      const bHas = hasOwn(b, field);
-      const aVal = aHas ? (a as Record<string, unknown>)[field] : undefined;
-      const bVal = bHas ? (b as Record<string, unknown>)[field] : undefined;
-      const aMissing = !aHas || aVal === null;
-      const bMissing = !bHas || bVal === null;
-      if (aMissing && bMissing) return 0;
-      if (aMissing) return 1;
-      if (bMissing) return -1;
-      if (aVal === bVal) return 0;
-      return comparePresentValues(aVal, bVal) * dir;
-    });
-  }
-  if (filter?.offset !== undefined && filter.offset > 0) {
-    result = result.slice(filter.offset);
-  }
-  if (filter?.limit !== undefined && filter.limit >= 0) {
-    result = result.slice(0, filter.limit);
-  }
-  return result;
-}
-
-function comparePresentValues(a: unknown, b: unknown): number {
-  return (a as any) < (b as any) ? -1 : 1;
-}
-
-function hasOwn(value: unknown, field: string): boolean {
-  return typeof value === "object" && value !== null && Object.hasOwn(value, field);
 }

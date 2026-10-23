@@ -133,6 +133,9 @@ Collection names are encoded into deterministic safe Surreal table names, so nam
 `foo-bar` and `foo_bar` do not alias. Filter and sort field names are treated as literal top-level
 object keys; dotted names are not interpreted as paths. The adapter stores user records under a data
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
+Collection sorting follows Mirk's rules: strings use Unicode code-point order, null and missing
+values stay last in both directions, and pagination applies after sorting. A negative limit returns
+no rows.
 
 Vector, graph, search, and object-storage subpaths are separate adapter entry points and are not
 re-exported from the root. The store adapter does not implement `@mirk/store/atomic` mutation.
