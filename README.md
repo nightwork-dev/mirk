@@ -121,7 +121,9 @@ npm install @mirk/store
 npm install better-sqlite3
 ```
 
-ESM-only. Node ≥ 20.
+ESM-only. Use a patched supported Node release: 22.23.4+, 24.22.1+, or 26.12.1+.
+The built-in SQLite adapter requires Node 24+.
+Embedded runtimes, including Electron, need their own security updates.
 
 For a remote or embedded async SurrealDB source, install `@mirk/surreal` and compose only the
 adapter subpaths you need over one `SurrealConnection`. See its

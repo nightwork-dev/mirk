@@ -42,6 +42,8 @@ const NATIVE_DEPENDENCY_NAMES = new Set([
   "sqlite-vec",
   "@surrealdb/node",
   "@surrealdb/wasm",
+  "@surrealdb/node-native",
+  "@surrealdb/wasm-native",
   "opendal",
   "pg",
   "@libsql/client",
@@ -1041,6 +1043,11 @@ async function cleanConsumerSmoke({
 }
 
 function exportUsesDependency(manifest, key, extracted, dependency) {
+  const plugin = {
+    "@surrealdb/node-native": "@surrealdb/node",
+    "@surrealdb/wasm-native": "@surrealdb/wasm",
+  }[dependency];
+  if (plugin && exportUsesDependency(manifest, key, extracted, plugin)) return true;
   if (key.includes("*")) return false;
   const target = exportTarget(manifest.exports[key]);
   if (!target || !target.startsWith("./")) return false;

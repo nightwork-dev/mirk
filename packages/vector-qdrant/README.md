@@ -8,7 +8,7 @@ Qdrant collection for each adapter instance:
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { QdrantVectorStore } from "@mirk/vector-qdrant";
 
-const client = new QdrantClient({ url: "http://127.0.0.1:6333" });
+const client = new QdrantClient({ url: "https://qdrant.example.com" });
 const vectors = await QdrantVectorStore.open(client, {
   collectionName: "my_app_vectors",
   dimensions: 3,
@@ -42,10 +42,24 @@ set even when `topK` is small.
 The Qdrant client is an optional peer dependency. Install a compatible
 `@qdrant/js-client-rest` version (`^1.19.0`) and pass the configured client to `open`.
 
-SDK `1.19.0` pins Undici `7.29.0`. Hosts using that SDK version should override
-Undici to `7.29.1`, which includes the [published security fixes](https://github.com/nodejs/undici/releases/tag/v7.29.1).
+SDK `1.19.0` pins Undici `7.29.0`; SDK `1.20.0` pins `7.29.1`.
+Hosts using either SDK must override Undici to `7.30.1` or later for the
+[published security fixes](https://github.com/nodejs/undici/releases/tag/v7.30.1).
+The Mirk workspace override does not apply to consumer installations.
 For pnpm, add this to the host's `package.json`:
 
 ```json
-{"pnpm":{"overrides":{"@qdrant/js-client-rest>undici":"7.29.1"}}}
+{"pnpm":{"overrides":{"@qdrant/js-client-rest>undici":"7.30.1"}}}
+```
+
+For npm, use a nested override:
+
+```json
+{"overrides":{"@qdrant/js-client-rest":{"undici":"^7.30.1"}}}
+```
+
+For Yarn, use a resolution:
+
+```json
+{"resolutions":{"@qdrant/js-client-rest/undici":"^7.30.1"}}
 ```

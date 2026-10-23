@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { playwright } from "@vitest/browser-playwright";
 import { existsSync } from "node:fs";
 import { chromium } from "playwright";
 
@@ -11,11 +12,12 @@ export default defineConfig({
     browser: {
       enabled: true,
       headless: true,
-      provider: "playwright",
+      provider: playwright({
+        launchOptions: useLocalChrome ? { executablePath: localChrome } : {},
+      }),
       instances: [
         {
           browser: "chromium",
-          launch: useLocalChrome ? { executablePath: localChrome } : {},
         },
       ],
     },

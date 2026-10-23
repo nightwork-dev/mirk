@@ -5,6 +5,9 @@
 # from the checkout instead of an index, and so all members share one lockfile
 # and one environment.
 
+[tool.uv]
+required-version = ">=0.13.5"
+
 [tool.uv.workspace]
 members = ["store", "fixtures", "artifact", "store-markdown", "artifact-opendal", "vector-qdrant"]
 

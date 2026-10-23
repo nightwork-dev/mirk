@@ -8,6 +8,8 @@ const mode = process.argv[2];
 const directory = process.argv[3];
 
 if (mode === "write" || mode === "read") {
+  const { engineVersion } = await import("@surrealdb/node");
+  if (engineVersion() !== "3.3.4") throw new Error(`unexpected SurrealDB Node engine: ${engineVersion()}`);
   const { createNodeSurrealConnection } = await import("../dist/node.js");
   const { SurrealStoreAdapter } = await import("../dist/store.js");
   const connection = await createNodeSurrealConnection({

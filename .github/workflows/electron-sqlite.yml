@@ -32,7 +32,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 9.15.4
+          version: 10.34.7
 
       - uses: actions/setup-node@v7
         with:
@@ -52,6 +52,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/mirk-electron"
           pnpm add --dir "$RUNNER_TEMP/mirk-electron" --save-dev electron@45.0.0
+          node "$RUNNER_TEMP/mirk-electron/node_modules/electron/install.js"
 
       - name: Run Electron main-process SQLite acceptance
         env:

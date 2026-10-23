@@ -28,6 +28,16 @@ npm install @mirk/store-libsql
 
 `@libsql/client` and `@mirk/store` are regular dependencies — nothing else to add.
 
+## Native SQLite security scope
+
+The local libSQL engine currently lacks published SQLite FTS5 and WAL fixes.
+The latest stable libSQL native release also lacks these fixes; an SDK upgrade alone does not resolve them.
+See the [upstream report](https://github.com/tursodatabase/libsql/issues/2271) and
+[SQLite release notes](https://sqlite.org/releaselog/3_53_2.html).
+For local storage, use `@mirk/store/node-sqlite` or the better-sqlite3 13 adapter.
+Existing libSQL vector tables require a separate migration before switching adapters.
+Remote server operators remain responsible for their server's SQLite build.
+
 ## Usage
 
 ```ts
