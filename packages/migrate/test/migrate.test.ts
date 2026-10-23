@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TextDecoder, TextEncoder } from "node:util";
 import { InMemoryObjectStore } from "@mirk/artifact";
 import type { ByteStream } from "@mirk/artifact";
 import {
