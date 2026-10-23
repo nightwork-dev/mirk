@@ -225,7 +225,10 @@ local file, adapters in one process take turns before they begin; when another p
 file's lock, the adapter retries until `busyTimeoutMs`.
 
 **What it costs.** One writer per database at a time, for every host. A remote write is several
-round trips (begin, statements, commit), and every other writer waits for all of them. That suits
+round trips (begin, statements, commit), and every other writer waits for all of them. A
+`mutateAtomically` call costs the same number of round trips whatever its size: begin, at most
+three batches (receipt and table lookup, condition reads, writes), and commit. The first write to
+a collection the database has never held adds the round trips that create its table. That suits
 low write volume, such as a few users and scheduled jobs. Stores that share a database through
 `tablePrefix` also share its write lock; put independent high-volume data in separate databases.
 

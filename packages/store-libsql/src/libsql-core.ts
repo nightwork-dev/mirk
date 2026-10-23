@@ -815,6 +815,33 @@ function versionKey(target: StoreTarget): VersionKey {
   return target.kind === "key" ? ["key", "", target.key] : ["record", target.collection, target.id];
 }
 
+function versionedRow(rs: ResultSet): { value: string; version: StoreVersion | null } | null {
+  const row = rs.rows[0];
+  if (!row) return null;
+  return {
+    value: row.value as string,
+    version: row.version === null || row.version === undefined ? null : (row.version as StoreVersion),
+  };
+}
+
+function receiptRow(rs: ResultSet): { requestDigest: string; result: AtomicCompletedMutationResult } | null {
+  const row = rs.rows[0];
+  if (!row) return null;
+  return {
+    requestDigest: row.request_digest as string,
+    result: JSON.parse(row.result_json as string) as AtomicCompletedMutationResult,
+  };
+}
+
+function collectionTableDdl(table: string): string {
+  return `CREATE TABLE IF NOT EXISTS ${table} (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`;
+}
+
 class LibsqlKvFacet implements LibsqlKvStore {
   readonly meta: StoreMeta = { backend: "libsql" };
   private readonly initializedTables = new Map<string, string>();
@@ -899,17 +926,43 @@ class LibsqlKvFacet implements LibsqlKvStore {
     if (cached !== undefined) return cached;
     return this.write(async () => {
       const table = await runTableResolution(this.db, this.names, COLLECTION_TABLE_KIND, collection, true);
-      await this.db.execute(
-        `CREATE TABLE IF NOT EXISTS ${table} (
-          id TEXT PRIMARY KEY,
-          data TEXT NOT NULL,
-          created_at TEXT DEFAULT (datetime('now')),
-          updated_at TEXT DEFAULT (datetime('now'))
-        )`,
-      );
+      await this.db.execute(collectionTableDdl(table));
       this.db.transactions.afterCommit(() => this.initializedTables.set(collection, table));
       return table;
     });
+  }
+
+  /** The tables of `collections` for one atomic request. Tables this adapter
+   *  has not committed yet are looked up together in the registry, and
+   *  `ensure` holds the statements that make sure they exist; ones the
+   *  registry does not hold yet are created now. */
+  private async atomicTables(
+    collections: ReadonlySet<string>,
+    registered: ResultSet | undefined,
+  ): Promise<{ tables: Map<string, string>; ensure: InStatement[] }> {
+    const tables = new Map<string, string>();
+    const ensure: InStatement[] = [];
+    for (const row of registered?.rows ?? []) {
+      const collection = row.name as string;
+      const table = row.table_name as string;
+      tables.set(collection, table);
+      ensure.push(collectionTableDdl(table));
+      this.db.transactions.afterCommit(() => this.initializedTables.set(collection, table));
+    }
+    for (const collection of collections) {
+      if (tables.has(collection)) continue;
+      tables.set(collection, this.initializedTables.get(collection) ?? (await this.ensureTable(collection)));
+    }
+    return { tables, ensure };
+  }
+
+  private registeredTablesStatement(collections: string[]): InStatement {
+    return {
+      sql: this.names.registrySql(
+        "SELECT name, table_name FROM _mirk_tables WHERE kind = ? AND name IN (SELECT value FROM json_each(?))",
+      ),
+      args: [COLLECTION_TABLE_KIND, JSON.stringify(collections)],
+    };
   }
 
   /** Every write runs in a write transaction: its own, or a savepoint of the
@@ -1039,19 +1092,44 @@ class LibsqlKvFacet implements LibsqlKvStore {
     }
   }
 
+  /** Decides and applies one atomic request in a fixed number of round trips,
+   *  whatever its size: at most one batch reads the receipt and looks up
+   *  tables, one reads every condition target, and one writes every
+   *  operation, its version token and the receipt. The open write transaction
+   *  holds the database's write lock throughout, so the state the conditions
+   *  read is the state the writes apply to. */
   private async decideAtomic(validated: ReturnType<typeof validateAtomicRequest>): Promise<AtomicMutationResult> {
+    const n = this.names;
     const key = validated.idempotency?.key;
     const now = key === undefined ? null : this.clock();
+
+    const collections = new Set<string>();
+    for (const { target } of validated.conditions) {
+      if (target.kind === "record") collections.add(target.collection);
+    }
+    for (const operation of validated.operations) {
+      if (operation.op === "put" || operation.op === "remove") collections.add(operation.collection);
+    }
+    const unresolved = [...collections].filter((collection) => !this.initializedTables.has(collection));
+
+    // Round trip 1, when there is a receipt or a table to look up.
+    const reads: InStatement[] = [];
+    if (key !== undefined) reads.push(...this.pruneReceiptStatements(now));
+    const receiptAt = key === undefined ? -1 : reads.push(this.readReceiptStatement(key, now)) - 1;
+    // The receipt is written in the same round trip as the version tokens it
+    // records, so it needs the sequence they are issued from.
+    const sequenceAt = key === undefined ? -1 : reads.push(`SELECT value FROM ${n.sequence} WHERE id = 1`) - 1;
+    const registryAt = unresolved.length === 0 ? -1 : reads.push(this.registeredTablesStatement(unresolved)) - 1;
+    const first = reads.length === 0 ? [] : await this.db.inTransaction((open) => guard(open.batch(reads)));
+
     if (key !== undefined) {
-      await this.pruneReceiptBatch(now);
-      const prior = await this.readReceipt(key, now);
+      const prior = receiptRow(first[receiptAt]!);
       if (prior) {
-        const priorDigest = prior.requestDigest;
-        if (priorDigest !== validated.requestDigest) {
+        if (prior.requestDigest !== validated.requestDigest) {
           return {
             status: "idempotency-conflict",
             key,
-            expectedRequestDigest: priorDigest,
+            expectedRequestDigest: prior.requestDigest,
             receivedRequestDigest: validated.requestDigest,
           };
         }
@@ -1065,55 +1143,108 @@ class LibsqlKvFacet implements LibsqlKvStore {
       }
     }
 
-    for (const condition of validated.conditions) {
-      const observed = await this.getVersioned(condition.target);
-      const matches = condition.expected === "missing"
-        ? observed === null
-        : condition.expected === "present"
-          ? observed !== null
-          : observed?.version === condition.version;
-      if (!matches) {
-        return {
-          status: "conflict",
-          condition,
-          observed: observed === null ? "missing" : condition.expected === "version" ? observed.version : "present",
-        };
+    const { tables, ensure } = await this.atomicTables(collections, registryAt < 0 ? undefined : first[registryAt]);
+    const tableOf = (collection: string) => tables.get(collection)!;
+
+    // Round trip 2, when there are conditions: every target at once.
+    if (validated.conditions.length > 0) {
+      const checks = [
+        ...ensure.splice(0),
+        ...validated.conditions.map(({ target }) =>
+          this.readVersionedStatement(target, target.kind === "record" ? tableOf(target.collection) : "")),
+      ];
+      const observed = (await this.db.inTransaction((open) => guard(open.batch(checks))))
+        .slice(checks.length - validated.conditions.length);
+      for (const [index, condition] of validated.conditions.entries()) {
+        const row = versionedRow(observed[index]!);
+        const matches = condition.expected === "missing"
+          ? row === null
+          : condition.expected === "present"
+            ? row !== null
+            : row?.version === condition.version;
+        if (matches) continue;
+        let reported: StoreVersion | "missing" | "present" = row === null ? "missing" : "present";
+        if (row !== null && condition.expected === "version") {
+          // A row written before this adapter issued version tokens gets one now.
+          reported = row.version ?? (await this.backfillVersion(condition.target))?.version ?? "missing";
+        }
+        return { status: "conflict", condition, observed: reported };
       }
     }
 
-    const versions: { target: StoreTarget; version: StoreVersion | null }[] = [];
+    // Round trip 3: every write, one sequence step for all the version tokens,
+    // and the receipt. Token j of m is the sequence's new value minus m - j.
+    const issuing = validated.operations.filter((operation) => operation.op === "set" || operation.op === "put").length;
+    const writes: InStatement[] = [...ensure];
+    const sequenceAt2 = issuing === 0 ? -1 : writes.push({
+      sql: `UPDATE ${n.sequence} SET value = value + CAST(? AS INTEGER) WHERE id = 1 RETURNING value`,
+      args: [issuing],
+    }) - 1;
+    const targets: { target: StoreTarget; issued: number | null }[] = [];
+    let issued = 0;
     for (const operation of validated.operations) {
+      let target: StoreTarget;
       switch (operation.op) {
         case "set":
-          versions.push({
-            target: { kind: "key", key: operation.key },
-            version: await this.writeKey(operation.key, JSON.stringify(operation.value)),
-          });
+          target = { kind: "key", key: operation.key };
+          writes.push(this.upsertKeyStatement(operation.key, JSON.stringify(operation.value)));
           break;
         case "delete":
-          await this.deleteKey(operation.key);
-          versions.push({ target: { kind: "key", key: operation.key }, version: null });
+          target = { kind: "key", key: operation.key };
+          writes.push({ sql: `DELETE FROM ${n.kv} WHERE key = ?`, args: [operation.key] });
           break;
         case "put":
-          versions.push({
-            target: { kind: "record", collection: operation.collection, id: operation.item.id },
-            version: await this.writeRecord(operation.collection, operation.item.id, JSON.stringify(operation.item)),
-          });
+          target = { kind: "record", collection: operation.collection, id: operation.item.id };
+          writes.push(this.upsertRecordStatement(
+            tableOf(operation.collection),
+            operation.item.id,
+            JSON.stringify(operation.item),
+          ));
           break;
         case "remove":
-          await this.deleteRecord(operation.collection, operation.id);
-          versions.push({ target: { kind: "record", collection: operation.collection, id: operation.id }, version: null });
+          target = { kind: "record", collection: operation.collection, id: operation.id };
+          writes.push({ sql: `DELETE FROM ${tableOf(operation.collection)} WHERE id = ?`, args: [operation.id] });
           break;
       }
+      if (operation.op === "set" || operation.op === "put") {
+        issued += 1;
+        writes.push({
+          sql: `INSERT INTO ${n.versions} (kind, collection, target_key, version)
+                SELECT ?, ?, ?, ? || '-v' || (value - CAST(? AS INTEGER)) FROM ${n.sequence} WHERE id = 1
+                ON CONFLICT(kind, collection, target_key) DO UPDATE SET version = excluded.version`,
+          args: [...versionKey(target), this.versionPrefix, issuing - issued],
+        });
+        targets.push({ target, issued });
+      } else {
+        writes.push(this.clearVersion(target));
+        targets.push({ target, issued: null });
+      }
     }
-    const applied: AtomicCompletedMutationResult = {
+    const result = (last: number): AtomicCompletedMutationResult => ({
       status: "applied",
       requestDigest: validated.requestDigest,
-      versions,
+      versions: targets.map(({ target, issued }) => ({
+        target,
+        version: issued === null ? null : (`${this.versionPrefix}-v${last - issuing + issued}` as StoreVersion),
+      })),
       ...(validated.outcome === undefined ? {} : { outcome: validated.outcome }),
-    };
-    if (key !== undefined) await this.writeReceipt(key, validated.requestDigest, applied, now);
-    return applied;
+    });
+    const expected = key === undefined ? undefined : Number(first[sequenceAt]!.rows[0]!.value) + issuing;
+    if (key !== undefined) {
+      writes.push(this.writeReceiptStatement(key, validated.requestDigest, result(expected!), now));
+    }
+
+    return this.db.inTransaction(async (open) => {
+      const results = await guard(open.batch(writes));
+      if (sequenceAt2 < 0) return result(0);
+      const last = Number(results[sequenceAt2]!.rows[0]!.value);
+      open.minted = Math.max(open.minted, last);
+      if (expected !== undefined && last !== expected) {
+        // The receipt names tokens the sequence did not issue; roll back.
+        throw new Error("internal: the libSQL version sequence moved during an atomic mutation");
+      }
+      return result(last);
+    });
   }
 
   async pruneExpiredReceipts(): Promise<number> {
@@ -1127,59 +1258,48 @@ class LibsqlKvFacet implements LibsqlKvStore {
   }
 
   // ─── Idempotency receipts ──────────────────────────────────────────────────
-  // Every receipt read and write goes through these methods. `now` is the
-  // injected clock's reading, or null to use the database's clock.
+  // Every receipt read and write uses these statements. `now` is the injected
+  // clock's reading, or null to use the database's clock.
 
   private clock(): number | null {
     return this.now === undefined ? null : this.now();
   }
 
-  /** The live receipt under `key`, or null when there is none or it has
-   *  expired. */
-  private async readReceipt(
-    key: string,
-    now: number | null,
-  ): Promise<{ requestDigest: string; result: AtomicCompletedMutationResult } | null> {
+  /** Selects the live receipt under `key`; see `receiptRow`. */
+  private readReceiptStatement(key: string, now: number | null): InStatement {
     const live = this.receiptRetentionMs === undefined
       ? ""
       : ` AND (created_at IS NULL OR created_at >= ${NOW_MS_SQL} - ?)`;
-    const row = (
-      await this.db.execute({
-        sql: `SELECT request_digest, result_json FROM ${this.names.receipts} WHERE idempotency_key = ?${live}`,
-        args: this.receiptRetentionMs === undefined ? [key] : [key, now, this.receiptRetentionMs],
-      })
-    ).rows[0];
-    if (!row) return null;
     return {
-      requestDigest: row.request_digest as string,
-      result: JSON.parse(row.result_json as string) as AtomicCompletedMutationResult,
+      sql: `SELECT request_digest, result_json FROM ${this.names.receipts} WHERE idempotency_key = ?${live}`,
+      args: this.receiptRetentionMs === undefined ? [key] : [key, now, this.receiptRetentionMs],
     };
   }
 
-  /** Write a receipt, replacing an expired one under the same key. */
-  private async writeReceipt(
+  /** Writes a receipt, replacing an expired one under the same key. */
+  private writeReceiptStatement(
     key: string,
     requestDigest: string,
     result: AtomicCompletedMutationResult,
     now: number | null,
-  ): Promise<void> {
-    await this.db.execute({
+  ): InStatement {
+    return {
       sql: `INSERT INTO ${this.names.receipts} (idempotency_key, request_digest, result_json, created_at)
             VALUES (?, ?, ?, ${NOW_MS_SQL})
             ON CONFLICT(idempotency_key) DO UPDATE SET request_digest = excluded.request_digest,
               result_json = excluded.result_json, created_at = excluded.created_at`,
       args: [key, requestDigest, JSON.stringify(result), now],
-    });
+    };
   }
 
-  /** In the open transaction and one round trip, stamp at most one batch of
-   *  receipts that have no creation time with now, then delete at most one
-   *  batch of expired receipts. Returns how many were deleted. */
-  private async pruneReceiptBatch(now: number | null): Promise<number> {
+  /** Stamps at most one batch of receipts that have no creation time with
+   *  now, then deletes at most one batch of expired receipts. None when
+   *  receipts are kept forever. */
+  private pruneReceiptStatements(now: number | null): InStatement[] {
     const retention = this.receiptRetentionMs;
-    if (retention === undefined) return 0;
+    if (retention === undefined) return [];
     const table = this.names.receipts;
-    const [, deleted] = await this.db.inTransaction((open) => guard(open.batch([
+    return [
       {
         sql: `UPDATE ${table} SET created_at = ${NOW_MS_SQL} WHERE idempotency_key IN (
                 SELECT idempotency_key FROM ${table} WHERE created_at IS NULL LIMIT ?)`,
@@ -1191,38 +1311,44 @@ class LibsqlKvFacet implements LibsqlKvStore {
                 ORDER BY created_at LIMIT ?)`,
         args: [now, retention, RECEIPT_PRUNE_BATCH],
       },
-    ])));
+    ];
+  }
+
+  /** In the open transaction and one round trip, prune one batch of
+   *  receipts. Returns how many were deleted. */
+  private async pruneReceiptBatch(now: number | null): Promise<number> {
+    const statements = this.pruneReceiptStatements(now);
+    if (statements.length === 0) return 0;
+    const [, deleted] = await this.db.inTransaction((open) => guard(open.batch(statements)));
     return deleted!.rowsAffected;
   }
 
   private async readVersioned(target: StoreTarget): Promise<{ value: string; version: StoreVersion | null } | null> {
+    const table = target.kind === "record" ? await this.ensureTable(target.collection) : "";
+    return versionedRow(await this.db.execute(this.readVersionedStatement(target, table)));
+  }
+
+  /** Selects `target`'s value and version token; `table` is its collection's
+   *  table. See `versionedRow`. */
+  private readVersionedStatement(target: StoreTarget, table: string): InStatement {
     const n = this.names;
-    let rs: ResultSet;
     if (target.kind === "key") {
-      rs = await this.db.execute({
+      return {
         sql: `SELECT k.value AS value, v.version AS version
               FROM ${n.kv} AS k
               LEFT JOIN ${n.versions} AS v
                 ON v.kind = 'key' AND v.collection = '' AND v.target_key = k.key
               WHERE k.key = ?`,
         args: [target.key],
-      });
-    } else {
-      const table = await this.ensureTable(target.collection);
-      rs = await this.db.execute({
-        sql: `SELECT c.data AS value, v.version AS version
-              FROM ${table} AS c
-              LEFT JOIN ${n.versions} AS v
-                ON v.kind = 'record' AND v.collection = ? AND v.target_key = c.id
-              WHERE c.id = ?`,
-        args: [target.collection, target.id],
-      });
+      };
     }
-    const row = rs.rows[0];
-    if (!row) return null;
     return {
-      value: row.value as string,
-      version: row.version === null || row.version === undefined ? null : (row.version as StoreVersion),
+      sql: `SELECT c.data AS value, v.version AS version
+            FROM ${table} AS c
+            LEFT JOIN ${n.versions} AS v
+              ON v.kind = 'record' AND v.collection = ? AND v.target_key = c.id
+            WHERE c.id = ?`,
+      args: [target.collection, target.id],
     };
   }
 
@@ -1254,21 +1380,29 @@ class LibsqlKvFacet implements LibsqlKvStore {
     };
   }
 
-  private writeKey(key: string, encoded: string): Promise<StoreVersion> {
-    return this.mint({ kind: "key", key }, [{
+  private upsertKeyStatement(key: string, encoded: string): InStatement {
+    return {
       sql: `INSERT INTO ${this.names.kv} (key, value, updated_at) VALUES (?, ?, datetime('now'))
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
       args: [key, encoded],
-    }]);
+    };
+  }
+
+  private upsertRecordStatement(table: string, id: string, encoded: string): InStatement {
+    return {
+      sql: `INSERT INTO ${table} (id, data, updated_at) VALUES (?, ?, datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')`,
+      args: [id, encoded],
+    };
+  }
+
+  private writeKey(key: string, encoded: string): Promise<StoreVersion> {
+    return this.mint({ kind: "key", key }, [this.upsertKeyStatement(key, encoded)]);
   }
 
   private async writeRecord(collection: string, id: string, encoded: string): Promise<StoreVersion> {
     const table = await this.ensureTable(collection);
-    return this.mint({ kind: "record", collection, id }, [{
-      sql: `INSERT INTO ${table} (id, data, updated_at) VALUES (?, ?, datetime('now'))
-            ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')`,
-      args: [id, encoded],
-    }]);
+    return this.mint({ kind: "record", collection, id }, [this.upsertRecordStatement(table, id, encoded)]);
   }
 
   private async deleteKey(key: string): Promise<boolean> {
