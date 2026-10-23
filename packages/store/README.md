@@ -33,7 +33,7 @@ The `/sqlite` adapter accepts better-sqlite3 11, 12, or 13 as its optional peer.
 | `@mirk/store/coordination` | SQLite-backed async keyed coordinator with leases, renewal, fencing generations, and ownership-loss checks                                       | `better-sqlite3` (peer)                               |
 | `@mirk/store/encrypted`    | WebCrypto AES-256-GCM encrypted record envelopes for caller-owned vault keys                                                                      | none                                                  |
 | `@mirk/store/sqlite`       | the SQLite **source adapter** — one connection, `.kv` + `.vector` + `.search` facets                                                             | `better-sqlite3` (peer)                               |
-| `@mirk/store/node-sqlite`  | the Node/Electron SQLite **source adapter** — the same facets and file schema using `node:sqlite` `DatabaseSync`                                      | Node.js 24+ (`node:sqlite`)                          |
+| `@mirk/store/node-sqlite`  | the built-in Node SQLite **source adapter** — the same facets and file schema using `node:sqlite` `DatabaseSync`                                      | Node.js 24+ (`node:sqlite`)                          |
 
 Source adapters are reached **only** through their own subpath (e.g. `/sqlite` or `/node-sqlite`) — the root and the
 port subpaths never re-export them, so importing `@mirk/store`, `/kv`, `/vector`, `/search`, or
@@ -338,9 +338,8 @@ db.transaction(() => {
 db.close();
 ```
 
-For Node 24+ and Electron builds that expose `node:sqlite`, use the built-in adapter without a
-native package install. It has the same facets, transaction modes, schema, and file compatibility.
-In Electron, open the adapter in the main process and expose storage operations through IPC:
+On Node 24+, use the built-in `node:sqlite` adapter without a native package install. It has the
+same facets, transaction modes, schema, and file compatibility:
 
 ```ts
 import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
