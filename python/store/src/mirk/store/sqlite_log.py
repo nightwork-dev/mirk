@@ -13,6 +13,7 @@ import json
 import sqlite3
 from typing import Any
 
+from .atomic import AtomicMutationBackendError
 from .log import (
     LogEntry,
     LogListOptions,
@@ -55,20 +56,29 @@ class SqliteLogFacet:
             f" SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM {LOG_TABLE} WHERE stream = ?"
             " RETURNING sequence"
         )
-        if self._db.in_transaction:
-            return int(self._db.execute(statement, (stream, text, stream)).fetchone()[0])
-        self._db.execute("BEGIN IMMEDIATE")
         try:
-            sequence = int(self._db.execute(statement, (stream, text, stream)).fetchone()[0])
-        except BaseException:
-            self._db.execute("ROLLBACK")
+            if self._db.in_transaction:
+                return int(self._db.execute(statement, (stream, text, stream)).fetchone()[0])
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                sequence = int(self._db.execute(statement, (stream, text, stream)).fetchone()[0])
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+            self._db.execute("COMMIT")
+            return sequence
+        except sqlite3.OperationalError as error:
+            # Another writer held the lock past the busy timeout, or committed
+            # after a deferred transaction's first read. Nothing was appended.
+            if (error.sqlite_errorcode & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                raise AtomicMutationBackendError(
+                    "unavailable", True, "SQLite is busy or locked."
+                ) from error
             raise
-        self._db.execute("COMMIT")
-        return sequence
 
     def get(self, stream: str, sequence: int) -> LogEntry | None:
         assert_stream(stream)
-        assert_sequence(sequence)
+        sequence = assert_sequence(sequence)
         row = self._db.execute(
             f"SELECT record FROM {LOG_TABLE} WHERE stream = ? AND sequence = ?",
             (stream, sequence),

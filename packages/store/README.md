@@ -247,9 +247,40 @@ Limits:
   mark, so that a stream emptied by a trim does not restart its numbering at 1.
 - It is storage, not messaging. There is no consumer cursor, acknowledgement, delivery status, or
   wake-up. Keep a consumer's position yourself, for example as a `kv` value written in the same
-  transaction as the work it records.
+  `"immediate"` transaction as the work it records, as shown below.
 - Appends to one database are serialized by SQLite's single writer. Two connections, or two
-  processes, appending to one stream take turns and get consecutive numbers.
+  processes, that each append without reading first take turns and get consecutive numbers. A
+  transaction that reads before it appends needs `"immediate"`; see below.
+
+### Reading, then appending, in one SQLite transaction
+
+A transaction that reads the log (or anything else) and then appends must start as a writer:
+pass `"immediate"` to `transaction()`.
+
+```ts
+const appended = db.transaction(() => {
+  const cursor = db.kv.get<number>("cursor:mailer") ?? 0;
+  const batch = db.log.list("deliveries", { after: cursor, limit: 100 });
+  for (const entry of batch) db.log.append("sent", { delivery: entry.sequence });
+  db.kv.set("cursor:mailer", batch.at(-1)?.sequence ?? cursor);
+  return batch.length;
+}, "immediate");
+```
+
+The default `"deferred"` transaction starts as a reader and takes its snapshot at the first read.
+If another connection or process appends after that read, this transaction can no longer become
+the writer: its append fails at once, without waiting out `busyTimeoutMs`. `"immediate"` takes the
+write lock before the first read, so what the transaction reads is still current when it appends,
+and other writers wait for it. `asyncTransaction()` always begins `IMMEDIATE`.
+
+When an append cannot get the lock, because another writer held it past `busyTimeoutMs` or
+committed after a deferred transaction's first read, it throws `AtomicMutationBackendError` with
+code `unavailable` and `retryable: true`, from both drivers. Nothing was appended, and the
+transaction rolls back; rerun the whole transaction. The sequence stays without gaps either way.
+
+An append outside a transaction is one write statement, so it needs no mode. Inside a caller's
+transaction the log cannot choose the mode: by the time it runs, a deferred transaction has already
+taken its snapshot. `transaction()` keeps `"deferred"` as its default for all other work.
 
 The in-memory reference (`InMemoryLogStore`) and both SQLite adapters (`.log` and `.asyncLog`)
 implement the port, and so does the Python port (`mirk.store.log`, `mirk.store.sqlite_log`).
