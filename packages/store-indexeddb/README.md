@@ -1,10 +1,48 @@
 # @mirk/store-indexeddb
 
-A browser source adapter for [`@mirk/store`](../store). It implements `AsyncStore` and the optional
-`AsyncAtomicMutationStore` capability on native IndexedDB, and keeps key/value rows, collection
-records, version tokens, and idempotency receipts in one database.
+> **Mirk's records inside the browser.** Key-values and collections in IndexedDB, with atomic
+> batches that survive a reload.
 
-ESM-only. It needs a browser (or another runtime with an `indexedDB` global).
+## Why
+
+A web app that keeps its own data in the browser (drafts, settings, an offline cache) usually
+starts with `localStorage`. It is synchronous, holds only strings, and has no way to update several
+records together. Once the app needs lists, filters, or "save these three things or none of them",
+you end up writing a small database by hand on top of IndexedDB, and getting the transaction
+details right is the hard part.
+
+This adapter puts Mirk's async store on native IndexedDB. The same code that runs on a server
+store runs in the tab, and a batch of writes either all lands or none does.
+
+What you give up compared with the SQLite file in `@mirk/store`:
+
+- **It lives in one browser profile.** Clearing site data deletes it, and other devices do not see
+  it.
+- **Every call is async.**
+- **Only key-values and collections.** No vectors and no full-text search.
+- **No `listWhereIn`.**
+- **Quota is the browser's.** A full quota rejects writes with a typed error.
+
+## A first look
+
+```ts
+import { openIndexedDbAdapter } from "@mirk/store-indexeddb";
+
+const adapter = await openIndexedDbAdapter({ dbName: "my-app" });
+const store = adapter.kv;
+
+await store.set("settings", { sound: true });
+
+// Two writes that land together or not at all
+await store.mutateAtomically({
+  operations: [
+    { op: "put", collection: "items", item: { id: "one", value: 1 } },
+    { op: "put", collection: "items", item: { id: "two", value: 2 } },
+  ],
+});
+
+await adapter.close();
+```
 
 ## Install
 
@@ -12,20 +50,37 @@ ESM-only. It needs a browser (or another runtime with an `indexedDB` global).
 npm install @mirk/store-indexeddb
 ```
 
-`@mirk/store` is a regular dependency.
+`@mirk/store` is a regular dependency. The package is ESM-only. It needs a browser, or another
+runtime with an `indexedDB` global.
 
-## Usage
+## What it covers
+
+| Capability | Covered | Notes |
+| --- | --- | --- |
+| Key-values | yes | `adapter.kv` implements `AsyncStore` |
+| Collections | yes | same facet; `listWhereIn` is not implemented |
+| Vectors | no | |
+| Full-text search | no | |
+| Atomic writes | yes | `AsyncAtomicMutationStore` (`mutateAtomically`), with version tokens and idempotency receipts |
+
+### Where it differs from the reference
+
+The adapter follows the [base store contract](../store/README.md#base-store-contract) and the
+[atomic mutation contract](../store/README.md#optional-atomic-mutation). A browser test suite
+replays the shared conformance corpus (`conformance/store/**`) against it. The optional
+`listWhereIn` method is not implemented, so the scenarios that need it are not run.
+
+Beyond that:
+
+- Calls are async, and the browser can close the connection under you (see
+  [Another tab changes the database](#another-tab-changes-the-database)).
+- Writes can fail with the browser's storage quota.
+- It adds whole-store backup and restore ([below](#whole-store-backup)).
+
+## Options
 
 ```ts
-import { openIndexedDbAdapter } from "@mirk/store-indexeddb";
-
 const adapter = await openIndexedDbAdapter({ dbName: "my-app" });
-const store = adapter.kv;
-await store.set("settings", { sound: true });
-await store.mutateAtomically({
-  operations: [{ op: "put", collection: "items", item: { id: "one", value: 1 } }],
-});
-await adapter.close();
 ```
 
 | Option | Type | Notes |
@@ -35,12 +90,11 @@ await adapter.close();
 | `versionIdentity` | `string?` | Prefix for version tokens, used only when a new database mints its first token. Defaults to a random identity; an existing database keeps the identity it was created with. |
 | `indexedDB` | `IDBFactory?` | The factory to use. Defaults to `globalThis.indexedDB`. |
 
-## Contract
+One database holds key/value rows, collection records, version tokens, and idempotency receipts.
 
-The adapter follows the [base store contract](../store/README.md#base-store-contract) and the
-[atomic mutation contract](../store/README.md#optional-atomic-mutation). A browser test suite
-replays the shared conformance corpus (`conformance/store/**`) against it. The optional
-`listWhereIn` method is not implemented, so the scenarios that need it are not run.
+## Reference
+
+### Behaviour
 
 - Every write (`set`, `put`, and each operation of an applied batch) issues a fresh version token.
   `delete` and `remove` clear the token. A version read before a write no longer satisfies a
@@ -57,7 +111,7 @@ replays the shared conformance corpus (`conformance/store/**`) against it. The o
 Opening a database created by an earlier release of this package upgrades it to schema version 2
 and issues version tokens for keys that had none.
 
-## Another tab changes the database
+### Another tab changes the database
 
 When another connection upgrades or deletes the database, the adapter closes its connection so that
 the other connection is not blocked. Every later call on the adapter rejects with an
@@ -69,7 +123,7 @@ If another connection holds the database open and does not close it, `openIndexe
 with code `blocked` instead of waiting. A connection that opens after the rejection is closed at
 once.
 
-## Errors
+### Errors
 
 Every error class has a stable `code`.
 
@@ -93,7 +147,7 @@ A value that cannot be structured-cloned rejects with `AtomicMutationBackendErro
 Invalid atomic requests throw `AtomicMutationRejectedError` before any transaction starts.
 `IndexedDbTransactionError.kind` is a deprecated alias of `code`.
 
-## Whole-store backup
+### Whole-store backup
 
 `exportState()` returns every key, record, version token, and idempotency receipt, plus the version
 and ordinal counters, as one object of plain rows. `importState(backup)` replaces the whole database with
@@ -105,7 +159,7 @@ database is not changed. Keys or records in the backup without a version row are
 The backup is a generic store format. An application that needs its own file format or profile
 identity wraps it.
 
-## Not supported
+### Not supported
 
 - `listWhereIn`.
 - Vector and search facets.

@@ -4,25 +4,41 @@
 
 # mirk
 
-> **Everything your app keeps, behind one storage layer.** Records, vectors, full-text search, and
-> the links between things, in one SQLite file today and on a bigger backend later, behind the
-> same interfaces.
+> **One place for everything your app remembers.** Settings, records, search, embeddings, the
+> links between things, authored content, and generated files. Start with a single file on disk,
+> and move to a bigger database later without rewriting your app.
 
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff) ![black october](https://img.shields.io/badge/updated%20for-Black%20October-0b0b0b)
 
 ## Why
 
-Most storage libraries answer one question: _where do I put this value?_ You get `get` and `set`,
-and the backend underneath can change. That is enough until the app needs more than lookups. It
-needs the open tasks, sorted by due date. It needs the documents closest to an embedding, the notes
-that mention "invoice", and everyone a character knows. Each of those usually brings its own
-library, its own connection, and its own rules about ordering and missing values.
+Say you are building a notes app, a game, or an AI assistant. Sooner or later it has to remember
+things: user settings, lists of tasks or saves, text people can search, embeddings for "find me
+something like this", links between people or pages, the content you write for it, and the images
+or exports it produces. Each of those usually becomes another library, another service, or another
+folder of files with its own rules.
 
-**mirk** answers a bigger question: _where does my app's data live, and will it behave the same
-when I move it?_ One SQLite file holds key-values, queryable collections, vectors, a full-text
-index, and links between records. They share one connection, so one transaction can cover all of
-them. Build and test against the in-memory version with nothing installed, then point the same
-code at a SQLite file.
+**mirk** puts all of it behind one small API. On day one it is a single SQLite file on disk, or
+plain memory in tests. When you outgrow that, you switch to Postgres, the browser, or a hosted
+database behind the same interfaces.
+
+A few ways it gets used:
+
+- **An AI assistant's memory.** Facts as records, embeddings for recall, and full-text search over
+  past conversations, saved together in one file and updated together in one transaction.
+- **A game.** Items, quests, and characters written as checked data packs, with player saves stored
+  beside them and the links between characters walked like a graph.
+- **A writing tool.** Drafts kept as Markdown files that people edit by hand, and still listed,
+  filtered, and sorted like database records.
+- **An image or export pipeline.** Every generated file stored with a checksum and a record of what
+  it was made from, so a half-written file never shows up and nothing loses its history.
+
+### Why not a simple key-value store?
+
+A key-value library answers _where do I put this value?_ That is enough until the app needs the
+open tasks sorted by due date, the notes that mention "invoice", or the documents closest to an
+embedding. mirk answers a bigger question: _where does my app's data live, and will it behave the
+same when I move it?_
 
 "Behaves the same" is tested, not assumed. About 200 shared scenarios fix the details that usually
 drift between backends. A task with no due date sorts last in both directions. Equal values keep
@@ -108,14 +124,39 @@ The in-memory and SQLite stores are the reference. The IndexedDB and Qdrant adap
 shared scenarios for what they cover. Each package README lists any place where it differs from the
 reference.
 
+## Authored data: fixtures
+
+Most apps ship data that people write rather than code: default settings, themes, templates,
+prompts, game items, content packs, test fixtures. Reading that data is easy. Trusting it is the
+hard part. [`@mirk/fixtures`](packages/fixtures) turns those files into checked records:
+
+- Each record is validated against a schema when it loads.
+- Layers stack in a fixed order, for example built-in defaults, then app overrides, then user
+  overrides. An override can change one field without copying the whole record.
+- References between records, such as a quest that names an item, are checked to exist.
+- Every value records which layer it came from, so a tool or a person can see why it has the value
+  it has.
+
+The same pack loads from a folder during development, from files bundled inside a package, or from
+a mirk store in production. A `mirk-fixtures` command-line tool validates and explains packs.
+
+## Generated files: artifacts
+
+Apps that generate files, such as images, audio, exports, or model outputs, need to know that a
+file is intact, where it came from, and that a half-written file never becomes visible.
+[`@mirk/artifact`](packages/artifact) gives each file:
+
+- a SHA-256 checksum, checked when it is stored and again whenever you ask
+- metadata and lineage: the inputs or parent files it was made from
+- an all-or-nothing finish, so readers only ever see complete files
+- cleanup that never deletes a file a writer is still finishing, and that shows its plan before it
+  deletes anything
+
+Metadata lives in a mirk store. The bytes live on disk, or on S3 and other object stores through
+[`@mirk/artifact-opendal`](packages/artifact-opendal).
+
 ## Also in the box
 
-- **Authored data** — [`@mirk/fixtures`](packages/fixtures) loads typed data packs such as
-  defaults, templates, and content. It validates them, layers overrides, and records which source
-  each value came from.
-- **Files and blobs** — [`@mirk/artifact`](packages/artifact) stores bytes with a checksum, metadata,
-  and a record of what each file was made from. [`@mirk/artifact-opendal`](packages/artifact-opendal)
-  puts those bytes on S3 or another OpenDAL backend.
 - **Moving between backends** — [`@mirk/migrate`](packages/migrate) copies data from one store to
   another and resumes where it stopped.
 - **Revision history** — [`@mirk/statements`](packages/statements) is specialized storage for hosts
