@@ -11,6 +11,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { createClient, type Client } from "@libsql/client";
 import { createClient as createWebClient } from "@libsql/client/web";
 
 import { LibsqlAdapter as NodeAdapter } from "../libsql-adapter.js";
@@ -23,6 +24,10 @@ export type ExtraOptions = Omit<LibsqlAdapterOptions, "url" | "authToken" | "cli
 /** One empty database. Every `open` is a separate adapter with its own client. */
 export interface TestDatabase {
   open(extra?: ExtraOptions): Promise<Adapter>;
+  /** The prefix of every table in this database. */
+  readonly tablePrefix: string;
+  /** A plain client on the same database, for setting up raw rows. */
+  client(): Client;
   dispose(): Promise<void>;
 }
 
@@ -45,6 +50,8 @@ export function fileTarget(): Target {
       const url = `file:${join(directory, "store.db")}`;
       const opened: Adapter[] = [];
       return {
+        tablePrefix: "",
+        client: () => createClient({ url }),
         async open(extra) {
           const adapter = await NodeAdapter.open({ url, ...extra });
           opened.push(adapter);
@@ -72,6 +79,8 @@ function prefixedTarget(
       const tablePrefix = `mirk_${runId}_${++databases}_`;
       const opened: Adapter[] = [];
       return {
+        tablePrefix,
+        client: () => createWebClient(connection()),
         async open(extra) {
           const adapter = await openAdapter({ ...connection(), tablePrefix, ...extra });
           opened.push(adapter);
