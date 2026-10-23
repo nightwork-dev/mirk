@@ -4,190 +4,153 @@
 
 # mirk
 
-> **Ports you import. Adapters you choose.** The dark foundational layer of storage — key-value, collections, vector search, full-text search, graph traversal, and authored-data fixtures as code-split primitives with no domain baked in.
+> **Everything your app keeps, behind one storage layer.** Records, vectors, full-text search, and
+> the links between things, in one SQLite file today and on a bigger backend later, behind the
+> same interfaces.
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff) ![black october](https://img.shields.io/badge/updated%20for-Black%20October-0b0b0b)
 
-## What is this?
+## Why
 
-Most apps reach for one of two things when they need to store something. A **full database** — and
-inherit a server, a daemon, an async API, and a native dependency in the client bundle they never
-asked for. Or a **pile of single-purpose libraries** — each with its own idioms, its own
-connection, repeated once per capability.
+Most storage libraries answer one question: _where do I put this value?_ You get `get` and `set`,
+and the backend underneath can change. That is enough until the app needs more than lookups. It
+needs the open tasks, sorted by due date. It needs the documents closest to an embedding, the notes
+that mention "invoice", and everyone a character knows. Each of those usually brings its own
+library, its own connection, and its own rules about ordering and missing values.
 
-**mirk** is the layer underneath both: small, typed, durable primitives with no domain
-baked in — somewhere to put key-values and collections, somewhere to put vectors, full-text search,
-graph edges, and authored fixture packs with validation/provenance. You assemble them from clean
-**interface ports** and swappable **source adapters**. Build against an in-memory reference with
-nothing installed; swap in SQLite for persistence without changing a line of your own code.
+**mirk** answers a bigger question: _where does my app's data live, and will it behave the same
+when I move it?_ One SQLite file holds key-values, queryable collections, vectors, a full-text
+index, and links between records. They share one connection, so one transaction can cover all of
+them. Build and test against the in-memory version with nothing installed, then point the same
+code at a SQLite file.
 
-A blog, a game, or an agent host can all draw from the same foundation. Packages use the
-`@mirk/*` scope.
+"Behaves the same" is tested, not assumed. About 200 shared scenarios fix the details that usually
+drift between backends. A task with no due date sorts last in both directions. Equal values keep
+the order they were written in. Paging happens after sorting. The in-memory store and both SQLite
+adapters must pass every scenario. The Python port runs them too, against the same SQLite files
+TypeScript writes.
 
-## One source, many capabilities
+## A first look
 
-A _source adapter_ opens **one** backend connection and serves several capability **facets** over
-it. `SqliteAdapter` is a single `better-sqlite3` database exposing `.kv` (`SyncStore`), `.vector`
-(`VectorStore`), and `.search` (`SearchStore`) facets — not three libraries, three connections,
-and three transaction scopes.
+```ts
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite"; // Node 24+, nothing to install
+
+const db = new NodeSqliteAdapter({ path: "app.db" });
+
+// Key-values and queryable collections
+db.kv.set("settings", { theme: "dark" });
+db.kv.put("tasks", { id: "t1", title: "Send invoice", status: "open", due: "2026-11-01" });
+db.kv.list("tasks", { where: { status: "open" }, sortBy: "due" });
+
+// Full-text search
+db.search.index("notes", { id: "n1", fields: { title: "Invoice", body: "Send the October invoice" } });
+db.search.search("notes", "invoice");
+
+// Vector search, ranked by exact cosine
+const embedding = new Float32Array(768); // your model's output
+db.vector.upsert("docs", { id: "a", vector: embedding });
+db.vector.search("docs", embedding, { topK: 10 });
+
+// One transaction across all of it
+db.transaction(() => {
+  db.kv.put("tasks", { id: "t2", title: "Pay deposit", status: "open", due: "2026-10-30" });
+  db.search.index("notes", { id: "n2", fields: { title: "Deposit", body: "Pay the venue deposit" } });
+});
+
+db.close();
+```
+
+Code that takes the interface instead of the adapter runs on any store that provides it:
+
+```ts
+import { InMemoryKv, toAsync, type SyncStore } from "@mirk/store/kv";
+
+function openTasks(store: SyncStore) {
+  return store.list("tasks", { where: { status: "open" }, sortBy: "due" });
+}
+
+openTasks(new InMemoryKv()); // in tests
+openTasks(db.kv);            // in the app
+toAsync(db.kv);              // the same store, with the async interface remote backends use
+```
+
+## One file, many capabilities
+
+A **source adapter** opens one connection and hangs each capability off it: `.kv`, `.vector`,
+`.search`. You do not run three libraries with three connections and three transaction scopes.
 
 <p align="center">
-  <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one better-sqlite3 connection; a .kv facet (SyncStore: key-value + collections) and a .vector facet (VectorStore: exact cosine) both ride that single connection. The same ports are implemented zero-native by the in-memory backends." width="820" />
+  <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one SQLite connection; a .kv facet (key-value and collections) and a .vector facet (exact cosine) both ride that single connection. The in-memory backends implement the same interfaces with no native code." width="820" />
 </p>
 
-The facets implement the same `SyncStore` / `VectorStore` / `SearchStore` ports that the
-zero-native in-memory backends do — so you can build and test against memory, then drop in the
-SQLite adapter for the real thing.
+Each capability is its own import, so you load only what you use. Importing `@mirk/store/kv` loads
+no database at all.
 
-## Code-split — import only what you need
+Local stores are **synchronous**, because a local SQLite call finishes in microseconds and a
+Promise around it only adds cost. Remote backends are async, and `toAsync` gives any local store
+the same async shape.
 
-Each capability is its own subpath. The **ports** and their in-memory references are native-free;
-native bindings appear in exactly one place — the SQLite adapter — as **optional peer
-dependencies**. Import `@mirk/store/kv` or `/vector` and no binding enters your bundle.
+## Choosing a store
 
-<p align="center">
-  <img src="docs/diagrams/code-split.svg" alt="Three subpaths: @mirk/store/kv and @mirk/store/vector are zero native deps; @mirk/store/sqlite is the source adapter and the only one pulling a native optional peer (better-sqlite3). Import a port subpath and no native binding enters your bundle." width="900" />
-</p>
+| You want                                   | Use                                        | Covers                                  |
+| ------------------------------------------ | ------------------------------------------ | --------------------------------------- |
+| To build and test with nothing installed   | the in-memory stores in `@mirk/store`      | everything                              |
+| A local database file on Node 24+          | `@mirk/store/node-sqlite`                  | everything                              |
+| A local database file on Node 22           | `@mirk/store/sqlite` with `better-sqlite3` | everything                              |
+| Records that people edit as Markdown files | `@mirk/store-markdown`                     | key-values and collections              |
+| Storage in the browser                     | `@mirk/store-indexeddb`                    | key-values and collections              |
+| A hosted SQLite database (Turso, `sqld`)   | `@mirk/store-libsql`                       | key-values, collections, and vectors    |
+| Many processes writing at once             | `@mirk/store-postgres`                     | key-values and collections              |
+| SurrealDB, embedded or remote              | `@mirk/surreal`                            | key-values, collections, vectors, links |
+| A dedicated vector database                | `@mirk/vector-qdrant`                      | vectors                                 |
 
-| Import                   | What you get                                                                                                                                                      | Native deps                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `@mirk/store`            | the ports, their in-memory references, sync-to-async lifts, cosine helpers                                                                                        | none                                                                              |
-| `@mirk/store/kv`         | `SyncStore` port (key-value + collections) · `InMemoryKv` · `toAsync`                                                                                             | none                                                                              |
-| `@mirk/store/atomic`     | optional versioned reads, declarative atomic mutations, idempotent receipts, and capability guards                                                                | none                                                                              |
-| `@mirk/store/vector`     | `VectorStore` port · `InMemoryVectorStore` · cosine helpers                                                                                                       | none                                                                              |
-| `@mirk/store/search`     | `SearchStore` port · `InMemorySearchStore` · BM25-style keyword search                                                                                            | none                                                                              |
-| `@mirk/store/graph`      | graph helpers over the collection port (`neighbors`, `traverse`, frontier-batched traversal)                                                                      | none                                                                              |
-| `@mirk/store/encrypted`  | authenticated AES-GCM record envelopes bound to a caller-owned storage context                                                                                    | none                                                                              |
-| `@mirk/store/sql`        | SQL adapter contract types                                                                                                                                        | none                                                                              |
-| `@mirk/store/node-sqlite` | built-in Node SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets (Node 24+) | none |
-| `@mirk/store/sqlite`     | the SQLite source adapter — one connection, `.kv` + `.vector` + `.search` facets                                                                                  | `better-sqlite3` (peer)                                                           |
-| `@mirk/store-libsql` | async libSQL/Turso adapter for remote, local-file, and in-memory storage | libSQL engine via SDK |
-| `@mirk/store-libsql/remote` | async remote libSQL/Turso adapter with the same KV and vector facets | none loaded |
-| `@mirk/vector-qdrant`    | async Qdrant vector adapter with exact cosine scores, metadata filters, and shared Python storage format | `@qdrant/js-client-rest` (peer) |
-| `@mirk/store-postgres`   | async PostgreSQL source adapter — one pool, `.kv` collections with JSONB filters                                                                                  | `pg`                                                                              |
-| `@mirk/store-markdown`   | synchronous Markdown + YAML-headmatter store adapter with derived indexes and optional git history                                                                | none                                                                              |
-| `@mirk/store-indexeddb`  | async browser source adapter on native IndexedDB — key-value, collections, and atomic mutation in one database                                                    | none                                                                              |
-| `@mirk/fixtures`         | typed authored-data loader, registry, refs, diagnostics, provenance, and the explicit-config `mirk-fixtures` CLI                                                  | none                                                                              |
-| `@mirk/artifact`         | durable artifact metadata, integrity, lineage, atomic finalization, object leases, and plan-first maintenance                                                     | none                                                                              |
-| `@mirk/artifact-opendal` | OpenDAL-backed implementation of the artifact object-storage port                                                                                                 | `opendal` (peer)                                                                  |
-| `@mirk/statements`       | specialized SQLite storage for statement revisions, admission receipts, bitemporal indexes, and dual-read parity harnesses                                          | `better-sqlite3` (peer)                                                           |
-| `@mirk/surreal`          | separately imported async store, graph, vector, search-gate, object-storage, Node, and browser WASM adapters over one shared connection                           | `@surrealdb/node` / `@surrealdb/wasm` optional peers for their dedicated subpaths |
-| `@mirk/migrate`          | backend-neutral checkpointed migration across Mirk ports and caller manifests                                                                                     | none                                                                              |
+The in-memory and SQLite stores are the reference. The IndexedDB and Qdrant adapters also run the
+shared scenarios for what they cover. Each package README lists any place where it differs from the
+reference.
 
-## The same ports in Python
+## Also in the box
 
-`python/store` (`mirk-store`) is a second implementation of the KV, collection, vector, search and
-graph ports, over stdlib `sqlite3` with zero runtime dependencies. It opens SQLite files
-TypeScript wrote and writes files TypeScript reads. TypeScript generates expected values for the
-shared [conformance corpus](conformance/README.md), which both languages replay. The generator
-rejects shared-store scenarios when the in-memory reference and SQLite adapter disagree.
-Each accepted runner executes every scenario on its declared backend matrix. A
-missing target or unsupported capability fails the run.
+- **Authored data** — [`@mirk/fixtures`](packages/fixtures) loads typed data packs such as
+  defaults, templates, and content. It validates them, layers overrides, and records which source
+  each value came from.
+- **Files and blobs** — [`@mirk/artifact`](packages/artifact) stores bytes with a checksum, metadata,
+  and a record of what each file was made from. [`@mirk/artifact-opendal`](packages/artifact-opendal)
+  puts those bytes on S3 or another OpenDAL backend.
+- **Moving between backends** — [`@mirk/migrate`](packages/migrate) copies data from one store to
+  another and resumes where it stopped.
+- **Revision history** — [`@mirk/statements`](packages/statements) is specialized storage for hosts
+  that track what was true and when it was recorded.
 
-`python/fixtures` (`mirk-fixtures`) loads typed authored data with layering, validation,
-provenance, references, and store seeding. It shares the fixture scenarios with
-`@mirk/fixtures`; package-resource sources and the CLI remain TypeScript-only.
+## Python
 
-`python/artifact` (`mirk-artifact`) ports the artifact coordinator, metadata repository, object
-store, leases, lineage, integrity checks, and maintenance operations. It uses the same record
-fields, canonical finalization digest, SQLite collections, and filesystem object layout as
-`@mirk/artifact`. Its lifecycle target uses base64 values for byte fields, and its integration
-tests reopen artifacts across TypeScript and Python.
+The Python packages implement the same interfaces and run the same scenarios. They open SQLite files
+written by TypeScript, and TypeScript opens theirs.
 
-`python/store-markdown` (`mirk-store-markdown`) stores records in human-editable Markdown files
-with YAML frontmatter. Its shared scenarios run on a separate filesystem backend.
-`python/artifact-opendal` (`mirk-artifact-opendal`) adds S3-compatible artifact byte storage
-through a host-configured OpenDAL operator. Artifact metadata remains in the supplied Mirk repository.
-
-`python/vector-qdrant` (`mirk-vector-qdrant`) implements the synchronous vector port over
-a host-provided Qdrant client. It shares collections and records with `@mirk/vector-qdrant`.
-
-See the [Markdown adapter](python/store-markdown/README.md),
-[S3/OpenDAL adapter](python/artifact-opendal/README.md), and
-[Qdrant adapter](python/vector-qdrant/README.md) for Python usage.
-
-## Sync by design
-
-Embedded backends are **synchronous** — `better-sqlite3` is, and an async-everywhere interface
-taxes every local call with a Promise it doesn't need. A `SyncStore` lifts to an async API via
-`toAsync(store)`; the reverse is impossible. Pick sync for embedded and local; reach for async only
-where a remote backend genuinely requires it.
+| Package                 | What it does                                                         |
+| ----------------------- | -------------------------------------------------------------------- |
+| `mirk-store`            | key-values, collections, vectors, search, and links on stdlib SQLite |
+| `mirk-fixtures`         | authored data packs                                                  |
+| `mirk-artifact`         | files and blobs, readable from TypeScript                            |
+| `mirk-store-markdown`   | Markdown file storage                                                |
+| `mirk-artifact-opendal` | file bytes on S3-compatible storage                                  |
+| `mirk-vector-qdrant`    | vectors on Qdrant                                                    |
 
 ## Install
 
 ```bash
 npm install @mirk/store
-# Using @mirk/store/node-sqlite on Node 24+? No extra dependency.
-# Using @mirk/store/sqlite? Add its peer:
-npm install better-sqlite3
+npm install better-sqlite3   # only for @mirk/store/sqlite
 ```
 
-ESM-only. Use a patched supported Node release: 22.23.4+, 24.22.1+, or 26.12.1+.
-The built-in SQLite adapter requires Node 24+.
-
-For a remote or embedded async SurrealDB source, install `@mirk/surreal` and compose only the
-adapter subpaths you need over one `SurrealConnection`. See its
-[README](packages/surreal/README.md) for what each subpath supports.
-
-For PostgreSQL, install `@mirk/store-postgres`. It implements the async KV and collection ports over
-one owned or caller-provided `pg.Pool`; future search and vector facets will share the same pool.
-
-## A taste
-
-```ts
-// Zero native deps — build against the in-memory reference.
-import { InMemoryKv, toAsync } from "@mirk/store/kv";
-
-const kv = new InMemoryKv();
-kv.set("user:1", { name: "Ada" });
-kv.get<{ name: string }>("user:1"); // { name: "Ada" }
-
-const remote = toAsync(kv); // same surface, Promises (sync ⊂ async)
-await remote.get("user:1");
-```
-
-```ts
-// One SQLite connection, three capability facets over it.
-import { SqliteAdapter } from "@mirk/store/sqlite";
-
-const db = new SqliteAdapter({ path: "data.db" });
-
-db.kv.set("user:1", { name: "Ada" }); // key-value + collections
-
-db.search.index("pages", {
-  id: "intro",
-  fields: { title: "Intro", body: "hello world" },
-});
-db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
-
-const embedding = new Float32Array(768); // your real embedding; dimensions infer on first write
-const query = new Float32Array(768);
-db.vector.upsert("docs", { id: "a", vector: embedding });
-db.vector.search("docs", query, { topK: 10 }); // ranked by cosine
-
-db.close();
-```
-
-Vectors rank by **exact cosine**, accumulated in float64 — the adapter's only search path. Full
-API in
-[`packages/store/README.md`](packages/store/README.md).
-
-## Design
-
-- **Ports vs source adapters.** Interfaces and in-memory references stay native-free; source
-  adapters implement one or more ports over a single connection and are the only place native
-  bindings appear, as optional peer dependencies.
-- **Backend parity.** The in-memory reference and the SQLite adapter behave identically —
-  ordering, tie-breaks, null/zero handling. Cross-backend parity tests are the contract.
+ESM only. Use a patched Node release: 22.23.4+, 24.22.1+, or 26.12.1+. The built-in
+`node:sqlite` adapter needs Node 24 or later.
 
 ## Status
 
-Pre-1.0: minor versions may change APIs. Release history is in [`CHANGELOG.md`](CHANGELOG.md) and
-planned work in [`docs/roadmap.md`](docs/roadmap.md). Each package's README is its contract.
-
-## Contributing
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development, conformance, and release workflow.
+Pre-1.0: minor versions may change APIs. Each package README is that package's contract. Release
+history is in [`CHANGELOG.md`](CHANGELOG.md), planned work is in
+[`docs/roadmap.md`](docs/roadmap.md), and development and release steps are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
