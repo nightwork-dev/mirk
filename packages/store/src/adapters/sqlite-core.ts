@@ -21,12 +21,18 @@ import {
 } from "./sqlite-driver.js";
 
 import type {
+  AsyncStore,
+  AsyncStoreInQuery,
   SyncStore,
   SyncStoreInQuery,
   StoreMeta,
   StoreFilter,
 } from "../types.js";
+import { toAsync } from "../to-async.js";
+import { AsyncTransactionCoordinator } from "../transaction.js";
+import type { AfterCommitNotify } from "../transaction-types.js";
 import type {
+  AsyncAtomicMutationStore,
   AtomicMutationLimits,
   AtomicMutationRequest,
   AtomicMutationResult,
@@ -105,11 +111,76 @@ import {
   type TableRegistryAnswer,
 } from "../sql.js";
 import { randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 
 export type SqliteAdapterErrorCode =
   | "unsupported-schema-version"
-  | "invalid-busy-timeout";
+  | "invalid-busy-timeout"
+  | "async-operation-active";
+
+// Awaitable work is serialized per database file across every adapter in this
+// process. A second handle that hit SQLite's lock would busy-wait
+// synchronously and block the event loop the open transaction needs to finish.
+// In-memory databases are private to one connection and key on the adapter.
+type AsyncFileKey = string | SqliteAdapterCore;
+const asyncOwners = new Map<AsyncFileKey, SqliteAdapterCore>();
+const asyncTails = new Map<AsyncFileKey, Promise<unknown>>();
+
+function asyncFileKeyFor(path: string): string | undefined {
+  if (path === "" || path === ":memory:" || path.startsWith("file:")) return undefined;
+  return existsSync(path) ? realpathSync(path) : undefined;
+}
+
+/** Wait for the file's previous awaitable unit, then own the file until the
+ *  returned release function runs. */
+async function acquireAsyncFile(
+  key: AsyncFileKey,
+  owner: SqliteAdapterCore
+): Promise<() => void> {
+  const previous = asyncTails.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const done = new Promise<void>((resolve) => (release = resolve));
+  const tail = previous.then(() => done);
+  asyncTails.set(key, tail);
+  await previous;
+  asyncOwners.set(key, owner);
+  return () => {
+    asyncOwners.delete(key);
+    if (asyncTails.get(key) === tail) asyncTails.delete(key);
+    release();
+  };
+}
+
+/** Rejects synchronous use of a connection while awaitable work owns its file. */
+class GuardedSqliteDb implements SqliteDb {
+  constructor(
+    private readonly inner: SqliteDb,
+    private readonly check: () => void
+  ) {}
+  prepare(sql: string) {
+    this.check();
+    return this.inner.prepare(sql);
+  }
+  exec(sql: string): void {
+    this.check();
+    this.inner.exec(sql);
+  }
+  pragma(sql: string): unknown {
+    this.check();
+    return this.inner.pragma(sql);
+  }
+  transaction<T, A>(work: (arg: A) => T) {
+    this.check();
+    return this.inner.transaction<T, A>(work);
+  }
+  get inTransaction(): boolean {
+    return this.inner.inTransaction;
+  }
+  close(): void {
+    this.check();
+    this.inner.close();
+  }
+}
 
 export const SQLITE_MAX_BUSY_TIMEOUT_MS = 2_147_483_647;
 
@@ -342,8 +413,16 @@ export interface SqliteCheckpointResult {
  *  — both ride the same connection. */
 export class SqliteAdapterCore {
   private readonly db: SqliteDb;
+  private readonly rawDb: SqliteDb;
   private readonly dbPath: string;
+  private readonly asyncKey: AsyncFileKey;
+  private readonly asyncTransactions: AsyncTransactionCoordinator<() => void>;
+  /** Depth of queued awaitable store calls currently executing. */
+  private asyncCallDepth = 0;
   readonly kv!: SyncStore & SyncAtomicMutationStore;
+  /** The same store as `.kv`, awaitable and serialized with
+   *  {@link asyncTransaction} on this database file. */
+  readonly asyncKv!: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
   readonly vector!: VectorStore;
   readonly search!: SearchStore;
 
@@ -351,7 +430,39 @@ export class SqliteAdapterCore {
     const ownsDb = opts.ownsDb;
     validateSqliteBusyTimeout(opts.busyTimeoutMs);
     this.dbPath = opts.path;
-    this.db = opts.db;
+    this.rawDb = opts.db;
+    const fileKey = asyncFileKeyFor(opts.path);
+    this.asyncKey = fileKey ?? this;
+    if (fileKey !== undefined && asyncOwners.has(fileKey)) {
+      if (ownsDb) opts.db.close();
+      throw new SqliteAdapterError(
+        "async-operation-active",
+        "Open SQLite adapters before starting asynchronous work on the same file."
+      );
+    }
+    this.db = new GuardedSqliteDb(opts.db, () => this.assertSyncAccess());
+    this.asyncTransactions = new AsyncTransactionCoordinator<() => void>({
+      begin: async () => {
+        const release = await acquireAsyncFile(this.asyncKey, this);
+        try {
+          this.rawDb.exec("BEGIN IMMEDIATE");
+        } catch (error) {
+          release();
+          throw error;
+        }
+        return release;
+      },
+      commit: () => this.rawDb.exec("COMMIT"),
+      rollback: () => {
+        if (this.rawDb.inTransaction) this.rawDb.exec("ROLLBACK");
+      },
+      savepoint: (_release, name) => this.rawDb.exec(`SAVEPOINT ${name}`),
+      releaseSavepoint: (_release, name) =>
+        this.rawDb.exec(`RELEASE SAVEPOINT ${name}`),
+      rollbackToSavepoint: (_release, name) =>
+        this.rawDb.exec(`ROLLBACK TO SAVEPOINT ${name}`),
+      end: (release) => release(),
+    });
     try {
       const busyTimeoutMs = opts.busyTimeoutMs ?? 30_000;
       this.db.pragma(`busy_timeout = ${busyTimeoutMs}`);
@@ -380,6 +491,7 @@ export class SqliteAdapterCore {
       this.kv = kv!;
       this.vector = vector!;
       this.search = search!;
+      this.asyncKv = this.serializedAsyncStore(toAsync(kv!));
     } catch (err) {
       // A facet constructor can throw (e.g. dimension mismatch). Don't leak the
       // connection we opened — but never close a db handle the caller passed in.
@@ -403,6 +515,71 @@ export class SqliteAdapterCore {
   transaction<T>(work: () => T, mode: SqliteTransactionMode = "deferred"): T {
     const transaction = this.db.transaction(work);
     return transaction[mode]();
+  }
+
+  /** Run short, database-only async work in one `BEGIN IMMEDIATE`
+   *  transaction. It implements `AsyncStoreTransactions.transaction`: `asyncKv`
+   *  and the synchronous facets called inside `work` join it, a nested call is
+   *  a savepoint, and every other awaitable call on this file waits for it. */
+  asyncTransaction<T>(work: () => T | Promise<T>): Promise<T> {
+    return this.asyncTransactions.transaction(work);
+  }
+
+  /** `AsyncStoreTransactions.afterCommit` for {@link asyncTransaction}. */
+  afterCommit(notify: AfterCommitNotify): void {
+    this.asyncTransactions.afterCommit(notify);
+  }
+
+  private assertSyncAccess(): void {
+    const owner = asyncOwners.get(this.asyncKey);
+    if (owner === undefined) return;
+    if (
+      owner === this &&
+      (this.asyncCallDepth > 0 || this.asyncTransactions.inUsableScope())
+    )
+      return;
+    throw new SqliteAdapterError(
+      "async-operation-active",
+      "Use asyncKv or asyncTransaction while an asynchronous SQLite operation owns this database."
+    );
+  }
+
+  private async runSerialized<T>(op: () => Promise<T>): Promise<T> {
+    if (this.asyncTransactions.current() !== undefined) return op();
+    const release = await acquireAsyncFile(this.asyncKey, this);
+    this.asyncCallDepth += 1;
+    try {
+      return await op();
+    } finally {
+      this.asyncCallDepth -= 1;
+      release();
+    }
+  }
+
+  private serializedAsyncStore(
+    lifted: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore
+  ): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore {
+    const run = <T>(op: () => Promise<T>): Promise<T> => this.runSerialized(op);
+    return {
+      get meta() {
+        return lifted.meta;
+      },
+      atomicLimits: lifted.atomicLimits,
+      get: (key) => run(() => lifted.get(key)),
+      set: (key, value) => run(() => lifted.set(key, value)),
+      has: (key) => run(() => lifted.has(key)),
+      delete: (key) => run(() => lifted.delete(key)),
+      keys: (prefix) => run(() => lifted.keys(prefix)),
+      list: (collection, filter) => run(() => lifted.list(collection, filter)),
+      listWhereIn: (collection, field, values, filter) =>
+        run(() => lifted.listWhereIn(collection, field, values, filter)),
+      getById: (collection, id) => run(() => lifted.getById(collection, id)),
+      put: (collection, item) => run(() => lifted.put(collection, item)),
+      remove: (collection, id) => run(() => lifted.remove(collection, id)),
+      count: (collection, filter) => run(() => lifted.count(collection, filter)),
+      getVersioned: (target) => run(() => lifted.getVersioned(target)),
+      mutateAtomically: (request) => run(() => lifted.mutateAtomically(request)),
+    };
   }
 
   /**
