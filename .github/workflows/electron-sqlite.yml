@@ -4,8 +4,6 @@ on:
   push:
     paths:
       - "packages/store/**"
-      - "packages/statements/**"
-      - "packages/fixtures/**"
       - "scripts/check-electron-sqlite.cjs"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -13,8 +11,6 @@ on:
   pull_request:
     paths:
       - "packages/store/**"
-      - "packages/statements/**"
-      - "packages/fixtures/**"
       - "scripts/check-electron-sqlite.cjs"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -44,9 +40,6 @@ jobs:
 
       - name: Build store package
         run: pnpm --filter @mirk/store build
-
-      - name: Build statements package
-        run: pnpm --filter @mirk/statements build
 
       - name: Install Electron 45 in an isolated directory
         run: |
