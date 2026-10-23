@@ -1,0 +1,109 @@
+{
+  "id": "store/where-range-invalid-bound-throws",
+  "title": "a range bound that is not a finite number or a string is rejected, even on an empty collection",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gte": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store range bounds must be finite numbers or strings."
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gt": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store range bounds must be finite numbers or strings."
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "lt": [
+                1
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store range bounds must be finite numbers or strings."
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "lte": {
+                "x": 1
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store range bounds must be finite numbers or strings."
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {
+              "gte": 1,
+              "eq": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store filters only support JSON scalar values."
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "n": {}
+          }
+        }
+      ],
+      "expect": {
+        "throws": "Store filters only support JSON scalar values."
+      }
+    }
+  ]
+}

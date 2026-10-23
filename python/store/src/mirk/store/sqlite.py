@@ -39,6 +39,7 @@ from .filter import (
     StoreFilterError,
     dumps_json,
     is_scalar,
+    where_range,
 )
 from .types import JsonObject, StoreFilter, StoreMeta
 
@@ -50,13 +51,16 @@ __all__ = [
     "SqliteAdapterError",
     "SqliteAdapterErrorCode",
     "SqliteStore",
+    "build_ensure_index_sql",
     "build_limit_offset",
     "build_order_by",
     "build_where_clause",
     "ensure_registry",
     "hash_name",
+    "index_name_for",
     "is_table_registry_conflict",
     "json_path",
+    "json_path_literal",
     "legacy_collection_table",
     "lookup_table",
     "resolve_table",
@@ -123,51 +127,82 @@ def json_path(field: str) -> str:
     return f'$."{label}"'
 
 
-def _type_guard(value: Any) -> str:
-    if isinstance(value, bool):
-        return "json_type(data, ?) IN ('true', 'false')"
-    if isinstance(value, int | float):
-        return "json_type(data, ?) IN ('integer', 'real')"
-    return "json_type(data, ?) = 'text'"
-
-
 def _bind(value: Any) -> SqlParam:
-    if isinstance(value, bool):
-        return 1 if value else 0
-    if isinstance(value, int | float | str):
+    if isinstance(value, int | float | str) and not isinstance(value, bool):
         return value
     raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
 
 
+_RANGE_SQL = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
+
+
 def build_where_clause(filter: StoreFilter | None = None) -> tuple[str, list[SqlParam]]:
-    """Exact-match conditions, ANDed. Booleans and numbers stay distinct."""
+    """Exact matches and ranges, ANDed, matching ``buildWhereClause`` in TypeScript.
+
+    Every term leads with ``json_extract(data, <literal>)`` so an expression index
+    on it serves the query, and a json_type guard keeps booleans, numbers and
+    strings apart.
+    """
     where = filter.get("where") if filter else None
     if not where:
         return ("", [])
     conditions: list[str] = []
     params: list[SqlParam] = []
     for key, value in where.items():
-        path = json_path(key)
-        if value is None:
-            conditions.append("json_type(data, ?) = 'null'")
-            params.append(path)
-            continue
-        if not is_scalar(value):
-            raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
-        conditions.append(f"(json_extract(data, ?) = ? AND {_type_guard(value)})")
-        params.extend([path, _bind(value), path])
+        path = json_path_literal(key)
+        extract = f"json_extract(data, {path})"
+        type_of = f"json_type(data, {path})"
+        bounds = where_range(value)
+        if bounds is not None:
+            for operator, bound in bounds:
+                conditions.append(f"unlikely({extract} {_RANGE_SQL[operator]} ?)")
+                params.append(bound)
+            kinds = {isinstance(bound, str) for _, bound in bounds}
+            if len(kinds) > 1:
+                conditions.append("0")
+            elif True in kinds:
+                conditions.append(f"{type_of} = 'text'")
+            else:
+                conditions.append(f"{type_of} IN ('integer', 'real')")
+        elif value is None:
+            conditions.append(f"{extract} IS NULL AND {type_of} = 'null'")
+        elif isinstance(value, bool):
+            match = "true" if value else "false"
+            conditions.append(f"{extract} = {1 if value else 0} AND {type_of} = '{match}'")
+        elif isinstance(value, str):
+            conditions.append(f"{extract} = ? AND {type_of} = 'text'")
+            params.append(value)
+        else:
+            conditions.append(f"{extract} = ? AND {type_of} IN ('integer', 'real')")
+            params.append(_bind(value))
     return (f" WHERE {' AND '.join(conditions)}", params)
 
 
 def build_order_by(filter: StoreFilter | None = None) -> tuple[str, list[SqlParam]]:
-    """Null and missing values last in both directions; rowid breaks ties."""
+    """Null and missing values last in both directions; rowid breaks ties.
+
+    NULLS LAST, unlike a leading ``IS NULL`` key, lets an expression index on the
+    same literal deliver the order.
+    """
     sort_by = filter.get("sortBy") if filter else None
     if not sort_by:
         return (" ORDER BY rowid", [])
     direction = "DESC" if (filter or {}).get("sortDir") == "desc" else "ASC"
-    path = json_path(sort_by)
-    clause = f" ORDER BY json_extract(data, ?) IS NULL, json_extract(data, ?) {direction}, rowid"
-    return (clause, [path, path])
+    path = json_path_literal(sort_by)
+    return (f" ORDER BY json_extract(data, {path}) {direction} NULLS LAST, rowid", [])
+
+
+def index_name_for(table: str, field: str) -> str:
+    """``ix_<table>_<hex of the field's UTF-8>``, the name TypeScript derives too."""
+    return f"ix_{table}_{field.encode('utf-8').hex()}"
+
+
+def build_ensure_index_sql(table: str, field: str) -> str:
+    """The one idempotent statement behind ``ensureIndex``, as in TypeScript."""
+    return (
+        f"CREATE INDEX IF NOT EXISTS {index_name_for(table, field)} "
+        f"ON {table} (json_extract(data, {json_path_literal(field)}))"
+    )
 
 
 def build_limit_offset(filter: StoreFilter | None = None) -> str:
@@ -186,14 +221,13 @@ def build_limit_offset(filter: StoreFilter | None = None) -> str:
     return sql
 
 
-def json_path_literal(field: str) -> str | None:
-    """``json_path(field)`` as a quoted SQL literal, or None if it holds NUL.
+def json_path_literal(field: str) -> str:
+    """``json_path(field)`` as a quoted SQL literal.
 
     An expression index on ``json_extract(data, <literal>)`` only serves a query
-    that spells the same literal, never a bound parameter.
+    that spells the same literal, never a bound parameter. The JSON escapes in
+    ``json_path`` leave no NUL or other raw control character.
     """
-    if "\0" in field:
-        return None
     return "'" + json_path(field).replace("'", "''") + "'"
 
 
@@ -206,9 +240,7 @@ def _build_in_clause(
     equates TEXT with a number, and the json_type guard keeps a stored boolean
     (extracted as 1/0) out. Booleans and null are their own guarded terms.
     """
-    literal = json_path_literal(field)
-    path_params: list[SqlParam] = [json_path(field)] if literal is None else []
-    path = literal if literal is not None else "?"
+    path = json_path_literal(field)
     scalars: list[SqlParam] = []
     kinds: dict[str, None] = {}
     for value in values:
@@ -230,11 +262,10 @@ def _build_in_clause(
         terms.append(
             f"({extract} IN ({placeholders}) AND {type_of} IN ('integer', 'real', 'text'))"
         )
-        params.extend([*path_params, *scalars, *path_params])
+        params.extend(scalars)
     for kind in kinds:
         match = {"null": "IS NULL", "true": "= 1", "false": "= 0"}[kind]
         terms.append(f"({extract} {match} AND {type_of} = '{kind}')")
-        params.extend([*path_params, *path_params])
     condition = terms[0] if len(terms) == 1 else f"({' OR '.join(terms)})"
     keyword = " AND" if has_prior_where else " WHERE"
     return (f"{keyword} {condition}", params)
@@ -735,6 +766,12 @@ class SqliteStore:
         )
         rows = self._db.execute(sql, (*where_params, *in_params, *order_params)).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def ensureIndex(self, collection: str, field: str) -> None:
+        """Declare an expression index on one field, as TypeScript does. Idempotent."""
+        table = self._ensure_table(collection)
+        with self._write():
+            self._db.execute(build_ensure_index_sql(table, field))
 
     def getById(self, collection: str, id: str) -> Any:
         table = self._ensure_table(collection)

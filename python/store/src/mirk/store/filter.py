@@ -16,26 +16,38 @@ from .types import StoreFilter
 
 __all__ = [
     "FILTER_SCALAR_MESSAGE",
+    "INVALID_RANGE_BOUND_MESSAGE",
     "IN_SCALAR_MESSAGE",
+    "RANGE_OPERATORS",
+    "RangeBounds",
     "StoreFilterError",
     "StoreFilterErrorCode",
     "apply_filter",
     "dumps_json",
+    "in_range",
     "json_equal",
     "matches_where",
     "normalize_json_numbers",
     "sort_key",
     "validate_where",
+    "where_range",
 ]
 
 FILTER_SCALAR_MESSAGE = "Store filters only support JSON scalar values."
 IN_SCALAR_MESSAGE = "Store IN queries only support JSON scalar values."
+INVALID_RANGE_BOUND_MESSAGE = "Store range bounds must be finite numbers or strings."
 
-StoreFilterErrorCode = Literal["non-scalar-filter", "non-scalar-in-value"]
+StoreFilterErrorCode = Literal["non-scalar-filter", "non-scalar-in-value", "invalid-range-bound"]
+
+RANGE_OPERATORS = ("gt", "gte", "lt", "lte")
+
+RangeBounds = list[tuple[str, int | float | str]]
+"""A range ``where`` value as ``(operator, bound)`` pairs, in the caller's order."""
 
 
 class StoreFilterError(ValueError):
-    """Raised for a `where` or IN value that is not a JSON scalar."""
+    """Raised for a `where` or IN value that is not a JSON scalar or a range,
+    and for a range bound that is not a finite number or a string."""
 
     def __init__(self, code: StoreFilterErrorCode, message: str) -> None:
         super().__init__(message)
@@ -140,22 +152,78 @@ def json_equal(a: Any, b: Any) -> bool:
     return False
 
 
+def where_range(value: Any) -> RangeBounds | None:
+    """Classify a `where` value: None for a scalar, the bounds for a range.
+
+    A dict whose keys are all range operators is a range. Any other non-scalar
+    raises ``non-scalar-filter``; a bound that is not a finite number or a
+    string raises ``invalid-range-bound``.
+    """
+    if is_scalar(value):
+        return None
+    if not isinstance(value, dict):
+        raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
+    entries = cast(dict[str, Any], value)
+    if not entries or any(key not in RANGE_OPERATORS for key in entries):
+        raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
+    bounds: RangeBounds = []
+    for operator, bound in entries.items():
+        if isinstance(bound, str) or (
+            isinstance(bound, int | float) and not isinstance(bound, bool) and math.isfinite(bound)
+        ):
+            bounds.append((operator, bound))
+        else:
+            raise StoreFilterError("invalid-range-bound", INVALID_RANGE_BOUND_MESSAGE)
+    return bounds
+
+
+def _compare(stored: Any, bound: int | float | str) -> int | None:
+    """-1, 0 or 1, or None when the stored value is not of the bound's kind."""
+    if isinstance(bound, str):
+        if not isinstance(stored, str):
+            return None
+        return (stored > bound) - (stored < bound)
+    if isinstance(stored, bool) or not isinstance(stored, int | float):
+        return None
+    return (stored > bound) - (stored < bound)
+
+
+def in_range(stored: Any, bounds: RangeBounds) -> bool:
+    """A number bound compares only numbers; a string bound only strings, by code point."""
+    for operator, bound in bounds:
+        order = _compare(stored, bound)
+        if order is None:
+            return False
+        if operator == "gt" and order <= 0:
+            return False
+        if operator == "gte" and order < 0:
+            return False
+        if operator == "lt" and order >= 0:
+            return False
+        if operator == "lte" and order > 0:
+            return False
+    return True
+
+
 def validate_where(where: dict[str, Any]) -> None:
-    """Reject non-scalar `where` values before any row is examined."""
+    """Reject invalid `where` values before any row is examined."""
     for value in where.values():
-        if not is_scalar(value):
-            raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
+        where_range(value)
 
 
 def matches_where(item: Any, where: dict[str, Any]) -> bool:
-    """Exact match on literal top-level keys, ANDed. A dotted name is one key."""
+    """Exact match or range on literal top-level keys, ANDed. A dotted name is one key."""
     if not isinstance(item, dict):
         return False
     record = cast(dict[str, Any], item)
     for key, value in where.items():
         if key not in record:
             return False
-        if not json_equal(record[key], value):
+        bounds = where_range(value)
+        if bounds is not None:
+            if not in_range(record[key], bounds):
+                return False
+        elif not json_equal(record[key], value):
             return False
     return True
 

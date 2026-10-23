@@ -1,0 +1,129 @@
+{
+  "id": "store/ensure-index-changes-no-result",
+  "title": "ensureIndex is idempotent, creates an empty collection, and leaves every query's answer alone",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "q\"uote"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "q\"uote"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "it's"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items"
+      ],
+      "expect": {
+        "ids": []
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "q\"uote": "x",
+          "it's": 2
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "q\"uote": "y",
+          "it's": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "q\"uote": null
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "q\"uote": "y"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "q\"uote": null
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "c"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "it's"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a",
+          "c"
+        ]
+      }
+    }
+  ]
+}

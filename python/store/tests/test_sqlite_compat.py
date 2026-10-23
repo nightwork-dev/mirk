@@ -1162,3 +1162,58 @@ def test_typescript_reads_and_continues_the_log_python_wrote(tmp_path: Path) -> 
     }
     with SqliteStore(str(db)) as store:
         assert SqliteLogFacet(store).lastSequence("events") == 3
+
+
+INDEX_SCRIPT = f"""
+import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
+
+const adapter = new SqliteAdapter({{ path: process.argv[2] }});
+for (const field of JSON.parse(process.argv[3])) adapter.kv.ensureIndex("sightings", field);
+adapter.close();
+console.log(JSON.stringify({{ ok: true }}));
+"""
+
+
+def _index_names(path: Path) -> list[str]:
+    connection = sqlite3.connect(path)
+    try:
+        rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%' ORDER BY name"
+        ).fetchall()
+    finally:
+        connection.close()
+    return [row[0] for row in rows]
+
+
+def test_each_language_finds_the_index_the_other_declared(tmp_path: Path) -> None:
+    fields = ["seenAt", 'q"uote', "it's"]
+    from_typescript = tmp_path / "ts.sqlite"
+    run_node_script(INDEX_SCRIPT, tmp_path, str(from_typescript), json.dumps(fields))
+    declared = _index_names(from_typescript)
+    assert len(declared) == len(fields)
+
+    connection = sqlite3.connect(from_typescript)
+    store = SqliteStore(str(from_typescript), connection=connection)
+    for field in fields:
+        store.ensureIndex("sightings", field)
+    executed: list[str] = []
+    connection.set_trace_callback(executed.append)
+    for field in fields:
+        store.list("sightings", {"where": {field: "x"}})
+    connection.set_trace_callback(None)
+    reads = [sql for sql in executed if sql.startswith("SELECT data")]
+    assert len(reads) == len(fields)
+    for sql in reads:
+        plan = " | ".join(str(row[3]) for row in connection.execute(f"EXPLAIN QUERY PLAN {sql}"))
+        assert "USING INDEX ix_" in plan, plan
+    store.close()
+    connection.close()
+    assert _index_names(from_typescript) == declared
+
+    from_python = tmp_path / "py.sqlite"
+    store = SqliteStore(str(from_python))
+    for field in fields:
+        store.ensureIndex("sightings", field)
+    store.close()
+    run_node_script(INDEX_SCRIPT, tmp_path, str(from_python), json.dumps(fields))
+    assert _index_names(from_python) == declared

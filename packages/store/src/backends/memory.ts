@@ -5,6 +5,7 @@
 import type {
   SyncStore,
   SyncStoreInQuery,
+  SyncStoreIndexes,
   StoreMeta,
   StoreFilter,
 } from "../types.js";
@@ -31,7 +32,7 @@ import {
   validateAtomicRequest,
 } from "../atomic.js";
 import { compareCodePoints, sortAndPageStoreItems } from "../order.js";
-import { NON_SCALAR_FILTER_MESSAGE, StoreFilterError } from "../sql.js";
+import { StoreFilterError, assertWhere, inRange, whereCondition } from "../sql.js";
 
 /** The message the SQLite adapter already raises for a non-scalar `listWhereIn`
  *  value. The reference raises the same one so the two backends agree. */
@@ -45,15 +46,6 @@ function isJsonScalar(value: unknown): boolean {
     typeof value === "boolean" ||
     typeof value === "bigint"
   );
-}
-
-/** There is no deep equality anywhere in the port, so a non-scalar `where` value
- *  is a caller error. The SQLite adapter cannot bind one at all; the reference
- *  used to return `[]` and silently mean "no match". */
-function assertScalarWhere(where: Record<string, unknown>): void {
-  for (const value of Object.values(where)) {
-    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
-  }
 }
 
 function assertScalarInValues(values: readonly unknown[]): void {
@@ -81,7 +73,7 @@ export interface InMemoryStoreOptions {
 }
 
 export class InMemoryStore
-  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore, SyncReceiptPruning
+  implements SyncStore, SyncStoreInQuery, SyncStoreIndexes, SyncAtomicMutationStore, SyncReceiptPruning
 {
   readonly meta: StoreMeta = {
     backend: "memory",
@@ -184,7 +176,7 @@ export class InMemoryStore
     if (values.length === 0) return [];
     // Validation order mirrors the SQLite adapter, which builds the caller's
     // WHERE clause before the IN clause.
-    if (filter?.where) assertScalarWhere(filter.where);
+    if (filter?.where) assertWhere(filter.where);
     assertScalarInValues(values);
     const set = new Set(values);
     const col = this.ensureCollection(collection);
@@ -193,6 +185,11 @@ export class InMemoryStore
       return set.has((item as Record<string, unknown>)[field]);
     }) as T[];
     return applyFilter(items, filter);
+  }
+
+  /** Accepted and a no-op: the reference scans in memory. */
+  ensureIndex(collection: string, _field: string): void {
+    this.ensureCollection(collection);
   }
 
   getById<T>(collection: string, id: string): T | null {
@@ -227,7 +224,7 @@ export class InMemoryStore
     // while the SQLite adapter (which builds a WHERE clause and nothing else)
     // returns the true total.
     const where = filter.where;
-    assertScalarWhere(where);
+    assertWhere(where);
     let total = 0;
     for (const item of col.values()) {
       if (matchesWhere(item, where)) total++;
@@ -492,7 +489,8 @@ function matchesWhere(item: unknown, where: Record<string, unknown>): boolean {
   if (typeof item !== "object" || item === null) return false;
   const record = item as Record<string, unknown>;
   for (const [key, value] of Object.entries(where)) {
-    if (record[key] !== value) return false;
+    const condition = whereCondition(value);
+    if (condition.kind === "range" ? !inRange(record[key], condition) : record[key] !== condition.value) return false;
   }
   return true;
 }
@@ -505,7 +503,7 @@ function applyFilter<T>(items: T[], filter?: StoreFilter): T[] {
   // Where clause — exact match
   if (filter.where) {
     const where = filter.where;
-    assertScalarWhere(where);
+    assertWhere(where);
     result = result.filter((item) => matchesWhere(item, where));
   }
 

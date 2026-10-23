@@ -29,6 +29,7 @@ const STORE_METHODS = [
   "put",
   "remove",
   "count",
+  "ensureIndex",
   "getVersioned",
   "mutateAtomically",
   "pruneExpiredReceipts",

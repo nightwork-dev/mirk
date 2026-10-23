@@ -1,0 +1,164 @@
+{
+  "id": "store/where-range-combines-with-other-filters",
+  "title": "two bounds on one field, an equality on another, sortBy, paging and count compose",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "at"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        "kind"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "1",
+          "at": 1,
+          "kind": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "2",
+          "at": 2,
+          "kind": "b"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "3",
+          "at": 3,
+          "kind": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "4",
+          "at": 4,
+          "kind": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "5",
+          "at": 5,
+          "kind": "a"
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "at": {
+              "gte": 2,
+              "lt": 5
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "2",
+          "3",
+          "4"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "at": {
+              "gt": 1
+            },
+            "kind": "a"
+          },
+          "sortBy": "at",
+          "sortDir": "desc",
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "5",
+          "4"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "at": {
+              "gt": 1,
+              "lte": 4
+            },
+            "kind": "a"
+          }
+        }
+      ],
+      "expect": {
+        "value": 2
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "at": {
+              "gte": 1,
+              "lt": "z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    }
+  ]
+}

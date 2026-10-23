@@ -14,7 +14,8 @@ export interface StoreMeta {
  * Structured filter for collection queries.
  */
 export interface StoreFilter {
-  /** Exact match on fields within the stored item. */
+  /** Conditions on top-level fields, ANDed. A JSON scalar matches exactly; a
+   *  `StoreRange` object such as `{ gte: since }` compares (see `@mirk/store/sql`). */
   where?: Record<string, unknown>;
   /** Field to sort by. */
   sortBy?: string;
@@ -47,6 +48,19 @@ export interface AsyncStoreInQuery {
     values: readonly unknown[],
     filter?: StoreFilter,
   ): Promise<T[]>;
+}
+
+/** Optional collection capability: declare that queries filter or sort on one
+ *  field, so the backend can index it. Idempotent and safe to call on every
+ *  start. Backends with no query planner accept it and do nothing, so portable
+ *  code can always call it. */
+export interface SyncStoreIndexes {
+  ensureIndex(collection: string, field: string): void;
+}
+
+/** Async twin of SyncStoreIndexes. */
+export interface AsyncStoreIndexes {
+  ensureIndex(collection: string, field: string): Promise<void>;
 }
 
 /**
