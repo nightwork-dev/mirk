@@ -2,6 +2,8 @@
 
 Synchronous OpenDAL object storage for `mirk-artifact`.
 
+Requires OpenDAL `>=0.47.12,<0.48`, including the `rustls` 0.23.46 TLS fixes.
+
 Pass a configured OpenDAL `Operator` to `OpenDalObjectStore`. The adapter uses
 OpenDAL for provider transport, streaming, conditional writes, and retries.
 It does not discover credentials or create a provider client for you.

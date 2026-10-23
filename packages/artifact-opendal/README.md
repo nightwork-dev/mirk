@@ -10,7 +10,12 @@ ESM-only.
 npm install @mirk/artifact @mirk/artifact-opendal opendal
 ```
 
-`opendal` is a peer dependency so consumers choose when to install the native/provider binding.
+`opendal` `^0.49.13` is a peer dependency, so consumers choose when to install the native binding.
+
+The published Node binding still uses `rustls` `0.23.40`. It does not include the
+[October TLS fixes in `rustls` `0.23.46`](https://github.com/rustls/rustls/releases/tag/v%2F0.23.46).
+Hosts that require those fixes need a native build containing the patched TLS library.
+Updating Node does not update this separate native TLS implementation.
 
 ## Quickstart
 

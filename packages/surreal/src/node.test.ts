@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { engineVersion } from "@surrealdb/node";
 
 import { SurrealConnectionError } from "./index.js";
 import { createNodeSurrealConnection } from "./node.js";
 import { SurrealStoreAdapter } from "./store.js";
 
 describe("createNodeSurrealConnection", () => {
+  it("loads the pinned native engine release", () => {
+    expect(engineVersion()).toBe("3.3.4");
+  });
+
   it("owns an embedded client shared by separately opened adapters", async () => {
     const connection = await createNodeSurrealConnection({
       endpoint: "mem://",

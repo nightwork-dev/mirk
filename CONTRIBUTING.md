@@ -2,7 +2,10 @@
 
 ## Develop
 
-Use Node 24 or 26 for development. CI tests both release lines.
+Use Node 24.22.1+ or 26.12.1+ for development. CI tests both release lines.
+The `.node-version` file selects the patched Node 24 baseline.
+The Node 22 compatibility job runs the older adapter suites.
+The full conformance matrix and built-in SQLite adapter tests run on Node 24 and 26.
 The built-in SQLite adapter requires Node 24 or later.
 
 ```bash
@@ -11,7 +14,10 @@ pnpm build          # tsup, per package
 pnpm test           # vitest — real backends, real persistence, real assertions
 pnpm -r typecheck
 pnpm docs:check     # public links, package metadata, and workspace READMEs
+pnpm audit:dependencies  # public-registry dependency advisories
 ```
+
+The Python workspace pins managed CPython 3.12.15. Use uv 0.13.5 or later to download this build.
 
 The Python port is a uv workspace at `python/` with members `store`, `fixtures`, `artifact`,
 `store-markdown`, `artifact-opendal`, and `vector-qdrant`.
@@ -19,12 +25,18 @@ Run each member's gates from inside it:
 
 ```bash
 cd python
-uv sync --all-packages --locked --group dev
+export UV_PYTHON_INSTALL_DIR="$PWD/.runtime"
+export UV_PYTHON_BIN_DIR="$PWD/.runtime/bin"
+uv sync --managed-python --all-packages --locked --group dev
 cd store             # or another workspace member
 uv run pytest -q
 uv run pyright
 uv run ruff check .
 ```
+
+The pinned managed build uses OpenSSL 3.5.9 and SQLite 3.53.1.
+It includes the WAL-reset fix, but predates the SQLite 3.53.2 FTS5 fixes.
+To include those fixes, use a Python build linked against SQLite 3.53.2 or later.
 
 The artifact and Markdown packages run TypeScript exchange tests. These tests rebuild their
 TypeScript dependencies. Run package tests sequentially to avoid competing writes to `dist`.
