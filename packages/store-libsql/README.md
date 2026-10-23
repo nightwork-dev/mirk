@@ -3,8 +3,9 @@
 A **libSQL / Turso** source adapter for [`@mirk/store`](../store)'s **async** ports.
 One libSQL client, two capability facets over one connection: `.kv` is an
 `AsyncStore` (key-value + collections), `.vector` is an `AsyncVectorStore` (vector
-similarity search). Works over **remote** (`libsql://…`, Turso), **file:**, and
-**`:memory:`** URLs.
+similarity search). The default entry works over **remote** (`libsql://…`, Turso),
+**file:**, and **`:memory:`** URLs. The `@mirk/store-libsql/remote` entry is an
+engine-free remote-only variant using the SDK web transport.
 
 ESM-only (the package exposes an `import` entry point; there is no CommonJS build).
 
@@ -27,6 +28,26 @@ npm install @mirk/store-libsql
 ```
 
 `@libsql/client` and `@mirk/store` are regular dependencies — nothing else to add.
+
+### Engine-free remote entry
+
+When local SQLite storage is not needed, import the remote entry. It binds to
+`@libsql/client/web`, so importing it does not load libSQL's native SQLite
+engine. It accepts `libsql://`, `https://`, `http://`, `wss://`, and `ws://`
+URLs and rejects `file:` and `:memory:` before creating a client.
+
+```ts
+import { LibsqlAdapter } from "@mirk/store-libsql/remote";
+
+const adapter = await LibsqlAdapter.open({
+  url: "libsql://your-db.turso.io",
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+```
+
+Use the package root when local `file:` or `:memory:` support is required.
+The SDK remains a dependency, so package managers may still install its native packages.
+The remote export avoids loading them. Caller-supplied clients remain the host's responsibility.
 
 ## Native SQLite security scope
 
@@ -80,6 +101,7 @@ adapter.close();
 Pass `opts.client` to share an already-open `@libsql/client`. The adapter tracks
 ownership: `close()` is a **no-op** for a caller-supplied client (you keep the
 connection's lifecycle).
+For the remote export, create supplied clients with `createClient` from `@libsql/client/web`.
 
 ```ts
 import { createClient } from "@libsql/client";
@@ -119,6 +141,18 @@ store at a different dimension than it was created with throws.
 
 - The optional atomic mutation capability from `@mirk/store/atomic`.
 - A search facet; use `@mirk/store/sqlite` or another `AsyncSearchStore` backend.
+
+## Remote integration check
+
+Build the workspace, then run against a libSQL server executable:
+
+```bash
+MIRK_LIBSQL_SERVER=/path/to/sqld pnpm --filter @mirk/store-libsql test:remote
+```
+
+The check starts an isolated loopback server with temporary data and removes it afterward.
+It exercises the published remote export over HTTP, WebSocket, and `libsql://` URLs while native imports are denied.
+It also checks generated consumer declarations and keeps a negative control for the native-capable root import.
 
 ## License
 

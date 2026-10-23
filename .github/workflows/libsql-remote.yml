@@ -1,0 +1,50 @@
+name: Engine-free libSQL remote adapter
+
+on:
+  push:
+    paths:
+      - "packages/store-libsql/**"
+      - "packages/store/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/libsql-remote.yml"
+  pull_request:
+    paths:
+      - "packages/store-libsql/**"
+      - "packages/store/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/libsql-remote.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  remote:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.23.4, 24.22.1, 26.12.1]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @mirk/store build
+      - run: pnpm --filter @mirk/store-libsql build
+      - name: Download isolated libSQL test server
+        run: |
+          archive="$RUNNER_TEMP/libsql-server.tar.xz"
+          curl -fLsS https://github.com/tursodatabase/libsql/releases/download/libsql-server-v0.24.32/libsql-server-x86_64-unknown-linux-gnu.tar.xz -o "$archive"
+          echo "71720fc8648c19efef416efebd47145ef59b62e198770533530a858e1336879f  $archive" | sha256sum --check
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+      - name: Verify remote exports without loading the native engine
+        env:
+          MIRK_LIBSQL_SERVER: ${{ runner.temp }}/libsql-server-x86_64-unknown-linux-gnu/sqld
+        run: pnpm --filter @mirk/store-libsql test:remote

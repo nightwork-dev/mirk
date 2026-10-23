@@ -873,6 +873,21 @@ function checkRootDependencyBoundary(
   manifest,
   exports
 ) {
+  if (packageName === "@mirk/store-libsql") {
+    const remoteTarget = exportTarget(manifest.exports?.["./remote"]);
+    if (remoteTarget) {
+      const remoteFiles = reachableRuntimeFiles(resolve(extracted, remoteTarget), extracted);
+      const imports = remoteFiles.flatMap((file) => [...readFileSync(file, "utf8").matchAll(
+        /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["']([^"']+)["']/g
+      )].map((match) => match[1]));
+      const forbidden = imports.filter((name) =>
+        ["@libsql/client", "@libsql/client/node", "@libsql/client/sqlite3", "libsql"].includes(name)
+        || name.startsWith("libsql/") || /^@libsql\/(darwin|linux|win32)-/.test(name)
+      );
+      if (forbidden.length) throw new Error(`${packageName}: remote export reaches native driver ${forbidden.join(", ")}`);
+      if (!imports.includes("@libsql/client/web")) throw new Error(`${packageName}: remote export does not use the web client`);
+    }
+  }
   const rule = ROOT_BOUNDARIES.get(packageName);
   if (!rule) return;
   const rootExport = manifest.exports?.["."];
