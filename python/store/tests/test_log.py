@@ -5,6 +5,7 @@ The exchange with TypeScript-written files lives in ``test_sqlite_compat.py``.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import sqlite3
 from pathlib import Path
@@ -12,8 +13,8 @@ from typing import Any
 
 import pytest
 
-from mirk.store import SqliteStore
-from mirk.store.log import InMemoryLogStore, LogInputError, LogStore
+from mirk.store import AtomicMutationBackendError, SqliteStore
+from mirk.store.log import InMemoryLogStore, LogInputError, LogStore, LogTransactionError
 from mirk.store.sqlite_log import SqliteLogFacet
 
 
@@ -106,3 +107,68 @@ def test_two_connections_interleave_without_a_gap(tmp_path: Path) -> None:
         given = [logs[index % 2].append("s", index) for index in range(50)]
         assert given == list(range(1, 51))
         _expect_contiguous(logs[0], "s")
+
+
+def test_integral_floats_are_accepted_where_typescript_accepts_them(log: LogStore) -> None:
+    for step in ("a", "b", "c", "d"):
+        log.append("s", step)
+    one: Any = 1.0
+    bounds: Any = {"after": 2.0, "limit": 1.0}
+    entry = log.get("s", one)
+    assert entry == {"sequence": 1, "record": "a"}
+    assert entry is not None and type(entry["sequence"]) is int
+    assert log.list("s", bounds) == [{"sequence": 3, "record": "c"}]
+    bad_sequences: list[Any] = [1.5, True, float(2**53), math.nan, math.inf]
+    for bad in bad_sequences:
+        with pytest.raises(LogInputError):
+            log.get("s", bad)
+    half: Any = {"limit": 0.5}
+    with pytest.raises(LogInputError):
+        log.list("s", half)
+
+
+def test_a_read_then_append_deferred_transaction_raises_the_typed_busy_error(
+    tmp_path: Path,
+) -> None:
+    path = str(tmp_path / "log.sqlite")
+    with SqliteStore(path) as first, SqliteStore(path) as second:
+        a, b = SqliteLogFacet(first), SqliteLogFacet(second)
+        first.connection.execute("BEGIN")
+        a.lastSequence("s")
+        b.append("s", "x")
+        with pytest.raises(AtomicMutationBackendError) as raised:
+            a.append("s", "y")
+        first.connection.execute("ROLLBACK")
+        assert raised.value.retryable is True
+        assert a.list("s") == [{"sequence": 1, "record": "x"}]
+        assert a.append("s", "y") == 2
+
+
+def test_memory_transaction_refuses_appends_from_another_task() -> None:
+    log = InMemoryLogStore()
+
+    async def main() -> None:
+        opened = asyncio.Event()
+        release = asyncio.Event()
+
+        async def holder() -> None:
+            with pytest.raises(RuntimeError, match=r"^abort$"), log.transaction():
+                log.append("s", "inside")
+                opened.set()
+                await release.wait()
+                raise RuntimeError("abort")
+
+        async def intruder() -> None:
+            await opened.wait()
+            try:
+                with pytest.raises(LogTransactionError):
+                    log.append("s", "from another task")
+            finally:
+                release.set()
+
+        await asyncio.gather(holder(), intruder())
+        assert log.lastSequence("s") == 0
+        assert log.append("s", "after") == 1
+        _expect_contiguous(log, "s")
+
+    asyncio.run(main())

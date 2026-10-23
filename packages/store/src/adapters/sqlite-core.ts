@@ -1926,13 +1926,28 @@ class SqliteLogFacet implements LogStore {
   append(stream: string, record: unknown): number {
     assertStream(stream);
     const text = encodeRecord(record);
-    const row = this.db
-      .prepare(
-        `INSERT INTO _mirk_log (stream, sequence, record)
-         SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM _mirk_log WHERE stream = ?
-         RETURNING sequence`
-      )
-      .get(stream, text, stream) as { sequence: number | bigint };
+    let row: { sequence: number | bigint };
+    try {
+      row = this.db
+        .prepare(
+          `INSERT INTO _mirk_log (stream, sequence, record)
+           SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM _mirk_log WHERE stream = ?
+           RETURNING sequence`
+        )
+        .get(stream, text, stream) as { sequence: number | bigint };
+    } catch (error) {
+      // Another writer held the lock past busyTimeoutMs, or committed after a
+      // deferred transaction's first read, so this one cannot write. Nothing
+      // was appended; retrying the whole transaction is safe.
+      if (isSqliteBusyOrLocked(error)) {
+        throw new AtomicMutationBackendError(
+          "unavailable",
+          true,
+          "SQLite is busy or locked."
+        );
+      }
+      throw error;
+    }
     return Number(row.sequence);
   }
 

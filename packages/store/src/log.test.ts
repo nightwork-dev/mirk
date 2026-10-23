@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { NodeSqliteAdapter } from "./adapters/node-sqlite.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
+import { AtomicMutationBackendError } from "./atomic.js";
 import { InMemoryLogStore, LogInputError, toAsyncLog } from "./log.js";
 import type { JsonValue, LogStore } from "./log.js";
 
@@ -133,6 +134,81 @@ describe.each(adapters)("SQLite log facet (%s)", (_name, Adapter) => {
       ]);
     } finally {
       adapter.close();
+    }
+  });
+
+  it("read-then-append in a deferred transaction fails with the typed retryable busy error when another writer commits first", () => {
+    const path = tempFile();
+    const a = new Adapter({ path });
+    const b = new Adapter({ path });
+    try {
+      let thrown: unknown;
+      try {
+        a.transaction(() => {
+          a.log.lastSequence("s");
+          b.log.append("s", "x");
+          return a.log.append("s", "y");
+        });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(AtomicMutationBackendError);
+      expect(thrown).toMatchObject({ code: "unavailable", retryable: true });
+      expect(a.log.list("s").map((entry) => entry.record)).toEqual(["x"]);
+      expect(a.log.append("s", "y")).toBe(2);
+    } finally {
+      a.close();
+      b.close();
+    }
+  });
+
+  it("read-then-append in an immediate transaction holds the writer lock, so the read stays current", () => {
+    const path = tempFile();
+    const a = new Adapter({ path });
+    const b = new Adapter({ path, busyTimeoutMs: 0 });
+    try {
+      b.log.append("s", "before");
+      const appended = a.transaction(() => {
+        const last = a.log.lastSequence("s");
+        expect(() => b.log.append("s", "blocked")).toThrow(AtomicMutationBackendError);
+        expect(a.log.append("s", { after: last })).toBe(last + 1);
+        return last + 1;
+      }, "immediate");
+      expect(appended).toBe(2);
+      expect(b.log.append("s", "after")).toBe(3);
+      expectContiguous(a.log, "s");
+    } finally {
+      a.close();
+      b.close();
+    }
+  });
+
+  it("the README's cursor example runs while another connection appends between batches", () => {
+    const path = tempFile();
+    const db = new Adapter({ path });
+    const other = new Adapter({ path });
+    try {
+      const runBatch = () =>
+        db.transaction(() => {
+          const cursor = db.kv.get<number>("cursor:mailer") ?? 0;
+          const batch = db.log.list("deliveries", { after: cursor, limit: 100 });
+          for (const entry of batch) db.log.append("sent", { delivery: entry.sequence });
+          db.kv.set("cursor:mailer", batch.at(-1)?.sequence ?? cursor);
+          return batch.length;
+        }, "immediate");
+      other.log.append("deliveries", { id: "d1" });
+      other.log.append("deliveries", { id: "d2" });
+      expect(runBatch()).toBe(2);
+      other.log.append("deliveries", { id: "d3" });
+      expect(runBatch()).toBe(1);
+      expect(db.log.list("sent").map((entry) => entry.record)).toEqual([
+        { delivery: 1 },
+        { delivery: 2 },
+        { delivery: 3 },
+      ]);
+    } finally {
+      db.close();
+      other.close();
     }
   });
 
