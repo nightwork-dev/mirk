@@ -88,3 +88,22 @@ Object.defineProperty(ObjectWriteIndeterminateError.prototype, "name", {
   configurable: true,
   enumerable: false,
 });
+
+/** Thrown by an object store when a write failed and the store knows it
+ *  stored nothing at `key`: the request was refused, the source failed or ran
+ *  over a limit before anything was committed, or the store removed its own
+ *  partial bytes. The coordinator then leaves the key alone, because any
+ *  object there now belongs to another writer. */
+export class ObjectWriteRejectedError extends Error {
+  declare readonly name: "ObjectWriteRejectedError";
+  constructor(readonly key: string, options?: ErrorOptions) {
+    super("Object write stored nothing at this key.", options);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(ObjectWriteRejectedError.prototype, "name", {
+  value: "ObjectWriteRejectedError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});

@@ -3,6 +3,7 @@
 "@mirk/store-postgres": minor
 "@mirk/artifact": minor
 "@mirk/artifact-vercel-blob": minor
+"@mirk/artifact-opendal": minor
 ---
 
 Add the `AsyncStoreTransactions` contract: `transaction(work)` with nested savepoints, and `afterCommit(notify)` callbacks that run once, in order, after the outermost commit and never after a rollback. `@mirk/store/transaction` provides `AsyncTransactionCoordinator` for adapters that implement it.
@@ -11,4 +12,4 @@ Add the `AsyncStoreTransactions` contract: `transaction(work)` with nested savep
 
 The SQLite adapters gain `asyncKv`, `asyncTransaction`, and `afterCommit`. Awaitable work is serialized per file within a process; synchronous facets throw `async-operation-active` while it owns the file. `namespaceAsyncStore` binds an `AsyncStore` the way `namespaceStore` binds a `SyncStore`.
 
-`@mirk/artifact` adds `ObjectWriteIndeterminateError`: when an object store cannot tell whose bytes landed, the coordinator keeps the object and fails the write with `cleanup: "preserved-indeterminate"`. A later write that finds identical left-over bytes at its object key adopts them; different bytes fail with `object-key-occupied`. The new `@mirk/artifact-vercel-blob` package stores artifact bytes as private Vercel Blob objects and lists them for maintenance.
+`@mirk/artifact` adds `ObjectWriteIndeterminateError`: when an object store cannot tell whose bytes landed, the coordinator keeps the object and fails the write with `cleanup: "preserved-indeterminate"`. A later write that finds identical left-over bytes at its object key adopts them; different bytes fail with `object-key-occupied`. Object stores report a write that stored nothing as `ObjectWriteRejectedError`, and the coordinator then never deletes the key; the in-memory store's create-if-missing is now atomic across a streamed source. `ArtifactMaintenance` takes a `namespace` that confines audits and repairs to the coordinator's keys. The new `@mirk/artifact-vercel-blob` package stores artifact bytes as private Vercel Blob objects under a required root and lists them for maintenance. `@mirk/artifact-opendal` reports failures before its writer closes as `ObjectWriteRejectedError`.

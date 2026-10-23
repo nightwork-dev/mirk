@@ -14,10 +14,15 @@ import type {
 } from "./maintenance-types.js";
 
 import { compareCodePoints } from "@mirk/store";
-import { digestStream, makeId, metadataFingerprint } from "./util.js";
+import { assertObjectKey, digestStream, makeId, metadataFingerprint } from "./util.js";
 import type { ArtifactLineageEdge } from "./types.js";
 
 export interface ArtifactMaintenanceOptions {
+  /** Audit and repair only objects whose keys start with `${namespace}/`,
+   *  the coordinator's namespace. Set it whenever the object store holds
+   *  anything else; without it every unreferenced object in the store is a
+   *  deletion candidate. */
+  namespace?: string;
   now?: () => number;
   ownerId?: string;
   leaseTtlMs?: number;
@@ -42,6 +47,7 @@ export class ArtifactMaintenance {
   readonly #ownerId: string;
   readonly #leaseTtlMs: number;
   readonly #auditIdFactory: () => string;
+  readonly #namespace: string | undefined;
   readonly #snapshots = new Map<string, Snapshot>();
 
   constructor(
@@ -55,6 +61,8 @@ export class ArtifactMaintenance {
       `artifact-maintenance-${Math.random().toString(36).slice(2)}`;
     this.#leaseTtlMs = Math.max(1, options.leaseTtlMs ?? 30_000);
     this.#auditIdFactory = options.auditIdFactory ?? makeId;
+    if (options.namespace !== undefined) assertObjectKey(options.namespace);
+    this.#namespace = options.namespace;
   }
 
   async audit(): Promise<ArtifactAuditReport> {
@@ -115,7 +123,10 @@ export class ArtifactMaintenance {
     let scannedObjects: number | undefined;
     const listable = this.#listable();
     if (listable) {
-      const infos = [...(await listable.list())];
+      const scope = this.#namespace === undefined ? undefined : `${this.#namespace}/`;
+      const infos = (await listable.list(scope)).filter(
+        (info) => scope === undefined || info.key.startsWith(scope)
+      );
       scannedObjects = infos.length;
       for (const info of infos) {
         if (recordsByObject.has(info.key)) continue;

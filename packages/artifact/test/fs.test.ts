@@ -93,7 +93,10 @@ describe("FileObjectStore", () => {
       yield new Uint8Array([1, 2]);
       throw sourceError;
     }
-    await expect(store.put("k", failing(), { ifAbsent: true })).rejects.toBe(sourceError);
+    await expect(store.put("k", failing(), { ifAbsent: true })).rejects.toMatchObject({
+      name: "ObjectWriteRejectedError",
+      cause: sourceError,
+    });
     // The partial .bin must be gone, so the retry succeeds instead of EEXIST.
     const info = await store.put("k", new Uint8Array([9]), { ifAbsent: true });
     expect(info.sizeBytes).toBe(1);

@@ -7,7 +7,15 @@ import type {
   ObjectInfo,
   ObjectPutOptions,
 } from "@mirk/artifact";
-import { assertObjectKey, chunks, digestStream } from "@mirk/artifact";
+import {
+  ArtifactValidationError,
+  assertObjectKey,
+  chunks,
+  digestStream,
+  ObjectAlreadyExistsError,
+  ObjectWriteIndeterminateError,
+  ObjectWriteRejectedError,
+} from "@mirk/artifact";
 import type { Metadata, Operator } from "opendal";
 
 export type OpenDalObjectStoreErrorCode =
@@ -65,11 +73,39 @@ export class OpenDalObjectStore implements ListableObjectStore {
     }
   }
 
+  /** A failure before the writer closes leaves nothing of this write: the
+   *  backend commits an object on close, and the write removes any partial
+   *  one. It is reported as `ObjectWriteRejectedError` so a caller never
+   *  deletes the key, which may by then hold another writer's object. */
   async put(
     key: string,
     source: ByteSource,
     options: ObjectPutOptions = {}
   ): Promise<ObjectInfo> {
+    try {
+      await this.#write(key, source, options);
+    } catch (error) {
+      if (
+        error instanceof ObjectWriteIndeterminateError ||
+        error instanceof ObjectWriteRejectedError ||
+        error instanceof ObjectAlreadyExistsError ||
+        error instanceof ArtifactValidationError
+      )
+        throw error;
+      throw new ObjectWriteRejectedError(key, { cause: error });
+    }
+    return metadataToInfo(
+      key,
+      await this.operator.stat(key),
+      this.#digestMetadataKey
+    );
+  }
+
+  async #write(
+    key: string,
+    source: ByteSource,
+    options: ObjectPutOptions
+  ): Promise<void> {
     assertObjectKey(key);
     const capability = this.operator.capability();
     if (options.ifAbsent && !capability.writeWithIfNotExists) {
@@ -147,15 +183,12 @@ export class OpenDalObjectStore implements ListableObjectStore {
       // Conditional existence is checked by some services at close time. At
       // that point ownership is indeterminate, so preserve the pre-existing
       // object and let the caller reconcile the failed write.
-      if (!options.ifAbsent)
+      if (!options.ifAbsent) {
         await this.operator.delete(key).catch(() => undefined);
-      throw error;
+        throw error;
+      }
+      throw new ObjectWriteIndeterminateError(key, { cause: error });
     }
-    return metadataToInfo(
-      key,
-      await this.operator.stat(key),
-      this.#digestMetadataKey
-    );
   }
 
   async get(key: string): Promise<ByteStream | undefined> {
