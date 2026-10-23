@@ -11,7 +11,7 @@ still open.
 | ------ | --------------------------------------------------------- | ------------------------------------ | ------------- |
 | MR-01  | Graph primitive — edge model and traversal                | `@mirk/store/graph`                  | shipped       |
 | MR-02  | Event primitive                                           | —                                    | closed        |
-| MR-03  | Addressable no-drop inbox                                 | —                                    | deferred      |
+| MR-03  | Append-only ordered log (no inbox semantics)              | `@mirk/store/log`, `python/store`    | unreleased    |
 | MR-04  | Batch/IN collection matching                              | `@mirk/store`                        | shipped       |
 | MR-05  | Full-text search primitive                                | `@mirk/store/search`                 | shipped       |
 | MR-06  | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`                 | shipped       |
@@ -69,10 +69,14 @@ owner is deferred; use PostgreSQL for sustained multi-writer workloads.
 path executes rather than falling back to JS cosine. Until one does, treat libSQL vector search as
 exact cosine.
 
-### MR-03 · Addressable no-drop inbox
+## Narrowed
 
-A possible append-log and status primitive over `@mirk/store/kv`, deferred until a storage-only
-contract emerges. A messaging or workflow framework is out of scope.
+### MR-03 · Append-only ordered log
+
+Proposed as an addressable no-drop inbox: an append log plus delivery status. The storage-only part
+now exists as `@mirk/store/log`, an append-only log of JSON records with per-stream sequences and no
+gaps among committed appends, in memory, both SQLite adapters, and the Python port. Inbox semantics
+(consumer cursors, acknowledgement, delivery status, wake-up) stay out of scope, as for MR-02.
 
 ## Closed
 
