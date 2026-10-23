@@ -602,11 +602,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
     // A zero / non-finite query has no cosine direction — also use the deterministic
     // JS path there.
     if (this.accelerated && isUsableVector(query) && !hasFilters) {
-      try {
-        return await this.searchNative<M>(collection, query, topK, minScore);
-      } catch {
-        // Any native runtime error → fall through to the exact JS path (same result).
-      }
+      return this.searchNative<M>(collection, query, topK, minScore);
     }
     return this.searchJs<M>(collection, query, topK, minScore, opts?.where, opts?.whereNot);
   }
@@ -628,7 +624,7 @@ class LibsqlVectorFacet implements AsyncVectorStore {
       sql: `SELECT v.id AS id,
                    v.metadata AS metadata,
                    vector_distance_cos(v.vec, vector32(?)) AS distance
-            FROM vector_top_k('vectors_vec_idx', vector32(?), ?) AS t
+            FROM vector_top_k('vectors_vec_idx', vector32(?), CAST(? AS INTEGER)) AS t
             JOIN vectors v ON v.rowid = t.id
             WHERE v.collection = ?`,
       args: [vectorToJson(query), vectorToJson(query), overFetch, collection],
