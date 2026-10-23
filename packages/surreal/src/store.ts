@@ -4,7 +4,7 @@ import type { AsyncStore, AsyncStoreInQuery, StoreFilter, StoreMeta } from "@mir
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
 import { cloneJson } from "./internal/clone-json.js";
-import { LONE_SURROGATE_CODEC, decodeLoneSurrogates, encodeLoneSurrogates } from "./internal/lone-surrogates.js";
+import { decodeLoneSurrogates, encodeLoneSurrogates } from "./internal/lone-surrogates.js";
 import { firstStatement } from "./internal/query-result.js";
 import type { SurrealConnection } from "./index.js";
 
@@ -72,7 +72,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
       content: {
         key,
         value: encoded.value,
-        ...(encoded.encoded ? { mirk_codec: LONE_SURROGATE_CODEC } : {}),
+        ...(encoded.marker ? { mirk_codec: encoded.marker } : {}),
       },
     });
   }
@@ -124,11 +124,11 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
     filter?: StoreFilter,
   ): Promise<T[]> {
     if (values.length === 0) return [];
+    const query = buildSelectQuery(filter, "$inField INSIDE object::keys(data) AND data[$inField] INSIDE $inValues");
     for (const value of values) {
       if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
     }
     const table = await this.ensureCollection(collection);
-    const query = buildSelectQuery(filter, "$inField INSIDE object::keys(data) AND data[$inField] INSIDE $inValues");
     const rows = firstStatement<CollectionRow[]>(
       await this.connection.query(query.sql, {
         table,
@@ -167,7 +167,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery {
         key: recordKey(item.id),
         id: item.id,
         data: data.value,
-        codec: data.encoded ? LONE_SURROGATE_CODEC : undefined,
+        codec: data.marker,
       },
     );
     return item;
@@ -248,9 +248,7 @@ function ordinalOf(value: unknown): number | undefined {
 }
 
 function idOf(row: CollectionRow): string {
-  if (typeof row.mirk_id === "string") return row.mirk_id;
-  const id = (row.data as { id?: unknown } | null)?.id;
-  return typeof id === "string" ? id : "";
+  return typeof row.mirk_id === "string" ? row.mirk_id : "";
 }
 
 function isJsonScalar(value: unknown): boolean {
