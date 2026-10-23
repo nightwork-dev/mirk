@@ -454,13 +454,19 @@ export class SqliteAdapterCore {
       },
       commit: () => this.rawDb.exec("COMMIT"),
       rollback: () => {
-        if (this.rawDb.inTransaction) this.rawDb.exec("ROLLBACK");
+        if (!this.rawDb.inTransaction) return;
+        const minted = this.mintedVersions();
+        this.rawDb.exec("ROLLBACK");
+        this.keepVersionsMinted(minted);
       },
       savepoint: (_release, name) => this.rawDb.exec(`SAVEPOINT ${name}`),
       releaseSavepoint: (_release, name) =>
         this.rawDb.exec(`RELEASE SAVEPOINT ${name}`),
-      rollbackToSavepoint: (_release, name) =>
-        this.rawDb.exec(`ROLLBACK TO SAVEPOINT ${name}`),
+      rollbackToSavepoint: (_release, name) => {
+        const minted = this.mintedVersions();
+        this.rawDb.exec(`ROLLBACK TO SAVEPOINT ${name}`);
+        this.keepVersionsMinted(minted);
+      },
       end: (release) => release(),
     });
     try {
@@ -513,8 +519,40 @@ export class SqliteAdapterCore {
    * database transaction open until the callback returns.
    */
   transaction<T>(work: () => T, mode: SqliteTransactionMode = "deferred"): T {
-    const transaction = this.db.transaction(work);
-    return transaction[mode]();
+    let minted = 0;
+    const transaction = this.db.transaction(() => {
+      try {
+        return work();
+      } finally {
+        minted = this.mintedVersions();
+      }
+    });
+    try {
+      return transaction[mode]();
+    } catch (error) {
+      if (minted > 0) this.keepVersionsMinted(minted);
+      throw error;
+    }
+  }
+
+  /** The last version number minted on this connection, including by the
+   *  open transaction. */
+  private mintedVersions(): number {
+    return (
+      this.rawDb
+        .prepare("SELECT value FROM _mirk_atomic_sequence WHERE id = 1")
+        .get() as { value: number }
+    ).value;
+  }
+
+  /** A rollback rewinds the version sequence, but a caller may already hold a
+   *  token minted inside the rolled-back work. Move the sequence past it so no
+   *  later write can reissue that token. */
+  private keepVersionsMinted(minted: number): void {
+    if (minted <= this.mintedVersions()) return;
+    this.rawDb
+      .prepare("UPDATE _mirk_atomic_sequence SET value = ? WHERE id = 1")
+      .run(minted);
   }
 
   /** Run short, database-only async work in one `BEGIN IMMEDIATE`
@@ -544,16 +582,18 @@ export class SqliteAdapterCore {
     );
   }
 
-  private async runSerialized<T>(op: () => Promise<T>): Promise<T> {
-    if (this.asyncTransactions.current() !== undefined) return op();
-    const release = await acquireAsyncFile(this.asyncKey, this);
-    this.asyncCallDepth += 1;
-    try {
-      return await op();
-    } finally {
-      this.asyncCallDepth -= 1;
-      release();
-    }
+  private runSerialized<T>(op: () => Promise<T>): Promise<T> {
+    return this.asyncTransactions.withConnection(async (release) => {
+      if (release !== undefined) return op();
+      const releaseFile = await acquireAsyncFile(this.asyncKey, this);
+      this.asyncCallDepth += 1;
+      try {
+        return await op();
+      } finally {
+        this.asyncCallDepth -= 1;
+        releaseFile();
+      }
+    });
   }
 
   private serializedAsyncStore(
