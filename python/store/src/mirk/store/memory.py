@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any, cast
 
 from .atomic import (
     IN_PROCESS_ATOMIC_LIMITS,
+    RECEIPT_PRUNE_BATCH,
     AtomicMutationLimits,
     clone_condition,
     clone_json,
     clone_target,
     condition_matches,
+    is_receipt_expired,
     operation_target,
     resolve_atomic_limits,
+    resolve_receipt_retention,
     target_key,
     validate_atomic_request,
 )
+from .atomic import wall_clock_ms as _wall_clock_ms
 from .filter import (
     IN_SCALAR_MESSAGE,
     StoreFilterError,
@@ -57,7 +62,13 @@ class InMemoryStore:
         *,
         version_identity: str | None = None,
         atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
+        receipt_retention_ms: int | None = None,
+        now: Callable[[], float] | None = None,
     ) -> None:
+        """``receipt_retention_ms`` keeps each idempotency receipt that long; a
+        request whose key matches only an expired receipt is applied as new.
+        ``None`` keeps receipts forever. ``now`` is the clock, in milliseconds
+        since the epoch, that stamps and expires receipts."""
         global _next_memory_store_id
         self._meta = StoreMeta(backend="memory")
         self._kv: dict[str, Any] = {}
@@ -71,6 +82,8 @@ class InMemoryStore:
         self._version_prefix = version_identity
         self._receipts: dict[str, dict[str, Any]] = {}
         self._atomic_limits = resolve_atomic_limits(atomic_limits, IN_PROCESS_ATOMIC_LIMITS)
+        self._receipt_retention_ms = resolve_receipt_retention(receipt_retention_ms)
+        self._now: Callable[[], float] = now if now is not None else _wall_clock_ms
 
     @property
     def meta(self) -> StoreMeta:
@@ -193,8 +206,10 @@ class InMemoryStore:
         """Apply conditions and operations as one indivisible step."""
         validated = validate_atomic_request(request, self._atomic_limits)
         key = validated.idempotency_key
+        now = self._now() if key is not None else 0
         if key is not None:
-            prior = self._receipts.get(key)
+            self._prune_receipt_batch(now)
+            prior = self._read_receipt(key, now)
             if prior is not None:
                 if prior["requestDigest"] != validated.request_digest:
                     return {
@@ -268,11 +283,64 @@ class InMemoryStore:
             }
             if "outcome" in applied:
                 receipt["outcome"] = clone_json(applied["outcome"])
-            self._receipts[key] = {
-                "requestDigest": validated.request_digest,
-                "result": receipt,
-            }
+            self._write_receipt(
+                key, now, {"requestDigest": validated.request_digest, "result": receipt}
+            )
         return applied
+
+    @property
+    def receipt_retention_ms(self) -> int | None:
+        """How long a receipt is kept, or ``None`` when receipts are kept forever."""
+        return self._receipt_retention_ms
+
+    def pruneExpiredReceipts(self) -> int:
+        """Delete every expired receipt and return how many were deleted."""
+        if self._receipt_retention_ms is None:
+            return 0
+        now = self._now()
+        expired = [
+            key
+            for key, receipt in self._receipts.items()
+            if is_receipt_expired(receipt["createdAt"], now, self._receipt_retention_ms)
+        ]
+        for key in expired:
+            del self._receipts[key]
+        return len(expired)
+
+    # Every receipt read and write goes through these three methods.
+
+    def _read_receipt(self, key: str, now: float) -> dict[str, Any] | None:
+        receipt = self._receipts.get(key)
+        if receipt is None:
+            return None
+        if is_receipt_expired(receipt["createdAt"], now, self._receipt_retention_ms):
+            return None
+        return receipt
+
+    def _write_receipt(self, key: str, now: float, receipt: dict[str, Any]) -> None:
+        # An expired receipt under this key is replaced and moves to the end of
+        # the insertion order with its new creation time.
+        self._receipts.pop(key, None)
+        self._receipts[key] = {**receipt, "createdAt": now}
+
+    def _prune_receipt_batch(self, now: float) -> int:
+        """Delete at most one batch of expired receipts.
+
+        Receipts are kept in creation order, so the scan stops at the first live
+        one.
+        """
+        if self._receipt_retention_ms is None:
+            return 0
+        expired: list[str] = []
+        for key, receipt in self._receipts.items():
+            if len(expired) >= RECEIPT_PRUNE_BATCH:
+                break
+            if not is_receipt_expired(receipt["createdAt"], now, self._receipt_retention_ms):
+                break
+            expired.append(key)
+        for key in expired:
+            del self._receipts[key]
+        return len(expired)
 
     def listWhereIn(
         self,

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { compareExpect } from "../../store/src/conformance/compare.js";
 import type { Expect, Scenario, Step } from "../../store/src/conformance/format.js";
-import { executeStep, targetKindFor } from "../../store/src/conformance/runner.js";
+import { executeStep, scenarioStoreSetup, targetKindFor } from "../../store/src/conformance/runner.js";
 import { openIndexedDbAdapter } from "./index.js";
 
 declare global {
@@ -31,6 +31,7 @@ const STORE_METHODS = [
   "count",
   "getVersioned",
   "mutateAtomically",
+  "pruneExpiredReceipts",
 ] as const;
 
 /** Optional capabilities this adapter does not implement, with the reason. A
@@ -78,8 +79,9 @@ describe("conformance corpus on IndexedDB", () => {
       expect(targetKindFor(scenario.ports)).toBe("store");
       executed += 1;
       const dbName = `mirk-conformance-${crypto.randomUUID()}`;
-      const adapter = await openIndexedDbAdapter({ dbName, versionIdentity: CONFORMANCE_VERSION_IDENTITY });
-      const api: Record<string, unknown> = {};
+      const setup = scenarioStoreSetup(scenario);
+      const adapter = await openIndexedDbAdapter({ dbName, versionIdentity: CONFORMANCE_VERSION_IDENTITY, ...setup.options });
+      const api: Record<string, unknown> = { ...setup.api };
       for (const name of STORE_METHODS) api[name] = adapter[name].bind(adapter);
       try {
         for (const [index, step] of (scenario.steps as Step[]).entries()) {

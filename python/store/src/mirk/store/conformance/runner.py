@@ -132,6 +132,51 @@ def scenario_port(scenario: Scenario) -> str:
     return specific[0]
 
 
+#: Where the manual clock of a scenario with ``store`` options starts:
+#: 2026-01-01T00:00:00Z, in milliseconds since the epoch.
+CONFORMANCE_CLOCK_START_MS = 1_767_225_600_000
+
+
+class ScenarioClock:
+    """The manual clock a scenario with ``store`` options runs on."""
+
+    def __init__(self) -> None:
+        self.now_ms = CONFORMANCE_CLOCK_START_MS
+
+    def now(self) -> int:
+        return self.now_ms
+
+
+def scenario_store_options(scenario: Scenario) -> tuple[dict[str, Any], ScenarioClock | None]:
+    """The keyword arguments a store backend is built with for ``scenario``.
+
+    When the scenario carries ``store`` options, the store also gets a manual
+    clock, which ``ClockedStore`` exposes to the steps as ``advanceClock(ms)``.
+    """
+    options = scenario.store
+    if options is None:
+        return ({}, None)
+    clock = ScenarioClock()
+    return (
+        {"receipt_retention_ms": int(options["receiptRetentionMs"]), "now": clock.now},
+        clock,
+    )
+
+
+class ClockedStore:
+    """A store target whose steps may also advance its manual clock."""
+
+    def __init__(self, store: object, clock: ScenarioClock) -> None:
+        self._store = store
+        self._clock = clock
+
+    def advanceClock(self, ms: int) -> None:
+        self._clock.now_ms += ms
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._store, name)
+
+
 def resolve_target(port: str, backend: str, connection: object) -> object:
     """Build the object a scenario's steps are dispatched onto.
 

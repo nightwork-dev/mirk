@@ -73,6 +73,14 @@ export interface Step {
   expect?: Expect;
 }
 
+/** How the scenario's store is built. Absent means the defaults. When present,
+ *  the store also runs on a manual clock that starts at
+ *  `CONFORMANCE_CLOCK_START_MS` and moves only through the `advanceClock(ms)`
+ *  op, which every runner binds on the store target. */
+export interface ScenarioStoreOptions {
+  receiptRetentionMs: number;
+}
+
 export interface Scenario {
   /** Stable, unique, `<directory>/<name>`. Also the file path under conformance/. */
   id: string;
@@ -82,6 +90,7 @@ export interface Scenario {
   ports: string[];
   /** Optional capabilities the scenario requires (`listWhereIn`, `vec0`). */
   capabilities: string[];
+  store?: ScenarioStoreOptions;
   steps: Step[];
 }
 
@@ -123,6 +132,12 @@ export const scenarioSchema: Record<string, unknown> = {
     title: { type: "string", minLength: 1 },
     ports: { type: "array", items: { type: "string" }, minItems: 1 },
     capabilities: { type: "array", items: { type: "string" } },
+    store: {
+      type: "object",
+      additionalProperties: false,
+      required: ["receiptRetentionMs"],
+      properties: { receiptRetentionMs: { type: "integer", minimum: 1 } },
+    },
     steps: { type: "array", items: { $ref: "#/$defs/step" }, minItems: 1 },
   },
   $defs: {

@@ -11,7 +11,10 @@ from .loader import (
     validate_scenarios,
 )
 from .runner import (
+    CONFORMANCE_CLOCK_START_MS,
     STORE_PORTS,
+    ClockedStore,
+    ScenarioClock,
     StepFailure,
     StepOutcome,
     TargetUnavailableError,
@@ -22,12 +25,16 @@ from .runner import (
     run_scenario,
     run_step,
     scenario_port,
+    scenario_store_options,
 )
 
 __all__ = [
+    "CONFORMANCE_CLOCK_START_MS",
     "CORPUS_DIRNAME",
     "STORE_PORTS",
+    "ClockedStore",
     "Scenario",
+    "ScenarioClock",
     "StepFailure",
     "StepOutcome",
     "TargetUnavailableError",
@@ -44,5 +51,6 @@ __all__ = [
     "run_scenario",
     "run_step",
     "scenario_port",
+    "scenario_store_options",
     "validate_scenarios",
 ]

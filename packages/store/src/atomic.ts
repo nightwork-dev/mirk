@@ -29,6 +29,45 @@ export type JsonValue =
 
 export type JsonObject = { readonly [key: string]: JsonValue };
 
+type JsonPrimitive = null | boolean | number | string;
+
+/** `T` itself when every part of it is JSON, otherwise a type `T` does not
+ *  satisfy. Unlike {@link JsonValue} it accepts interfaces, which carry no index
+ *  signature, and optional properties. Functions, methods, symbols, bigints,
+ *  `undefined` in a required property, and `unknown` are refused. A class
+ *  instance with only data fields looks like a plain object to TypeScript, so
+ *  the runtime check still refuses it. */
+export type JsonCompatible<T> = T extends JsonPrimitive
+  ? T
+  : T extends (...args: never[]) => unknown
+    ? never
+    : T extends readonly unknown[]
+      ? { [K in keyof T]: JsonCompatible<T[K]> }
+      : T extends object
+        ? { [K in keyof T]: K extends string ? JsonCompatible<T[K]> : never }
+        : never;
+
+/** A caller's own JSON-shaped value as a {@link JsonValue}, without a cast. */
+export function jsonValue<T>(value: T & JsonCompatible<T>): JsonValue {
+  return value as JsonValue;
+}
+
+/** A `set` operation for a caller's own JSON-shaped value. */
+export function atomicSet<T>(
+  key: string,
+  value: T & JsonCompatible<T>
+): AtomicStoreOperation {
+  return { op: "set", key, value: value as JsonValue };
+}
+
+/** A `put` operation for a caller's own JSON-shaped record. */
+export function atomicPut<T extends { readonly id: string }>(
+  collection: string,
+  item: T & JsonCompatible<T>
+): AtomicStoreOperation {
+  return { op: "put", collection, item: item as unknown as { id: string } & JsonObject };
+}
+
 export type StoreTarget =
   | { kind: "key"; key: string }
   | { kind: "record"; collection: string; id: string };
@@ -227,6 +266,58 @@ export interface AsyncAtomicMutationStore extends AsyncVersionedReadStore {
   ): Promise<AtomicMutationResult>;
 }
 
+/** A synchronous store with the atomic mutation capability. */
+export type SyncAtomicStore = SyncStore & SyncAtomicMutationStore;
+
+/** An awaitable store with the atomic mutation capability. */
+export type AsyncAtomicStore = AsyncStore & AsyncAtomicMutationStore;
+
+/** A store that can expire idempotency receipts. `receiptRetentionMs` is
+ *  `undefined` when receipts are kept forever. */
+export interface SyncReceiptPruning {
+  readonly receiptRetentionMs: number | undefined;
+  /** Delete every expired receipt, in short batches, and return how many were
+   *  deleted. Returns 0 when receipts are kept forever. */
+  pruneExpiredReceipts(): number;
+}
+
+export interface AsyncReceiptPruning {
+  readonly receiptRetentionMs: number | undefined;
+  /** Delete every expired receipt, in short batches, and return how many were
+   *  deleted. Resolves to 0 when receipts are kept forever. */
+  pruneExpiredReceipts(): Promise<number>;
+}
+
+/** The most receipts one batch prunes. An atomic write with an idempotency key
+ *  prunes at most one batch before it decides, and an explicit prune runs one
+ *  batch per transaction. */
+export const RECEIPT_PRUNE_BATCH = 100;
+
+/** Check a `receiptRetentionMs` option. `undefined` keeps receipts forever. */
+export function resolveReceiptRetention(value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(
+      `receiptRetentionMs must be a positive safe integer; got ${String(value)}.`
+    );
+  }
+  return value;
+}
+
+/** Whether a receipt stamped at `createdAt` has expired at `now`. A receipt is
+ *  live while its age is at most the window, and expired once its age exceeds
+ *  it. A receipt with no creation time never expires here; pruning stamps it
+ *  first. */
+export function isReceiptExpired(
+  createdAt: number | null | undefined,
+  now: number,
+  retentionMs: number | undefined
+): boolean {
+  if (retentionMs === undefined || createdAt === null || createdAt === undefined)
+    return false;
+  return now - createdAt > retentionMs;
+}
+
 function hasAtomicLimits(candidate: {
   atomicLimits?: AtomicMutationLimits;
 }): boolean {
@@ -272,7 +363,7 @@ export const MAX_ATOMIC_OPERATIONS = DEFAULT_ATOMIC_LIMITS.maxOperations;
  *  `DEFAULT_ATOMIC_LIMITS.maxRequestBytes` for the portable default. */
 export const MAX_ATOMIC_REQUEST_BYTES = DEFAULT_ATOMIC_LIMITS.maxRequestBytes;
 /** A fixed cap, not configurable: an idempotency outcome is persisted under its
- *  key forever, so no backend may accept a larger one. */
+ *  key for as long as the receipt lives, so no backend may accept a larger one. */
 export const MAX_ATOMIC_OUTCOME_BYTES = 64 * 1024;
 
 const REQUEST_SCHEMA = "mirk-atomic-request/v1";

@@ -86,8 +86,20 @@ function structuralProblem(value: unknown): string | null {
     return '"ports" must name at least one port';
   }
   for (const key of Object.keys(record)) {
-    if (!["id", "title", "ports", "capabilities", "steps"].includes(key)) {
+    if (!["id", "title", "ports", "capabilities", "store", "steps"].includes(key)) {
       return `unexpected top-level key "${key}"`;
+    }
+  }
+  if (record.store !== undefined) {
+    const store = record.store as Record<string, unknown> | null;
+    if (
+      store === null ||
+      typeof store !== "object" ||
+      Object.keys(store).join() !== "receiptRetentionMs" ||
+      !Number.isSafeInteger(store.receiptRetentionMs) ||
+      (store.receiptRetentionMs as number) < 1
+    ) {
+      return '"store" must be { "receiptRetentionMs": <positive integer> }';
     }
   }
   const steps = record.steps;

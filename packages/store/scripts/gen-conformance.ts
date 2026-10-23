@@ -215,6 +215,7 @@ async function buildScenario(authored: AuthoredScenario): Promise<Scenario> {
       title: authored.title,
       ports: authored.ports,
       capabilities: authored.capabilities,
+      ...(authored.store === undefined ? {} : { store: authored.store }),
       steps,
     };
   } finally {

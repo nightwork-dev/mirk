@@ -59,6 +59,11 @@ export type {
   AsyncAtomicMutationStore,
   AtomicMutationLimits,
   CanonicalJsonErrorCode,
+  JsonCompatible,
+  SyncAtomicStore,
+  AsyncAtomicStore,
+  SyncReceiptPruning,
+  AsyncReceiptPruning,
 } from "./atomic.js";
 export {
   AtomicMutationRejectedError,
@@ -72,6 +77,10 @@ export {
   DEFAULT_ATOMIC_LIMITS,
   IN_PROCESS_ATOMIC_LIMITS,
   resolveAtomicLimits,
+  atomicPut,
+  atomicSet,
+  jsonValue,
+  RECEIPT_PRUNE_BATCH,
 } from "./atomic.js";
 
 // Browser and Node WebCrypto sealed record envelopes for app-owned vault keys.

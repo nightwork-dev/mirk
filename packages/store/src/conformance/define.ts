@@ -16,6 +16,8 @@
 // A step with no marker is setup. Setup still has to succeed: a setup step that
 // throws fails generation and fails replay.
 
+import type { ScenarioStoreOptions } from "./format.js";
+
 /** Exact deep equality on this step's result. */
 export interface MarkValue {
   value: true;
@@ -63,6 +65,7 @@ export interface AuthoredScenario {
   title: string;
   ports: string[];
   capabilities: string[];
+  store?: ScenarioStoreOptions;
   steps: AuthoredStep[];
 }
 
@@ -71,6 +74,8 @@ export interface ScenarioInput {
   title: string;
   ports: string[];
   capabilities?: string[];
+  /** Build the store with these options and a manual clock. */
+  store?: ScenarioStoreOptions;
   steps: AuthoredStep[];
 }
 
@@ -127,6 +132,7 @@ export function defineScenario(input: ScenarioInput): AuthoredScenario {
     title: input.title,
     ports: [...input.ports],
     capabilities: [...(input.capabilities ?? [])],
+    ...(input.store === undefined ? {} : { store: { ...input.store } }),
     steps: input.steps,
   };
 }

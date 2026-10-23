@@ -15,6 +15,7 @@ import pytest
 
 from mirk.store import InMemoryStore, SqliteStore
 from mirk.store.conformance import (
+    ClockedStore,
     Scenario,
     StepOutcome,
     TargetUnavailableError,
@@ -28,6 +29,7 @@ from mirk.store.conformance import (
     run_scenario,
     run_step,
     scenario_port,
+    scenario_store_options,
     validate_scenarios,
 )
 
@@ -39,10 +41,10 @@ IMPLEMENTED_CAPABILITIES = {"listWhereIn"}
 
 # Version tokens are compared by exact value, so both backends are built with
 # the identity the corpus was generated under: a token is `conformance-v<n>`.
-BACKENDS: dict[str, Callable[[], Any]] = {
-    "memory": lambda: InMemoryStore(version_identity="conformance"),
-    "sqlite": lambda: SqliteStore(":memory:", version_identity="conformance"),
-    "markdown": lambda: None,
+BACKENDS: dict[str, Callable[[dict[str, Any]], Any]] = {
+    "memory": lambda options: InMemoryStore(version_identity="conformance", **options),
+    "sqlite": lambda options: SqliteStore(":memory:", version_identity="conformance", **options),
+    "markdown": lambda options: None,
 }
 
 EXECUTED: list[tuple[str, str, str]] = []
@@ -99,7 +101,8 @@ def test_scenario(scenario: Scenario, backend: str) -> None:
         SKIPPED.append((port, scenario.id, backend))
         pytest.skip(f"capabilities not implemented here: {', '.join(missing)}")
 
-    store = BACKENDS[backend]()
+    options, clock = scenario_store_options(scenario)
+    store = BACKENDS[backend](options)
     target: object | None = None
     try:
         try:
@@ -107,7 +110,7 @@ def test_scenario(scenario: Scenario, backend: str) -> None:
         except TargetUnavailableError as exc:
             SKIPPED.append((port, scenario.id, backend))
             pytest.skip(f"no target for port {port!r}: {exc}")
-        failures = run_scenario(target, scenario)
+        failures = run_scenario(target if clock is None else ClockedStore(target, clock), scenario)
     finally:
         if target is not store:
             target_close = getattr(target, "close", None)

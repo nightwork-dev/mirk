@@ -40,13 +40,18 @@ import type {
   StoreTarget,
   StoreVersion,
   SyncAtomicMutationStore,
+  AsyncReceiptPruning,
+  SyncReceiptPruning,
   VersionedStoreValue,
 } from "../atomic.js";
 import {
   AtomicMutationBackendError,
   cloneJson,
   IN_PROCESS_ATOMIC_LIMITS,
+  isReceiptExpired,
+  RECEIPT_PRUNE_BATCH,
   resolveAtomicLimits,
+  resolveReceiptRetention,
   validateAtomicRequest,
 } from "../atomic.js";
 import type {
@@ -394,6 +399,13 @@ export interface SqliteAdapterCoreOptions {
    *  identity keeps it, so reopening with a different value changes nothing.
    *  Defaults to a fresh UUID. */
   versionIdentity?: string;
+  /** How long, in milliseconds, an idempotency receipt is kept. A request
+   *  whose key matches only an expired receipt is applied as new. Defaults to
+   *  keeping receipts forever. */
+  receiptRetentionMs?: number;
+  /** The clock, in milliseconds since the epoch, that stamps and expires
+   *  idempotency receipts. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export type SqliteTransactionMode = "deferred" | "immediate" | "exclusive";
@@ -441,10 +453,13 @@ export class SqliteAdapterCore {
   /** Depth of queued awaitable store calls currently executing. */
   private asyncCallDepth = 0;
   private syncSavepoints = 0;
-  readonly kv!: SyncStore & SyncAtomicMutationStore;
+  readonly kv!: SyncStore & SyncAtomicMutationStore & SyncReceiptPruning;
   /** The same store as `.kv`, awaitable and serialized with
    *  {@link asyncTransaction} on this database file. */
-  readonly asyncKv!: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
+  readonly asyncKv!: AsyncStore &
+    AsyncStoreInQuery &
+    AsyncAtomicMutationStore &
+    AsyncReceiptPruning;
   readonly vector!: VectorStore;
   readonly search!: SearchStore;
 
@@ -510,7 +525,9 @@ export class SqliteAdapterCore {
           kv = new SqliteKvFacet(
             this.db,
             resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS),
-            opts.versionIdentity
+            opts.versionIdentity,
+            resolveReceiptRetention(opts.receiptRetentionMs),
+            opts.now ?? Date.now
           );
           vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
           search = new SqliteSearchFacet(this.db);
@@ -522,7 +539,7 @@ export class SqliteAdapterCore {
       this.kv = kv!;
       this.vector = vector!;
       this.search = search!;
-      this.asyncKv = this.serializedAsyncStore(toAsync(kv!));
+      this.asyncKv = this.serializedAsyncStore(toAsync(kv!), kv!);
     } catch (err) {
       // A facet constructor can throw (e.g. dimension mismatch). Don't leak the
       // connection we opened — but never close a db handle the caller passed in.
@@ -644,14 +661,17 @@ export class SqliteAdapterCore {
   }
 
   private serializedAsyncStore(
-    lifted: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore
-  ): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore {
+    lifted: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore,
+    pruning: SyncReceiptPruning
+  ): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning {
     const run = <T>(op: () => Promise<T>): Promise<T> => this.runSerialized(op);
     return {
       get meta() {
         return lifted.meta;
       },
       atomicLimits: lifted.atomicLimits,
+      receiptRetentionMs: pruning.receiptRetentionMs,
+      pruneExpiredReceipts: () => run(async () => pruning.pruneExpiredReceipts()),
       get: (key) => run(() => lifted.get(key)),
       set: (key, value) => run(() => lifted.set(key, value)),
       has: (key) => run(() => lifted.has(key)),
@@ -775,7 +795,7 @@ export class SqliteAdapterCore {
 // ─── KV facet (SyncStore) ────────────────────────────────────────────────────
 
 class SqliteKvFacet
-  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore
+  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore, SyncReceiptPruning
 {
   readonly meta: StoreMeta = { backend: "sqlite" };
   private readonly initializedTables = new Set<string>();
@@ -785,7 +805,9 @@ class SqliteKvFacet
   constructor(
     private readonly db: SqliteDb,
     readonly atomicLimits: AtomicMutationLimits = IN_PROCESS_ATOMIC_LIMITS,
-    versionIdentity?: string
+    versionIdentity?: string,
+    readonly receiptRetentionMs: number | undefined = undefined,
+    private readonly now: () => number = Date.now
   ) {
     this.db.pragma("foreign_keys = ON");
     this.db.exec(`
@@ -812,7 +834,8 @@ class SqliteKvFacet
       CREATE TABLE IF NOT EXISTS _mirk_atomic_receipts (
         idempotency_key TEXT PRIMARY KEY,
         request_digest TEXT NOT NULL,
-        result_json TEXT NOT NULL
+        result_json TEXT NOT NULL,
+        created_at INTEGER
       );
       CREATE TABLE IF NOT EXISTS _mirk_atomic_identity (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -824,6 +847,18 @@ class SqliteKvFacet
         "INSERT OR IGNORE INTO _mirk_atomic_identity (id, value) VALUES (1, ?)"
       )
       .run(versionIdentity ?? randomUUID());
+    // Receipts written before receipts expired carry no creation time.
+    const receiptColumns = this.db
+      .prepare("PRAGMA table_info(_mirk_atomic_receipts)")
+      .all() as { name: string }[];
+    if (!receiptColumns.some((column) => column.name === "created_at")) {
+      this.db.exec(
+        "ALTER TABLE _mirk_atomic_receipts ADD COLUMN created_at INTEGER"
+      );
+    }
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at ON _mirk_atomic_receipts (created_at)"
+    );
     this.versionPrefix = (
       this.db
         .prepare("SELECT value FROM _mirk_atomic_identity WHERE id = 1")
@@ -1028,14 +1063,10 @@ class SqliteKvFacet
     validated: ReturnType<typeof validateAtomicRequest>
   ): AtomicMutationResult {
     const idempotencyKey = validated.idempotency?.key;
+    const now = idempotencyKey === undefined ? 0 : this.now();
     if (idempotencyKey !== undefined) {
-      const prior = this.db
-        .prepare(
-          "SELECT request_digest as requestDigest, result_json as resultJson FROM _mirk_atomic_receipts WHERE idempotency_key = ?"
-        )
-        .get(idempotencyKey) as
-        | { requestDigest: string; resultJson: string }
-        | undefined;
+      this.pruneReceiptBatch(now);
+      const prior = this.readReceipt(idempotencyKey, now);
       if (prior) {
         if (prior.requestDigest !== validated.requestDigest) {
           return {
@@ -1128,14 +1159,79 @@ class SqliteKvFacet
         ? {}
         : { outcome: cloneJson(validated.outcome) }),
     };
-    if (idempotencyKey !== undefined) {
-      this.db
-        .prepare(
-          "INSERT INTO _mirk_atomic_receipts (idempotency_key, request_digest, result_json) VALUES (?, ?, ?)"
-        )
-        .run(idempotencyKey, validated.requestDigest, JSON.stringify(applied));
-    }
+    if (idempotencyKey !== undefined)
+      this.writeReceipt(idempotencyKey, validated.requestDigest, applied, now);
     return applied;
+  }
+
+  pruneExpiredReceipts(): number {
+    if (this.receiptRetentionMs === undefined) return 0;
+    let removed = 0;
+    for (;;) {
+      const batch = this.db.transaction(() => this.pruneReceiptBatch(this.now()));
+      const count = batch.immediate();
+      removed += count;
+      if (count < RECEIPT_PRUNE_BATCH) return removed;
+    }
+  }
+
+  // ─── Idempotency receipts ────────────────────────────────────────────────
+  // Every receipt read and write goes through these three methods. The same
+  // table and rules are shared with @mirk/store-libsql.
+
+  /** The live receipt under `key`, or undefined when there is none or it has
+   *  expired. */
+  private readReceipt(
+    key: string,
+    now: number
+  ): { requestDigest: string; resultJson: string } | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT request_digest as requestDigest, result_json as resultJson, created_at as createdAt FROM _mirk_atomic_receipts WHERE idempotency_key = ?"
+      )
+      .get(key) as
+      | { requestDigest: string; resultJson: string; createdAt: number | bigint | null }
+      | undefined;
+    if (!row) return undefined;
+    const createdAt = row.createdAt === null ? null : Number(row.createdAt);
+    return isReceiptExpired(createdAt, now, this.receiptRetentionMs)
+      ? undefined
+      : row;
+  }
+
+  /** Write a receipt, replacing an expired one under the same key. */
+  private writeReceipt(
+    key: string,
+    requestDigest: string,
+    result: AtomicMutationResult,
+    now: number
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO _mirk_atomic_receipts (idempotency_key, request_digest, result_json, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(idempotency_key) DO UPDATE SET request_digest = excluded.request_digest,
+           result_json = excluded.result_json, created_at = excluded.created_at`
+      )
+      .run(key, requestDigest, JSON.stringify(result), now);
+  }
+
+  /** In the open transaction, stamp at most one batch of receipts that have no
+   *  creation time with `now`, then delete at most one batch of expired
+   *  receipts. Returns how many were deleted. */
+  private pruneReceiptBatch(now: number): number {
+    if (this.receiptRetentionMs === undefined) return 0;
+    this.db
+      .prepare(
+        `UPDATE _mirk_atomic_receipts SET created_at = ? WHERE idempotency_key IN (
+           SELECT idempotency_key FROM _mirk_atomic_receipts WHERE created_at IS NULL LIMIT ?)`
+      )
+      .run(now, RECEIPT_PRUNE_BATCH);
+    return Number(this.db
+      .prepare(
+        `DELETE FROM _mirk_atomic_receipts WHERE idempotency_key IN (
+           SELECT idempotency_key FROM _mirk_atomic_receipts WHERE created_at < ? ORDER BY created_at LIMIT ?)`
+      )
+      .run(now - this.receiptRetentionMs, RECEIPT_PRUNE_BATCH).changes);
   }
 
   private observe(target: StoreTarget): VersionedStoreValue<unknown> | null {

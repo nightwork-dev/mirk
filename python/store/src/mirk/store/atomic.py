@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass
 from functools import cmp_to_key
 from typing import Any, Literal, cast
@@ -25,6 +26,7 @@ __all__ = [
     "DEFAULT_ATOMIC_LIMITS",
     "IN_PROCESS_ATOMIC_LIMITS",
     "MAX_ATOMIC_OUTCOME_BYTES",
+    "RECEIPT_PRUNE_BATCH",
     "REQUEST_SCHEMA",
     "UNDEFINED",
     "AtomicMutationBackendError",
@@ -38,17 +40,25 @@ __all__ = [
     "clone_target",
     "compare_targets",
     "condition_matches",
+    "is_receipt_expired",
     "operation_target",
     "resolve_atomic_limits",
+    "resolve_receipt_retention",
     "target_key",
     "validate_atomic_request",
+    "wall_clock_ms",
 ]
 
 REQUEST_SCHEMA = "mirk-atomic-request/v1"
 
 #: A fixed cap, not configurable: an idempotency outcome is persisted under its
-#: key forever, so no backend may accept a larger one.
+#: key for as long as the receipt lives, so no backend may accept a larger one.
 MAX_ATOMIC_OUTCOME_BYTES = 64 * 1024
+
+#: The most receipts one batch prunes. An atomic write with an idempotency key
+#: prunes at most one batch before it decides, and an explicit prune runs one
+#: batch per transaction.
+RECEIPT_PRUNE_BATCH = 100
 
 StoreTarget = dict[str, Any]
 """``{"kind": "key", "key": str}`` or ``{"kind": "record", "collection", "id"}``."""
@@ -151,6 +161,34 @@ IN_PROCESS_ATOMIC_LIMITS = AtomicMutationLimits(
 )
 
 _LIMIT_FIELDS = ("maxOperations", "maxConditions", "maxRequestBytes")
+
+
+def resolve_receipt_retention(value: int | None) -> int | None:
+    """Check a ``receipt_retention_ms`` option. ``None`` keeps receipts forever."""
+    if value is None:
+        return None
+    if not _is_safe_integer(value) or value < 1:
+        raise ValueError(
+            f"receiptRetentionMs must be a positive safe integer; got {_js_string(value)}."
+        )
+    return int(value)
+
+
+def wall_clock_ms() -> int:
+    """The system clock in whole milliseconds since the epoch, like `Date.now`."""
+    return time.time_ns() // 1_000_000
+
+
+def is_receipt_expired(created_at: float | None, now: float, retention_ms: int | None) -> bool:
+    """Whether a receipt stamped at ``created_at`` has expired at ``now``.
+
+    A receipt is live while its age is at most the window, and expired once its
+    age exceeds it. A receipt with no creation time never expires here; pruning
+    stamps it first.
+    """
+    if retention_ms is None or created_at is None:
+        return False
+    return now - created_at > retention_ms
 
 
 def _js_string(value: Any) -> str:

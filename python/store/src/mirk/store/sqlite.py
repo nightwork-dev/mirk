@@ -12,23 +12,27 @@ import json
 import re
 import sqlite3
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from types import TracebackType
 from typing import Any, Literal
 
 from .atomic import (
     IN_PROCESS_ATOMIC_LIMITS,
+    RECEIPT_PRUNE_BATCH,
     AtomicMutationBackendError,
     AtomicMutationLimits,
     ValidatedRequest,
     clone_condition,
     clone_json,
     condition_matches,
+    is_receipt_expired,
     operation_target,
     resolve_atomic_limits,
+    resolve_receipt_retention,
     validate_atomic_request,
 )
+from .atomic import wall_clock_ms as _wall_clock_ms
 from .filter import (
     FILTER_SCALAR_MESSAGE,
     IN_SCALAR_MESSAGE,
@@ -427,7 +431,8 @@ _BOOTSTRAP_DDL = (
     """CREATE TABLE IF NOT EXISTS _mirk_atomic_receipts (
       idempotency_key TEXT PRIMARY KEY,
       request_digest TEXT NOT NULL,
-      result_json TEXT NOT NULL
+      result_json TEXT NOT NULL,
+      created_at INTEGER
     )""",
     """CREATE TABLE IF NOT EXISTS _mirk_atomic_identity (
       id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -459,7 +464,13 @@ class SqliteStore:
         connection: sqlite3.Connection | None = None,
         version_identity: str | None = None,
         atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
+        receipt_retention_ms: int | None = None,
+        now: Callable[[], float] | None = None,
     ) -> None:
+        """``receipt_retention_ms`` keeps each idempotency receipt that long; a
+        request whose key matches only an expired receipt is applied as new.
+        ``None`` keeps receipts forever. ``now`` is the clock, in milliseconds
+        since the epoch, that stamps and expires receipts."""
         if busy_timeout_ms < 0:
             raise SqliteAdapterError(
                 "invalid-busy-timeout",
@@ -467,6 +478,8 @@ class SqliteStore:
             )
         self._meta = StoreMeta(backend="sqlite")
         self._atomic_limits = resolve_atomic_limits(atomic_limits, IN_PROCESS_ATOMIC_LIMITS)
+        self._receipt_retention_ms = resolve_receipt_retention(receipt_retention_ms)
+        self._now: Callable[[], float] = now if now is not None else _wall_clock_ms
         self._owns_connection = connection is None
         self._db = connection or sqlite3.connect(path, isolation_level=None)
         # The store owns transaction semantics: explicit BEGIN IMMEDIATE around
@@ -499,6 +512,14 @@ class SqliteStore:
             row = self._db.execute(
                 "SELECT value FROM _mirk_atomic_identity WHERE id = 1"
             ).fetchone()
+            # Receipts written before receipts expired carry no creation time.
+            columns = self._db.execute("PRAGMA table_info(_mirk_atomic_receipts)").fetchall()
+            if not any(column[1] == "created_at" for column in columns):
+                self._db.execute("ALTER TABLE _mirk_atomic_receipts ADD COLUMN created_at INTEGER")
+            self._db.execute(
+                "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at"
+                " ON _mirk_atomic_receipts (created_at)"
+            )
         self._version_prefix: str = row[0]
 
     @property
@@ -784,12 +805,10 @@ class SqliteStore:
 
     def _decide_atomic(self, validated: ValidatedRequest) -> dict[str, Any]:
         key = validated.idempotency_key
+        now = self._now() if key is not None else 0
         if key is not None:
-            prior = self._db.execute(
-                "SELECT request_digest, result_json FROM _mirk_atomic_receipts"
-                " WHERE idempotency_key = ?",
-                (key,),
-            ).fetchone()
+            self._prune_receipt_batch(now)
+            prior = self._read_receipt(key, now)
             if prior is not None:
                 if str(prior[0]) != validated.request_digest:
                     return {
@@ -865,12 +884,72 @@ class SqliteStore:
         if validated.has_outcome:
             applied["outcome"] = clone_json(validated.outcome)
         if key is not None:
-            self._db.execute(
-                "INSERT INTO _mirk_atomic_receipts"
-                " (idempotency_key, request_digest, result_json) VALUES (?, ?, ?)",
-                (key, validated.request_digest, dumps_json(applied)),
-            )
+            self._write_receipt(key, validated.request_digest, applied, now)
         return applied
+
+    @property
+    def receipt_retention_ms(self) -> int | None:
+        """How long a receipt is kept, or ``None`` when receipts are kept forever."""
+        return self._receipt_retention_ms
+
+    def pruneExpiredReceipts(self) -> int:
+        """Delete every expired receipt, one short transaction per batch."""
+        if self._receipt_retention_ms is None:
+            return 0
+        removed = 0
+        while True:
+            with self._write():
+                batch = self._prune_receipt_batch(self._now())
+            removed += batch
+            if batch < RECEIPT_PRUNE_BATCH:
+                return removed
+
+    # Every receipt read and write goes through these three methods. The table
+    # and its rules are shared with the TypeScript SQLite and libSQL adapters.
+
+    def _read_receipt(self, key: str, now: float) -> tuple[Any, Any] | None:
+        row = self._db.execute(
+            "SELECT request_digest, result_json, created_at FROM _mirk_atomic_receipts"
+            " WHERE idempotency_key = ?",
+            (key,),
+        ).fetchone()
+        if row is None:
+            return None
+        if is_receipt_expired(row[2], now, self._receipt_retention_ms):
+            return None
+        return (row[0], row[1])
+
+    def _write_receipt(self, key: str, digest: str, result: dict[str, Any], now: float) -> None:
+        """Write a receipt, replacing an expired one under the same key."""
+        self._db.execute(
+            """INSERT INTO _mirk_atomic_receipts
+                 (idempotency_key, request_digest, result_json, created_at) VALUES (?, ?, ?, ?)
+               ON CONFLICT(idempotency_key) DO UPDATE SET
+                 request_digest = excluded.request_digest,
+                 result_json = excluded.result_json,
+                 created_at = excluded.created_at""",
+            (key, digest, dumps_json(result), now),
+        )
+
+    def _prune_receipt_batch(self, now: float) -> int:
+        """In the open transaction, stamp at most one batch of receipts that have
+        no creation time with ``now``, then delete at most one batch of expired
+        receipts. Returns how many were deleted."""
+        if self._receipt_retention_ms is None:
+            return 0
+        self._db.execute(
+            """UPDATE _mirk_atomic_receipts SET created_at = ? WHERE idempotency_key IN (
+                 SELECT idempotency_key FROM _mirk_atomic_receipts
+                 WHERE created_at IS NULL LIMIT ?)""",
+            (now, RECEIPT_PRUNE_BATCH),
+        )
+        cursor = self._db.execute(
+            """DELETE FROM _mirk_atomic_receipts WHERE idempotency_key IN (
+                 SELECT idempotency_key FROM _mirk_atomic_receipts
+                 WHERE created_at < ? ORDER BY created_at LIMIT ?)""",
+            (now - self._receipt_retention_ms, RECEIPT_PRUNE_BATCH),
+        )
+        return cursor.rowcount
 
 
 def connection_of(handle: object) -> sqlite3.Connection:

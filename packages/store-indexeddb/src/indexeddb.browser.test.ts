@@ -264,6 +264,36 @@ describe("versions", () => {
     const current = (await adapter.getVersioned({ kind: "key", key: "k1" }))!.version;
     expect(current.startsWith("idb1-")).toBe(false);
   });
+
+  it("a receipt written before receipts expired lives one window from the upgrade", async () => {
+    const name = newName();
+    const legacy = await rawOpen(name, 2, (db) => {
+      db.createObjectStore("kv", { keyPath: "key" });
+      db.createObjectStore("records", { keyPath: ["collection", "id"] }).createIndex("collection", "collection");
+      db.createObjectStore("versions", { keyPath: "targetKey" });
+      db.createObjectStore("receipts", { keyPath: "key" });
+      db.createObjectStore("meta", { keyPath: "name" });
+    });
+    const digest = "0".repeat(64);
+    const tx = legacy.transaction(["receipts"], "readwrite");
+    tx.objectStore("receipts").put({
+      key: "old",
+      requestDigest: digest,
+      result: { status: "applied", requestDigest: digest, versions: [] },
+    });
+    await new Promise((resolve) => (tx.oncomplete = resolve));
+    legacy.close();
+
+    let now = 1_000_000;
+    const adapter = await openIndexedDbAdapter({ dbName: name, receiptRetentionMs: 100, now: () => now });
+    opened.push(adapter);
+    expect((await adapter.exportState()).receipts[0]?.createdAt).toBe(1_000_000);
+    now += 100;
+    expect(await adapter.pruneExpiredReceipts()).toBe(0);
+    now += 1;
+    expect(await adapter.pruneExpiredReceipts()).toBe(1);
+    expect((await adapter.exportState()).receipts).toEqual([]);
+  });
 });
 
 describe("another tab changes the database", () => {
@@ -272,7 +302,7 @@ describe("another tab changes the database", () => {
     const adapter = await open(name);
     await adapter.set("a", 1);
 
-    const upgraded = await rawOpen(name, 3);
+    const upgraded = await rawOpen(name, 4);
     upgraded.close();
 
     await expect(adapter.get("a")).rejects.toBeInstanceOf(IndexedDbConnectionError);
