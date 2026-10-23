@@ -1,15 +1,36 @@
-import { Pool, type PoolConfig, type QueryResult } from "pg";
+import { randomUUID } from "node:crypto";
+
+import { Pool, type PoolClient, type PoolConfig, type QueryResult } from "pg";
 
 import type {
+  AfterCommitNotify,
+  AsyncAtomicMutationStore,
   AsyncStore,
   AsyncStoreInQuery,
+  AsyncStoreTransactions,
+  AtomicCompletedMutationResult,
+  AtomicMutationLimits,
+  AtomicMutationRequest,
+  AtomicMutationResult,
   StoreFilter,
   StoreMeta,
+  StoreTarget,
+  StoreVersion,
+  VersionedStoreValue,
 } from "@mirk/store";
+import {
+  AtomicMutationIndeterminateError,
+  resolveAtomicLimits,
+  validateAtomicRequest,
+} from "@mirk/store/atomic";
+import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 
-export type PostgresAdapterErrorCode = "conflicting-pool-options" | "empty-schema";
+export type PostgresAdapterErrorCode =
+  | "conflicting-pool-options"
+  | "empty-schema"
+  | "adapter-closed";
 
-/** Thrown when `PostgresAdapter.open` receives invalid options. */
+/** Thrown for invalid adapter options, or for a transaction after `close()`. */
 export class PostgresAdapterError extends Error {
   declare readonly name: "PostgresAdapterError";
   readonly code: PostgresAdapterErrorCode;
@@ -76,6 +97,12 @@ export interface PostgresAdapterOptions {
   pool?: Pool;
   /** PostgreSQL schema for Mirk's fixed tables. Defaults to `mirk`. */
   schema?: string;
+  /** Override the atomic request bounds `.kv` enforces. Defaults to the
+   *  portable remote limits. */
+  atomicLimits?: Partial<AtomicMutationLimits>;
+  /** The prefix version tokens carry when this schema is first provisioned.
+   *  A schema that already has one keeps it. Defaults to a fresh UUID. */
+  versionIdentity?: string;
 }
 
 interface Queryable {
@@ -85,18 +112,85 @@ interface Queryable {
   ): Promise<QueryResult<R>>;
 }
 
-type PostgresStore = AsyncStore & AsyncStoreInQuery;
+type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
 
-export class PostgresAdapter {
+/** Transport failures after which a COMMIT may or may not have taken effect. */
+const INDETERMINATE_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01", "08000", "08003", "08006"]);
+
+function isIndeterminateFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && INDETERMINATE_CODES.has(code)) return true;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === "string" && message.includes("Connection terminated");
+}
+
+/**
+ * PostgreSQL source adapter. `kv` implements `AsyncStore`, `AsyncStoreInQuery`,
+ * and `AsyncAtomicMutationStore`; the adapter implements
+ * `AsyncStoreTransactions`.
+ *
+ * Every write, and every transaction, holds a transaction-scoped advisory lock
+ * on the schema, so writers to one schema are serialized across connections
+ * and hosts. Reads do not take the lock.
+ */
+export class PostgresAdapter implements AsyncStoreTransactions {
   readonly kv: PostgresStore;
   private closed = false;
+  private readonly transactions: AsyncTransactionCoordinator<PoolClient>;
 
   private constructor(
     private readonly pool: Pool,
     private readonly ownsPool: boolean,
     schema: string,
+    options: PostgresAdapterOptions,
   ) {
-    this.kv = new PostgresStoreFacet(pool, schema);
+    const lockKey = `mirk:${schema}`;
+    this.transactions = new AsyncTransactionCoordinator<PoolClient>({
+      begin: async () => {
+        if (this.closed) throw new PostgresAdapterError("adapter-closed", "The PostgreSQL adapter is closed.");
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [lockKey]);
+        } catch (error) {
+          client.release(true);
+          throw error;
+        }
+        return client;
+      },
+      commit: async (client) => {
+        const result = await client.query("COMMIT");
+        if (result.command !== "COMMIT") {
+          throw new Error("PostgreSQL rolled the transaction back instead of committing it.");
+        }
+      },
+      rollback: async (client) => {
+        await client.query("ROLLBACK");
+      },
+      savepoint: async (client, name) => {
+        await client.query(`SAVEPOINT ${name}`);
+      },
+      releaseSavepoint: async (client, name) => {
+        await client.query(`RELEASE SAVEPOINT ${name}`);
+      },
+      rollbackToSavepoint: async (client, name) => {
+        await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+      },
+      end: (client, cleanupError) => {
+        client.release(cleanupError === undefined ? undefined : true);
+      },
+    });
+    const database: Queryable = {
+      query: async (text, values) =>
+        (this.transactions.current() ?? pool).query(text, values as unknown[]),
+    };
+    this.kv = new PostgresStoreFacet(
+      database,
+      schema,
+      this.transactions,
+      resolveAtomicLimits(options.atomicLimits),
+    );
   }
 
   static async open(options: PostgresAdapterOptions = {}): Promise<PostgresAdapter> {
@@ -107,14 +201,28 @@ export class PostgresAdapter {
     if (schema.length === 0) throw new PostgresAdapterError("empty-schema", "PostgreSQL schema must not be empty.");
     const ownsPool = options.pool === undefined;
     const pool = options.pool ?? new Pool({ ...options.poolConfig, connectionString: options.connectionString });
-    const adapter = new PostgresAdapter(pool, ownsPool, schema);
+    const adapter = new PostgresAdapter(pool, ownsPool, schema, options);
     try {
-      await (adapter.kv as PostgresStoreFacet).init();
+      await adapter.transaction(() =>
+        (adapter.kv as PostgresStoreFacet).init(schema, options.versionIdentity ?? randomUUID()),
+      );
       return adapter;
     } catch (error) {
       if (ownsPool) await pool.end().catch(() => undefined);
       throw error;
     }
+  }
+
+  /** Run short, database-only work in one transaction on one pooled client.
+   *  Every `kv` call inside `work` joins it; a nested call is a savepoint. Do
+   *  network or object-storage work before or after, never inside: the
+   *  transaction holds the schema's write lock until it ends. */
+  transaction<T>(work: () => T | Promise<T>): Promise<T> {
+    return this.transactions.transaction(work);
+  }
+
+  afterCommit(notify: AfterCommitNotify): void {
+    this.transactions.afterCommit(notify);
   }
 
   async close(): Promise<void> {
@@ -124,20 +232,35 @@ export class PostgresAdapter {
   }
 }
 
+type CompletedResult = AtomicCompletedMutationResult;
+
 class PostgresStoreFacet implements PostgresStore {
   readonly meta: StoreMeta = { backend: "postgres" };
   private readonly kvTable: string;
   private readonly recordsTable: string;
+  private readonly receiptsTable: string;
+  private readonly stateTable: string;
+  /** One statement that consumes the next version token. */
+  private readonly mint: string;
 
-  constructor(private readonly database: Queryable, schema: string) {
+  constructor(
+    private readonly database: Queryable,
+    schema: string,
+    private readonly transactions: AsyncTransactionCoordinator<PoolClient>,
+    readonly atomicLimits: AtomicMutationLimits,
+  ) {
     const quotedSchema = quoteIdentifier(schema);
     this.kvTable = `${quotedSchema}.kv`;
     this.recordsTable = `${quotedSchema}.records`;
+    this.receiptsTable = `${quotedSchema}.atomic_receipts`;
+    this.stateTable = `${quotedSchema}.atomic_state`;
+    this.mint = `UPDATE ${this.stateTable} SET sequence = sequence + 1 WHERE id = 1
+      RETURNING identity || '-v' || sequence AS version`;
   }
 
-  async init(): Promise<void> {
-    const schema = this.kvTable.slice(0, this.kvTable.lastIndexOf("."));
-    await this.database.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+  async init(schema: string, versionIdentity: string): Promise<void> {
+    const quotedSchema = this.kvTable.slice(0, this.kvTable.lastIndexOf("."));
+    await this.database.query(`CREATE SCHEMA IF NOT EXISTS ${quotedSchema}`);
     await this.database.query(`
       CREATE TABLE IF NOT EXISTS ${this.kvTable} (
         key TEXT PRIMARY KEY,
@@ -155,6 +278,46 @@ class PostgresStoreFacet implements PostgresStore {
         PRIMARY KEY (collection, id)
       )
     `);
+    await this.database.query(`
+      CREATE TABLE IF NOT EXISTS ${this.receiptsTable} (
+        key TEXT PRIMARY KEY,
+        request_digest TEXT NOT NULL,
+        result JSONB NOT NULL
+      )
+    `);
+    await this.database.query(`
+      CREATE TABLE IF NOT EXISTS ${this.stateTable} (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        identity TEXT NOT NULL,
+        sequence BIGINT NOT NULL
+      )
+    `);
+    await this.database.query(
+      `INSERT INTO ${this.stateTable} (id, identity, sequence) VALUES (1, $1, 0) ON CONFLICT (id) DO NOTHING`,
+      [versionIdentity],
+    );
+    for (const table of [this.kvTable, this.recordsTable]) {
+      await this.database.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS version TEXT`);
+    }
+    // Earlier hand-patched deployments used a UUID version column with a
+    // default. Tokens are opaque text here, and every write mints one.
+    const legacy = await this.database.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name IN ('kv', 'records') AND column_name = 'version' AND data_type <> 'text'`,
+      [schema],
+    );
+    for (const row of legacy.rows) {
+      const table = `${quotedSchema}.${quoteIdentifier(row.table_name)}`;
+      await this.database.query(
+        `ALTER TABLE ${table} ALTER COLUMN version DROP DEFAULT, ALTER COLUMN version TYPE TEXT USING version::text`,
+      );
+    }
+    for (const table of [this.kvTable, this.recordsTable]) {
+      await this.database.query(
+        `UPDATE ${table} SET version = (SELECT identity FROM ${this.stateTable} WHERE id = 1) || '-u' || gen_random_uuid()
+         WHERE version IS NULL`,
+      );
+    }
   }
 
   async get<T>(key: string): Promise<T | null> {
@@ -166,11 +329,8 @@ class PostgresStoreFacet implements PostgresStore {
   }
 
   async set<T>(key: string, value: T): Promise<void> {
-    await this.database.query(
-      `INSERT INTO ${this.kvTable} (key, value, updated_at) VALUES ($1, $2::jsonb, now())
-       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
-      [key, encodeJson(value)],
-    );
+    const encoded = encodeJson(value);
+    await this.write(() => this.writeKey(key, encoded));
   }
 
   async has(key: string): Promise<boolean> {
@@ -182,11 +342,7 @@ class PostgresStoreFacet implements PostgresStore {
   }
 
   async delete(key: string): Promise<boolean> {
-    const result = await this.database.query(
-      `DELETE FROM ${this.kvTable} WHERE key = $1`,
-      [key],
-    );
-    return (result.rowCount ?? 0) > 0;
+    return this.write(() => this.deleteKey(key));
   }
 
   async keys(prefix?: string): Promise<string[]> {
@@ -227,21 +383,13 @@ class PostgresStoreFacet implements PostgresStore {
   }
 
   async put<T extends { id: string }>(collection: string, item: T): Promise<T> {
-    await this.database.query(
-      `INSERT INTO ${this.recordsTable} (collection, id, data, updated_at)
-       VALUES ($1, $2, $3::jsonb, now())
-       ON CONFLICT (collection, id) DO UPDATE SET data = excluded.data, updated_at = now()`,
-      [collection, item.id, encodeJson(item)],
-    );
+    const encoded = encodeJson(item);
+    await this.write(() => this.writeRecord(collection, item.id, encoded));
     return item;
   }
 
   async remove(collection: string, id: string): Promise<boolean> {
-    const result = await this.database.query(
-      `DELETE FROM ${this.recordsTable} WHERE collection = $1 AND id = $2`,
-      [collection, id],
-    );
-    return (result.rowCount ?? 0) > 0;
+    return this.write(() => this.deleteRecord(collection, id));
   }
 
   async count(collection: string, filter?: StoreFilter): Promise<number> {
@@ -251,6 +399,187 @@ class PostgresStoreFacet implements PostgresStore {
       query.values,
     );
     return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async getVersioned<T>(target: StoreTarget): Promise<VersionedStoreValue<T> | null> {
+    const result = target.kind === "key"
+      ? await this.database.query<{ value: T; version: string | null }>(
+          `SELECT value, version FROM ${this.kvTable} WHERE key = $1`,
+          [target.key],
+        )
+      : await this.database.query<{ value: T; version: string | null }>(
+          `SELECT data AS value, version FROM ${this.recordsTable} WHERE collection = $1 AND id = $2`,
+          [target.collection, target.id],
+        );
+    const row = result.rows[0];
+    if (!row) return null;
+    // A row written by an adapter that predates version tokens.
+    const version = row.version ?? (await this.write(() => this.backfillVersion(target)));
+    return version === null ? null : { value: row.value, version: version as StoreVersion };
+  }
+
+  async mutateAtomically(request: AtomicMutationRequest): Promise<AtomicMutationResult> {
+    const validated = validateAtomicRequest(request, this.atomicLimits);
+    const outermost = this.transactions.current() === undefined;
+    try {
+      return await this.write(() => this.decideAtomic(validated));
+    } catch (error) {
+      // Only the outermost commit can be lost in flight. Inside a caller's
+      // transaction nothing has committed yet, so the failure is definite.
+      if (outermost && isIndeterminateFailure(error)) {
+        const key = validated.idempotency?.key;
+        throw new AtomicMutationIndeterminateError(
+          validated.requestDigest,
+          key,
+          key === undefined ? "manual-reconciliation" : "retry-with-same-key",
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async decideAtomic(validated: ReturnType<typeof validateAtomicRequest>): Promise<AtomicMutationResult> {
+    const key = validated.idempotency?.key;
+    if (key !== undefined) {
+      const prior = (
+        await this.database.query<{ request_digest: string; result: CompletedResult }>(
+          `SELECT request_digest, result FROM ${this.receiptsTable} WHERE key = $1`,
+          [key],
+        )
+      ).rows[0];
+      if (prior) {
+        if (prior.request_digest !== validated.requestDigest) {
+          return {
+            status: "idempotency-conflict",
+            key,
+            expectedRequestDigest: prior.request_digest,
+            receivedRequestDigest: validated.requestDigest,
+          };
+        }
+        return {
+          status: "replayed",
+          requestDigest: prior.result.requestDigest,
+          versions: prior.result.versions,
+          ...(prior.result.outcome === undefined ? {} : { outcome: prior.result.outcome }),
+        };
+      }
+    }
+
+    for (const condition of validated.conditions) {
+      const observed = await this.getVersioned(condition.target);
+      const matches = condition.expected === "missing"
+        ? observed === null
+        : condition.expected === "present"
+          ? observed !== null
+          : observed?.version === condition.version;
+      if (!matches) {
+        return {
+          status: "conflict",
+          condition,
+          observed: observed === null ? "missing" : condition.expected === "version" ? observed.version : "present",
+        };
+      }
+    }
+
+    const versions: { target: StoreTarget; version: StoreVersion | null }[] = [];
+    for (const operation of validated.operations) {
+      switch (operation.op) {
+        case "set":
+          versions.push({
+            target: { kind: "key", key: operation.key },
+            version: await this.writeKey(operation.key, encodeJson(operation.value)),
+          });
+          break;
+        case "delete":
+          await this.deleteKey(operation.key);
+          versions.push({ target: { kind: "key", key: operation.key }, version: null });
+          break;
+        case "put":
+          versions.push({
+            target: { kind: "record", collection: operation.collection, id: operation.item.id },
+            version: await this.writeRecord(operation.collection, operation.item.id, encodeJson(operation.item)),
+          });
+          break;
+        case "remove":
+          await this.deleteRecord(operation.collection, operation.id);
+          versions.push({ target: { kind: "record", collection: operation.collection, id: operation.id }, version: null });
+          break;
+      }
+    }
+    const applied: CompletedResult = {
+      status: "applied",
+      requestDigest: validated.requestDigest,
+      versions,
+      ...(validated.outcome === undefined ? {} : { outcome: validated.outcome }),
+    };
+    if (key !== undefined) {
+      await this.database.query(
+        `INSERT INTO ${this.receiptsTable} (key, request_digest, result) VALUES ($1, $2, $3::jsonb)`,
+        [key, validated.requestDigest, encodeJson(applied)],
+      );
+    }
+    return applied;
+  }
+
+  /** Every write holds the schema lock: alone in its own transaction, or as a
+   *  savepoint of the caller's, so a failed statement leaves it usable. */
+  private async write<T>(work: () => Promise<T>): Promise<T> {
+    this.transactions.current();
+    return this.transactions.transaction(work);
+  }
+
+  private async writeKey(key: string, encoded: string): Promise<StoreVersion> {
+    const result = await this.database.query<{ version: StoreVersion }>(
+      `WITH minted AS (${this.mint})
+       INSERT INTO ${this.kvTable} (key, value, updated_at, version)
+       SELECT $1, $2::jsonb, now(), minted.version FROM minted
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now(), version = excluded.version
+       RETURNING version`,
+      [key, encoded],
+    );
+    return result.rows[0]!.version;
+  }
+
+  private async writeRecord(collection: string, id: string, encoded: string): Promise<StoreVersion> {
+    const result = await this.database.query<{ version: StoreVersion }>(
+      `WITH minted AS (${this.mint})
+       INSERT INTO ${this.recordsTable} (collection, id, data, updated_at, version)
+       SELECT $1, $2, $3::jsonb, now(), minted.version FROM minted
+       ON CONFLICT (collection, id) DO UPDATE SET data = excluded.data, updated_at = now(), version = excluded.version
+       RETURNING version`,
+      [collection, id, encoded],
+    );
+    return result.rows[0]!.version;
+  }
+
+  private async deleteKey(key: string): Promise<boolean> {
+    const result = await this.database.query(`DELETE FROM ${this.kvTable} WHERE key = $1`, [key]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  private async deleteRecord(collection: string, id: string): Promise<boolean> {
+    const result = await this.database.query(
+      `DELETE FROM ${this.recordsTable} WHERE collection = $1 AND id = $2`,
+      [collection, id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  private async backfillVersion(target: StoreTarget): Promise<string | null> {
+    const result = target.kind === "key"
+      ? await this.database.query<{ version: string }>(
+          `WITH minted AS (${this.mint})
+           UPDATE ${this.kvTable} SET version = COALESCE(version, minted.version) FROM minted
+           WHERE key = $1 RETURNING ${this.kvTable}.version`,
+          [target.key],
+        )
+      : await this.database.query<{ version: string }>(
+          `WITH minted AS (${this.mint})
+           UPDATE ${this.recordsTable} SET version = COALESCE(version, minted.version) FROM minted
+           WHERE collection = $1 AND id = $2 RETURNING ${this.recordsTable}.version`,
+          [target.collection, target.id],
+        );
+    return result.rows[0]?.version ?? null;
   }
 }
 
