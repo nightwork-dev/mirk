@@ -36,14 +36,10 @@ const METHODS = [
 
 // Every skip names the scenario and the README difference it reflects. A
 // scenario that neither runs green nor matches an entry fails.
-const COLLATION = "keys and sorted strings order under the database collation";
 const JSONB_TEXT = "jsonb rejects lone surrogates";
 const STRICT_PAGINATION = "negative or fractional limit and offset are rejected";
 const UNVALIDATED_FILTERS = "filter and collection-name input is not validated like the reference";
 const SKIPS = new Map<string, string>([
-  ["store/kv-keys-code-point-order", COLLATION],
-  ["store/kv-keys-unicode-prefix", COLLATION],
-  ["store/sort-strings-are-case-sensitive", COLLATION],
   ["store/lone-surrogate-values-are-storable", JSONB_TEXT],
   ["store/atomic/lone-surrogate-values", JSONB_TEXT],
   ["store/limit-fractional-truncates", STRICT_PAGINATION],

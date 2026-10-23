@@ -78,7 +78,6 @@ ordering, and counting (see [Contract semantics](#contract-semantics)). The diff
 
 - Calls are async.
 - Values and records round-trip through `jsonb`, so they must be JSON-serializable.
-- `keys(prefix)` and sorted strings order under the database's collation.
 - Lone surrogates cannot be stored in `jsonb`.
 - The atomic request limits default to the portable remote limits (`DEFAULT_ATOMIC_LIMITS`), not
   the in-process ones. Override them with the `atomicLimits` option.
@@ -138,7 +137,8 @@ and values are always bound query parameters; they never become SQL identifiers 
 - `get` and `getById` return `null` when absent. `set` and `put` are upserts. `delete` and
   `remove` report whether a row existed.
 - `keys(prefix)` matches the prefix literally (`%` and `_` are not wildcards) and returns keys in
-  `ORDER BY key` order under the database's collation.
+  Unicode code point order, whatever the database's collation: ordering uses `COLLATE "C"`, which
+  over UTF-8 is byte order and so code point order. Sorted reads order string values the same way.
 - `where` is exact top-level JSON equality and distinguishes a missing field from an explicit
   `null`. `listWhereIn` adds exact top-level membership on one field.
 - Unsorted reads return insertion order; updating a record does not move it. Sorted reads put

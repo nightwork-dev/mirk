@@ -120,7 +120,20 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
   });
 
   it("releases the schema lock held by a stalled transaction", async () => {
-    const stalled = await PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: 200 });
+    const stalled = await PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: 1000 });
+    const pool = new Pool({ connectionString });
+    // This schema's write lock only: other test files hold their own schemas'
+    // advisory locks at the same time. pg_locks splits the 64-bit key into
+    // classid (high 32 bits) and objid (low 32 bits).
+    const schemaLockHeld = async (): Promise<boolean> => {
+      const held = await pool.query(
+        `SELECT count(*)::int AS n FROM pg_locks
+         WHERE locktype = 'advisory' AND granted
+           AND ((classid::bigint << 32) | objid::bigint) = hashtextextended($1, 0)`,
+        [`mirk:${schema}`],
+      );
+      return held.rows[0].n > 0;
+    };
     let wake!: () => void;
     const frozen = new Promise<void>((resolve) => (wake = resolve));
     let outcome!: Promise<unknown>;
@@ -139,22 +152,18 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
             () => "failed",
           );
       });
+      expect(await schemaLockHeld()).toBe(true);
       // Without the idle timeout this write waits for the lock forever, and
       // the test times out.
       await b.kv.set("after-stall", true);
-      const pool = new Pool({ connectionString });
-      try {
-        const held = await pool.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted`);
-        expect(held.rows[0].n).toBe(0);
-      } finally {
-        await pool.end();
-      }
+      expect(await schemaLockHeld()).toBe(false);
       expect(await b.kv.get("stalled")).toBeNull();
       wake();
       expect(await outcome).toBe("failed");
     } finally {
       wake();
       await stalled.close();
+      await pool.end();
     }
   });
 
