@@ -1,0 +1,53 @@
+{
+  "id": "artifact/lifecycle/left-over-object-with-different-bytes-occupies-key",
+  "title": "left over object with different bytes occupies key",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "putObject",
+      "args": [
+        "artifacts/artifact-1",
+        "b3RoZXI="
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "throws": "an unreferenced object with different bytes occupies this artifact's object key; remove it with ArtifactMaintenance (audit, planRepair, delete-unreferenced-object) or write under a new id"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "op": "deleteObject",
+      "args": [
+        "artifacts/artifact-1"
+      ],
+      "expect": {
+        "value": true
+      }
+    }
+  ]
+}

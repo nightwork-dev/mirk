@@ -380,6 +380,41 @@ export const scenarios = [
     check("deleteObject", "artifacts-archive/old"),
     check("deleteObject", "artifacts/orphan"),
   ]),
+  // A write the object store rejected stored nothing, so the object now at
+  // its key is another writer's and the coordinator never deletes it.
+  scenario("rejected-write-keeps-other-writers-object", [
+    step("failNextPut", "rejected", text("other writer")),
+    reject("write", document()),
+    check("list"),
+    check("deleteObject", "artifacts/artifact-1"),
+  ]),
+  // An indeterminate write keeps the object it may have stored; a retry under
+  // the same id adopts identical bytes and finalizes.
+  scenario(
+    "indeterminate-write-preserved-then-adopted",
+    [
+      step("failNextPut", "indeterminate", text("hello")),
+      reject("write", document()),
+      check("list"),
+      check("audit"),
+      check("write", document()),
+      check("read", "same"),
+      check("audit"),
+    ],
+    { ids: ["same", "same"] }
+  ),
+  scenario("write-adopts-identical-left-over-object", [
+    step("putObject", "artifacts/artifact-1", text("hello")),
+    check("write", document()),
+    check("read", "artifact-1"),
+    check("audit"),
+  ]),
+  scenario("left-over-object-with-different-bytes-occupies-key", [
+    step("putObject", "artifacts/artifact-1", text("other")),
+    reject("write", document()),
+    check("list"),
+    check("deleteObject", "artifacts/artifact-1"),
+  ]),
   scenario("shared-leases-exclude-delete", [
     check("acquireObjectLease", leaseInput),
     check("acquireObjectLease", { ...leaseInput, ownerId: "other" }),

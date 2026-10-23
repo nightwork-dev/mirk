@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mirk.artifact.errors import ArtifactValidationError
+from mirk.artifact.errors import ArtifactValidationError, ObjectWriteRejectedError
 from mirk.artifact.fs import FileObjectStore
 from mirk.artifact.memory import ObjectAlreadyExistsError
 from mirk.artifact.types import ObjectInfo
@@ -49,9 +49,13 @@ def test_failed_stream_does_not_poison_if_absent(
         yield b"partial"
         raise failure
 
-    with pytest.raises(failure_type) as caught:
+    expected = ObjectWriteRejectedError if isinstance(failure, Exception) else failure_type
+    with pytest.raises(expected) as caught:
         store.put("k", failing(), {"ifAbsent": True})
-    assert caught.value is failure
+    if isinstance(failure, Exception):
+        assert caught.value.__cause__ is failure
+    else:
+        assert caught.value is failure
     assert store.head("k") is None
     store.put("k", b"retry", {"ifAbsent": True})
     assert drain(store.get("k")) == b"retry"

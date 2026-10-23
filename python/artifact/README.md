@@ -59,6 +59,28 @@ An asynchronous host can call these methods on that thread, or use a dedicated s
 - File objects use `<key>.bin` and `<key>.sidecar.json`.
   A Python process can reopen the files that TypeScript writes, and the reverse.
 
+## Failed writes
+
+A failed `write()` raises `ArtifactWriteError`. Its `cleanup` attribute is `"not-needed"`,
+`"succeeded"`, `"failed"`, or `"preserved-indeterminate"`. No record exists after a failed write.
+
+An object store reports two kinds of failed `put`:
+
+- `ObjectWriteRejectedError`: the write stored nothing at the key. The request was refused, the
+  source failed before anything was committed, or the store removed its own partial object.
+  The original error is the `__cause__`. The coordinator leaves the key alone (`"not-needed"`),
+  because an object there now belongs to another writer.
+- `ObjectWriteIndeterminateError`: the bytes may have reached the store, for example when a
+  remote upload succeeds and its reply is lost. The coordinator keeps the object
+  (`"preserved-indeterminate"`).
+
+A write whose new object key already holds an object that no record references compares the bytes.
+Identical bytes are adopted and the write finalizes. A retry under a deterministic `id_factory`
+recovers this way. Different bytes stay in place, and the write raises `ArtifactOperationError` with
+code `"object-key-occupied"`. Otherwise maintenance finds the object as `object-without-record`.
+
+The in-memory, filesystem, and OpenDAL object stores follow these rules.
+
 The in-memory repository and object store are reference implementations.
 `StoreArtifactRepository` persists metadata through a supplied Mirk store.
 `FileObjectStore` persists bytes beneath its root and rejects paths that escape through symbolic links.
@@ -68,12 +90,19 @@ The in-memory repository and object store are reference implementations.
 ```python
 from mirk.artifact import ArtifactMaintenance
 
-maintenance = ArtifactMaintenance(objects, repository)
+maintenance = ArtifactMaintenance(objects, repository, namespace="documents")
 report = maintenance.audit()
 plan = maintenance.planRepair(report)
 # Inspect the plan before applying a destructive repair.
 results = maintenance.applyRepair(plan)
 ```
+
+Maintenance audits and repairs only object keys under `f"{namespace}/"`.
+The default namespace is `"artifacts"`, the same default as the coordinator.
+Pass the coordinator's namespace when you change it.
+Objects outside the namespace, including imported objects, are never findings and never deleted.
+`namespace=None` audits the whole store, so every unreferenced object in it becomes a deletion
+candidate. Use it only on a store that holds nothing but this repository's objects.
 
 Use the same maintenance instance for audit, plan, and apply.
 Plans contain opaque object references, not physical storage keys.

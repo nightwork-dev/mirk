@@ -7,6 +7,11 @@ from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
+from mirk.artifact.errors import (
+    ArtifactValidationError,
+    ObjectWriteIndeterminateError,
+    ObjectWriteRejectedError,
+)
 from mirk.artifact.memory import ObjectAlreadyExistsError
 from mirk.artifact.types import ByteSource, ListableObjectStore, ObjectInfo, ObjectPutOptions
 from mirk.artifact.util import assertObjectKey, chunks
@@ -39,8 +44,30 @@ class OpenDalObjectStore(ListableObjectStore):
     def put(
         self, key: str, source: ByteSource, options: ObjectPutOptions | None = None
     ) -> ObjectInfo:
+        """Write ``source`` at ``key``.
+
+        The backend commits an object when the writer closes.  A failure before
+        that leaves nothing of this write, because the write removes any
+        partial object, so it is raised as ``ObjectWriteRejectedError`` with the
+        original error as its cause: a caller never deletes the key, which may
+        by then hold another writer's object.  A conditional write that fails
+        while closing is ``ObjectWriteIndeterminateError``.
+        """
+        try:
+            self._write(key, source, options or {})
+        except (
+            ObjectWriteIndeterminateError,
+            ObjectWriteRejectedError,
+            ObjectAlreadyExistsError,
+            ArtifactValidationError,
+        ):
+            raise
+        except Exception as error:
+            raise ObjectWriteRejectedError(key) from error
+        return _metadata_to_info(key, self.operator.stat(key), self.digest_metadata_key)
+
+    def _write(self, key: str, source: ByteSource, options: ObjectPutOptions) -> None:
         assertObjectKey(key)
-        options = options or {}
         capability = self.operator.capability()
         if options.get("ifAbsent") and not capability.write_with_if_not_exists:
             raise OpenDalObjectStoreError(
@@ -94,6 +121,11 @@ class OpenDalObjectStore(ListableObjectStore):
             except BaseException as close_error:
                 # The close result is indeterminate. Preserve a conditional
                 # object because its ownership cannot be proved.
+                if not isinstance(source_error, Exception):
+                    raise source_error from close_error
+                if options.get("ifAbsent"):
+                    raise ObjectWriteIndeterminateError(key) from close_error
+                self._delete_owned(key)
                 raise source_error from close_error
             self._delete_owned(key, preserve_interrupt=not isinstance(source_error, Exception))
             raise source_error
@@ -106,8 +138,10 @@ class OpenDalObjectStore(ListableObjectStore):
         except BaseException as close_error:
             if not options.get("ifAbsent"):
                 self._delete_owned(key, preserve_interrupt=not isinstance(close_error, Exception))
-            raise
-        return _metadata_to_info(key, self.operator.stat(key), self.digest_metadata_key)
+                raise
+            if not isinstance(close_error, Exception):
+                raise
+            raise ObjectWriteIndeterminateError(key) from close_error
 
     def get(self, key: str):
         assertObjectKey(key)
