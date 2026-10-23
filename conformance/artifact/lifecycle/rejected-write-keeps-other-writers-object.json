@@ -1,0 +1,53 @@
+{
+  "id": "artifact/lifecycle/rejected-write-keeps-other-writers-object",
+  "title": "rejected write keeps other writers object",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {}
+      ]
+    },
+    {
+      "op": "failNextPut",
+      "args": [
+        "rejected",
+        "b3RoZXIgd3JpdGVy"
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "throws": "artifact object write failed"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "op": "deleteObject",
+      "args": [
+        "artifacts/artifact-1"
+      ],
+      "expect": {
+        "value": true
+      }
+    }
+  ]
+}

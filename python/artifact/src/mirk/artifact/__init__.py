@@ -6,6 +6,8 @@ from .errors import (
     ArtifactLimitError,
     ArtifactOperationError,
     ArtifactValidationError,
+    ObjectWriteIndeterminateError,
+    ObjectWriteRejectedError,
 )
 from .maintenance import ArtifactMaintenance, auditArtifacts
 from .memory import InMemoryArtifactRepository, InMemoryObjectStore, ObjectAlreadyExistsError
@@ -76,6 +78,8 @@ __all__ = [
     "ObjectInfo",
     "ObjectPutOptions",
     "ObjectStore",
+    "ObjectWriteIndeterminateError",
+    "ObjectWriteRejectedError",
     "StoredArtifactPage",
     "StoredArtifactRecord",
     "WriteArtifactInput",

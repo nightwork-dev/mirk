@@ -11,6 +11,7 @@ import base64
 from typing import Any, cast
 
 from .coordinator import ArtifactCoordinator
+from .errors import ObjectWriteIndeterminateError, ObjectWriteRejectedError
 from .maintenance import ArtifactMaintenance
 from .memory import InMemoryArtifactRepository, InMemoryObjectStore
 from .store import StoreArtifactRepository
@@ -19,7 +20,10 @@ from .types import (
     ArtifactLineageEdge,
     ArtifactObjectLease,
     ArtifactQuery,
+    ByteSource,
     ByteStream,
+    ObjectInfo,
+    ObjectPutOptions,
     StoredArtifactRecord,
 )
 from .util import UNDEFINED, artifactFinalizationDigest, metadataFingerprint
@@ -35,11 +39,38 @@ def _encode(stream: ByteStream) -> str:
     return base64.b64encode(b"".join(bytes(part) for part in stream)).decode("ascii")
 
 
+class _FaultingObjectStore(InMemoryObjectStore):
+    """An in-memory object store whose next ``put`` fails like a remote store.
+
+    ``landed`` bytes are stored at the key before the failure is raised:
+    another writer's object for ``rejected``, this write's own for
+    ``indeterminate``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fault: tuple[str, str | None] | None = None
+
+    def put(
+        self, key: str, source: ByteSource, options: ObjectPutOptions | None = None
+    ) -> ObjectInfo:
+        fault = self.fault
+        if fault is None:
+            return super().put(key, source, options)
+        self.fault = None
+        outcome, landed = fault
+        if landed is not None:
+            super().put(key, _decode(landed))
+        if outcome == "rejected":
+            raise ObjectWriteRejectedError(key)
+        raise ObjectWriteIndeterminateError(key)
+
+
 class _ArtifactTarget:
     def __init__(self, backend: str, connection: object) -> None:
         self.backend = backend
         self.connection = connection
-        self.objects: InMemoryObjectStore
+        self.objects: _FaultingObjectStore
         self.repository: StoreArtifactRepository | InMemoryArtifactRepository
         self.coordinator: ArtifactCoordinator
         self.maintenance: ArtifactMaintenance
@@ -70,7 +101,7 @@ class _ArtifactTarget:
             self.repository = StoreArtifactRepository(self.connection, lease_id_factory=next_lease)
         else:
             self.repository = InMemoryArtifactRepository(lease_id_factory=next_lease)
-        self.objects = InMemoryObjectStore()
+        self.objects = _FaultingObjectStore()
 
         def next_id() -> str:
             index = self._next_id
@@ -90,6 +121,7 @@ class _ArtifactTarget:
         self.maintenance = ArtifactMaintenance(
             self.objects,
             self.repository,
+            namespace=namespace,
             now=lambda: self._now,
             owner_id="conformance-maintenance",
             audit_id_factory=lambda: self._next_audit_id(),
@@ -190,6 +222,11 @@ class _ArtifactTarget:
 
     def deleteObject(self, key: str) -> bool:
         return self.objects.delete(key)
+
+    def failNextPut(self, outcome: str, landed: str | None = None) -> None:
+        if outcome not in ("rejected", "indeterminate"):
+            raise ValueError(f"unknown put fault: {outcome}")
+        self.objects.fault = (outcome, landed)
 
     def setTime(self, value: int | float) -> None:
         self._now = float(value)

@@ -9,6 +9,8 @@ __all__ = [
     "ArtifactLimitError",
     "ArtifactOperationError",
     "ArtifactValidationError",
+    "ObjectWriteIndeterminateError",
+    "ObjectWriteRejectedError",
 ]
 
 ArtifactValidationErrorCode = Literal[
@@ -32,6 +34,7 @@ ArtifactOperationErrorCode = Literal[
     "lease-lost",
     "lease-commit-unsupported",
     "atomic-mutation-unavailable",
+    "object-key-occupied",
     "web-crypto-unavailable",
 ]
 
@@ -56,3 +59,36 @@ class ArtifactOperationError(Exception):
 
 class ArtifactConflictError(Exception):
     """A record, receipt, or lineage edge conflicts with existing state."""
+
+
+class ObjectWriteIndeterminateError(Exception):
+    """A write failed after its bytes may have reached the store.
+
+    The store cannot prove whether the object now at ``key`` is this writer's;
+    a remote upload can succeed before its reply is lost.  The coordinator
+    keeps the object instead of deleting bytes that may belong to another
+    writer.  A retry under the same id adopts identical bytes, and
+    ``ArtifactMaintenance`` finds any other leftover as
+    ``object-without-record`` and removes it with ``delete-unreferenced-object``.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(
+            "Object write outcome is indeterminate; the object is kept. A retry with the same "
+            "bytes adopts it; ArtifactMaintenance removes it if nothing does."
+        )
+        self.key = key
+
+
+class ObjectWriteRejectedError(Exception):
+    """A write failed and the store knows it stored nothing at ``key``.
+
+    The request was refused, the source failed or ran over a limit before
+    anything was committed, or the store removed its own partial bytes.  The
+    coordinator then leaves the key alone, because any object there now belongs
+    to another writer.  The original error is the ``__cause__``.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__("Object write stored nothing at this key.")
+        self.key = key

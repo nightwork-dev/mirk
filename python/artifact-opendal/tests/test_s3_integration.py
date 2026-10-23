@@ -10,6 +10,7 @@ from typing import NamedTuple
 import opendal
 import pytest
 from mirk.artifact.coordinator import ArtifactCoordinator
+from mirk.artifact.errors import ObjectWriteRejectedError
 from mirk.artifact.maintenance import ArtifactMaintenance
 from mirk.artifact.memory import ObjectAlreadyExistsError
 from mirk.artifact.store import StoreArtifactRepository
@@ -144,7 +145,7 @@ def test_s3_source_failures_preserve_conflicts_and_clean_owned_objects(
             yield b"replacement"
         raise RuntimeError("source failed")
 
-    expected = ObjectAlreadyExistsError if preexisting else RuntimeError
+    expected = ObjectAlreadyExistsError if preexisting else ObjectWriteRejectedError
     with pytest.raises(expected):
         objects.put(key, failing(), {"ifAbsent": True})
     if preexisting:

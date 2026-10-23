@@ -1,0 +1,123 @@
+{
+  "id": "artifact/lifecycle/indeterminate-write-preserved-then-adopted",
+  "title": "indeterminate write preserved then adopted",
+  "ports": [
+    "artifact"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "ids": [
+            "same",
+            "same"
+          ]
+        }
+      ]
+    },
+    {
+      "op": "failNextPut",
+      "args": [
+        "indeterminate",
+        "aGVsbG8="
+      ]
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "throws": "artifact object write failed"
+      }
+    },
+    {
+      "op": "list",
+      "args": [],
+      "expect": {
+        "value": {
+          "items": []
+        }
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-1",
+          "scannedRecords": 0,
+          "scannedObjects": 1,
+          "findings": [
+            {
+              "code": "object-without-record",
+              "maintenanceRef": "ref-audit-1-1",
+              "detail": "object is not referenced by an artifact record"
+            }
+          ],
+          "coverage": "complete"
+        }
+      }
+    },
+    {
+      "op": "write",
+      "args": [
+        {
+          "bytes": "aGVsbG8=",
+          "mediaType": "text/plain"
+        }
+      ],
+      "expect": {
+        "value": {
+          "id": "same",
+          "createdAt": 1000,
+          "digest": {
+            "algorithm": "sha256",
+            "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+          },
+          "sizeBytes": 5,
+          "mediaType": "text/plain"
+        }
+      }
+    },
+    {
+      "op": "read",
+      "args": [
+        "same"
+      ],
+      "expect": {
+        "value": {
+          "artifact": {
+            "id": "same",
+            "createdAt": 1000,
+            "digest": {
+              "algorithm": "sha256",
+              "value": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+            },
+            "sizeBytes": 5,
+            "mediaType": "text/plain"
+          },
+          "bytes": "aGVsbG8="
+        }
+      }
+    },
+    {
+      "op": "audit",
+      "args": [],
+      "expect": {
+        "value": {
+          "auditId": "audit-2",
+          "scannedRecords": 1,
+          "scannedObjects": 1,
+          "findings": [],
+          "coverage": "complete"
+        }
+      }
+    }
+  ]
+}

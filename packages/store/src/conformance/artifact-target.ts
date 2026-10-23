@@ -3,11 +3,16 @@ import {
   ArtifactMaintenance,
   InMemoryArtifactRepository,
   InMemoryObjectStore,
+  ObjectWriteIndeterminateError,
+  ObjectWriteRejectedError,
   artifactFinalizationDigest,
   type ArtifactAuditReport,
   type ArtifactRepairPlan,
   type ArtifactRepository,
   type ArtifactCoordinatorConcurrency,
+  type ByteSource,
+  type ObjectInfo,
+  type ObjectPutOptions,
   type WriteArtifactInput,
 } from "@mirk/artifact";
 import { StoreArtifactRepository } from "@mirk/artifact/store";
@@ -20,13 +25,38 @@ type Config = {
   concurrency?: ArtifactCoordinatorConcurrency;
 };
 
+type PutFault = { outcome: "rejected" | "indeterminate"; landed?: string };
+
+/** An in-memory object store whose next `put` can fail the way a remote store
+ *  does. `landed` bytes are stored at the key before the failure is thrown:
+ *  another writer's object for `rejected`, this write's own for
+ *  `indeterminate`. */
+class FaultingObjectStore extends InMemoryObjectStore {
+  fault: PutFault | undefined;
+
+  override async put(
+    key: string,
+    source: ByteSource,
+    options: ObjectPutOptions = {}
+  ): Promise<ObjectInfo> {
+    const fault = this.fault;
+    if (!fault) return super.put(key, source, options);
+    this.fault = undefined;
+    if (fault.landed !== undefined)
+      await super.put(key, Buffer.from(fault.landed, "base64"));
+    throw fault.outcome === "rejected"
+      ? new ObjectWriteRejectedError(key)
+      : new ObjectWriteIndeterminateError(key);
+  }
+}
+
 /** Corpus-only adapter. Production store entry points never import this module. */
 export function artifactApi(
   backend: "memory" | "sqlite" | "node-sqlite",
   store: SyncStore
 ): Record<string, unknown> {
   let clock = 1_000;
-  let objects: InMemoryObjectStore;
+  let objects: FaultingObjectStore;
   let repository: InMemoryArtifactRepository | StoreArtifactRepository;
   let coordinator: ArtifactCoordinator;
   let maintenance: ArtifactMaintenance;
@@ -40,7 +70,7 @@ export function artifactApi(
     let audit = 0;
     const now = () => clock;
     const leaseIdFactory = () => `lease-${++lease}`;
-    objects = new InMemoryObjectStore();
+    objects = new FaultingObjectStore();
     repository =
       backend === "memory"
         ? new InMemoryArtifactRepository({ now, leaseIdFactory })
@@ -136,6 +166,9 @@ export function artifactApi(
       await objects.put(key, Buffer.from(bytes, "base64"));
     },
     deleteObject: (key: string) => objects.delete(key),
+    failNextPut(outcome: PutFault["outcome"], landed?: string) {
+      objects.fault = { outcome, ...(landed === undefined ? {} : { landed }) };
+    },
     async audit() {
       report = await maintenance.audit();
       return report;
