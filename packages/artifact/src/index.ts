@@ -4,6 +4,7 @@ export {
   ArtifactLimitError,
   ArtifactOperationError,
   ArtifactValidationError,
+  ObjectWriteIndeterminateError,
 } from "./errors.js";
 export type {
   ArtifactLimitErrorCode,

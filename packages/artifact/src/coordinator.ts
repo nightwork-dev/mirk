@@ -14,7 +14,11 @@ import type {
   WriteArtifactInput,
 } from "./types.js";
 import { ArtifactConflictError, ObjectAlreadyExistsError } from "./memory.js";
-import { ArtifactOperationError, ArtifactValidationError } from "./errors.js";
+import {
+  ArtifactOperationError,
+  ArtifactValidationError,
+  ObjectWriteIndeterminateError,
+} from "./errors.js";
 import {
   artifactFinalizationDigest,
   assertPortableMetadata,
@@ -29,7 +33,11 @@ export class ArtifactWriteError extends Error {
   declare readonly name: "ArtifactWriteError";
   constructor(
     message: string,
-    readonly cleanup: "not-needed" | "succeeded" | "failed",
+    readonly cleanup:
+      | "not-needed"
+      | "succeeded"
+      | "failed"
+      | "preserved-indeterminate",
     options?: ErrorOptions
   ) {
     super(message, options);
@@ -123,7 +131,9 @@ export class ArtifactCoordinator {
         );
       } catch (cause) {
         const cleanup =
-          preexistingObject || cause instanceof ObjectAlreadyExistsError
+          cause instanceof ObjectWriteIndeterminateError
+            ? "preserved-indeterminate"
+            : preexistingObject || cause instanceof ObjectAlreadyExistsError
             ? "not-needed"
             : (await this.#deleteOwnedObject(objectKey))
             ? "succeeded"

@@ -63,3 +63,25 @@ Object.defineProperty(ArtifactOperationError.prototype, "name", {
   configurable: true,
   enumerable: false,
 });
+
+/** Thrown by an object store when a write failed without proving whether the
+ *  bytes now at `key` are this writer's. A remote upload can succeed before its
+ *  reply is lost, and a conditional create can lose a race the store cannot
+ *  report. The coordinator keeps the object for later reconciliation instead of
+ *  deleting bytes that may belong to another writer. */
+export class ObjectWriteIndeterminateError extends Error {
+  declare readonly name: "ObjectWriteIndeterminateError";
+  constructor(readonly key: string, options?: ErrorOptions) {
+    super(
+      "Object write outcome is indeterminate; the object is kept for reconciliation.",
+      options
+    );
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(ObjectWriteIndeterminateError.prototype, "name", {
+  value: "ObjectWriteIndeterminateError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});

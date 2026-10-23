@@ -37,6 +37,8 @@ still open.
 | MR-25  | Python Markdown storage adapter                          | `python/store-markdown`             | unreleased |
 | MR-26  | Python S3/OpenDAL artifact object adapter                 | `python/artifact-opendal`           | unreleased |
 | MR-27  | Built-in Node SQLite adapter and better-sqlite3 13 support | `@mirk/store/node-sqlite`, `@mirk/statements` | unreleased |
+| MR-28  | Async transaction contract; PostgreSQL atomic writes and transactions | `@mirk/store`, `@mirk/store-postgres` | unreleased |
+| MR-29  | Private Vercel Blob artifact object adapter              | `@mirk/artifact-vercel-blob`         | unreleased |
 
 "Shipped" means implemented and tested on the default branch. "Unreleased" means that
 the source and tests contain the feature without a release entry for it yet. Published

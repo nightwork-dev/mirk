@@ -116,7 +116,7 @@ the same async shape.
 | Records that people edit as Markdown files | `@mirk/store-markdown`                     | key-values and collections              |
 | Storage in the browser                     | `@mirk/store-indexeddb`                    | key-values and collections              |
 | A hosted SQLite database (Turso, `sqld`)   | `@mirk/store-libsql`                       | key-values, collections, and vectors    |
-| Many processes writing at once             | `@mirk/store-postgres`                     | key-values and collections              |
+| Many processes writing at once             | `@mirk/store-postgres`                     | key-values, collections, transactions   |
 | SurrealDB, embedded or remote              | `@mirk/surreal`                            | key-values, collections, vectors, links |
 | A dedicated vector database                | `@mirk/vector-qdrant`                      | vectors                                 |
 
@@ -152,8 +152,9 @@ file is intact, where it came from, and that a half-written file never becomes v
 - cleanup that never deletes a file a writer is still finishing, and that shows its plan before it
   deletes anything
 
-Metadata lives in a mirk store. The bytes live on disk, or on S3 and other object stores through
-[`@mirk/artifact-opendal`](packages/artifact-opendal).
+Metadata lives in a mirk store. The bytes live on disk, on S3 and other object stores through
+[`@mirk/artifact-opendal`](packages/artifact-opendal), or in private Vercel Blob storage through
+[`@mirk/artifact-vercel-blob`](packages/artifact-vercel-blob).
 
 ## Also in the box
 

@@ -22,14 +22,15 @@ served to someone? If a job retries, do we get two copies?
   of making a second one.
 
 The bytes live behind a small object-store interface, so the same code runs against memory, local
-disk, or a bucket such as S3 (through [`@mirk/artifact-opendal`](../artifact-opendal)). The records
+disk, a bucket such as S3 (through [`@mirk/artifact-opendal`](../artifact-opendal)), or private
+Vercel Blob (through [`@mirk/artifact-vercel-blob`](../artifact-vercel-blob)). The records
 live in any [`@mirk/store`](../store) key-value store.
 
 The root package is runtime-neutral. It exports the artifact coordinator, in-memory reference
 implementations, object-store types, digest helpers, and validation helpers. Use
 `@mirk/artifact/store` to persist metadata through `@mirk/store/kv`; use `@mirk/artifact/fs` for a
-Node filesystem object store; use a separate adapter such as `@mirk/artifact-opendal` for production
-object-storage backends.
+Node filesystem object store; use a separate adapter such as `@mirk/artifact-opendal` or
+`@mirk/artifact-vercel-blob` for production object-storage backends.
 
 ESM-only.
 
@@ -114,7 +115,9 @@ The object-store key is infrastructure. Coordinator results are `ArtifactDescrip
 4. Commit the record, then any `sources` lineage edges.
 5. Return only after the metadata commit succeeds.
 
-Any failure throws `ArtifactWriteError` with `cleanup: "not-needed" | "succeeded" | "failed"`. If the byte write fails, no record exists. If anything after it fails, the coordinator removes the record it created and attempts to delete the object. A `"failed"` cleanup leaves an orphaned object for `@mirk/artifact/maintenance` to find.
+Any failure throws `ArtifactWriteError` with `cleanup: "not-needed" | "succeeded" | "failed" | "preserved-indeterminate"`. If the byte write fails, no record exists. If anything after it fails, the coordinator removes the record it created and attempts to delete the object. A `"failed"` cleanup leaves an orphaned object for `@mirk/artifact/maintenance` to find.
+
+A remote upload can land before its reply is lost, and a conditional create can lose a race the store cannot report. An object store signals that case by throwing `ObjectWriteIndeterminateError`. The coordinator then keeps the object, because it may belong to another writer, and fails the write with `cleanup: "preserved-indeterminate"`. No record is created, so the bytes are at worst an orphan for maintenance to find.
 
 `import({ objectKey, mediaType, ... })` registers bytes already in the object store. It reads and hashes them first; it never trusts a caller-supplied size or digest. An import failure never deletes the imported object.
 
@@ -256,6 +259,7 @@ Rules every adapter must follow:
 
 - `put` consumes the byte source exactly once and returns the stored size. The coordinator always calls `put` with `ifAbsent: true` and a `mediaType`, and rejects a write whose reported size differs from the streamed size.
 - `ifAbsent: true` is an atomic create-if-missing that throws when the key exists. An adapter that cannot do this atomically must throw rather than check-then-write, and a failed conditional write must not delete the pre-existing object.
+- When a write fails and the adapter cannot tell whether the bytes now at the key are its own, `put` throws `ObjectWriteIndeterminateError` and does not delete them.
 - `get` returns `undefined` and `delete` returns `false` for a missing key.
 - Keys are opaque. Validate them with `assertObjectKey()`: keys must be non-empty and relative, with no `.` or `..` segments and no NUL bytes. Never expose machine paths as keys.
 - `ObjectInfo` metadata (ETag, media type, user metadata) is advisory. Mirk establishes integrity from its own SHA-256, never from an ETag.
