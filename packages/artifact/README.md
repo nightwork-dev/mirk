@@ -178,6 +178,7 @@ const plan = await maintenance.planRepair(report);
 const results = await maintenance.applyRepair(plan);
 ```
 
+- Pass `namespace` (the coordinator's namespace, `artifacts` by default there) whenever the object store holds anything else: the audit then scans only keys under `${namespace}/`, so nothing outside it can become a `delete-unreferenced-object` action. Without it, every unreferenced object in the store is a deletion candidate.
 - `audit()` is read-only. Finding codes are `object-without-record`, `record-without-object`, `size-mismatch`, `digest-mismatch`, `lineage-missing-source`, `lineage-missing-result`, and `lineage-cycle`. Object scanning needs a `ListableObjectStore`; without one the report has `coverage: "partial"`.
 - Findings and plans never contain object-store keys. Objects are named by an opaque `maintenanceRef` that is valid only for that audit, and the snapshot lives in the `ArtifactMaintenance` instance, so plan and apply with the same instance. An unknown audit returns `not-found`.
 - `planRepair()` only builds a plan. Its actions are `delete-unreferenced-object`, `delete-record-without-object`, `remove-invalid-lineage-edge`, and `reverify-imported-object`, each with a fingerprint precondition.
@@ -262,7 +263,8 @@ Rules every adapter must follow:
 
 - `put` consumes the byte source exactly once and returns the stored size. The coordinator always calls `put` with `ifAbsent: true` and a `mediaType`, and rejects a write whose reported size differs from the streamed size.
 - `ifAbsent: true` is an atomic create-if-missing that throws when the key exists. An adapter that cannot do this atomically must throw rather than check-then-write, and a failed conditional write must not delete the pre-existing object.
-- When a write fails after its bytes may have reached the store, so the adapter cannot tell whether the object now at the key is its own, `put` throws `ObjectWriteIndeterminateError` and does not delete it. A failure that proves nothing landed (a refused conditional create, a source over a size limit, a rejected request) is reported as itself.
+- When a write fails after its bytes may have reached the store, so the adapter cannot tell whether the object now at the key is its own, `put` throws `ObjectWriteIndeterminateError` and does not delete it.
+- When a write fails and the adapter knows it stored nothing at the key (a refused request, a source that failed or ran over a limit before anything was committed, or a partial object it removed itself), `put` throws `ObjectWriteRejectedError` with the original error as `cause`. A refused create-if-missing is `ObjectAlreadyExistsError`. After any of the three, the coordinator leaves the key alone (`cleanup: "not-needed"` or `"preserved-indeterminate"`): an object there now may be another writer's. The in-memory, filesystem, OpenDAL and Vercel Blob stores follow this.
 - `get` returns `undefined` and `delete` returns `false` for a missing key.
 - Keys are opaque. Validate them with `assertObjectKey()`: keys must be non-empty and relative, with no `.` or `..` segments and no NUL bytes. Never expose machine paths as keys.
 - `ObjectInfo` metadata (ETag, media type, user metadata) is advisory. Mirk establishes integrity from its own SHA-256, never from an ETag.

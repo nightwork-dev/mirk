@@ -18,6 +18,7 @@ import {
   ArtifactOperationError,
   ArtifactValidationError,
   ObjectWriteIndeterminateError,
+  ObjectWriteRejectedError,
 } from "./errors.js";
 import {
   artifactFinalizationDigest,
@@ -140,7 +141,9 @@ export class ArtifactCoordinator {
         const cleanup =
           cause instanceof ObjectWriteIndeterminateError
             ? "preserved-indeterminate"
-            : preexistingObject || cause instanceof ObjectAlreadyExistsError
+            : preexistingObject ||
+              cause instanceof ObjectAlreadyExistsError ||
+              cause instanceof ObjectWriteRejectedError
             ? "not-needed"
             : (await this.#deleteOwnedObject(objectKey))
             ? "succeeded"

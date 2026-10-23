@@ -129,7 +129,10 @@ emulating weaker behavior. These throws are `OpenDalObjectStoreError` instances 
 backend used behind the coordinator needs both `writeWithIfNotExists` and `writeWithContentType`.
 
 A failed `ifAbsent` write never deletes an object that already existed at that key. A failed
-unconditional write removes its partial object.
+unconditional write removes its partial object. A failure before the writer closes, including the
+capability refusals above, is thrown as `ObjectWriteRejectedError` from `@mirk/artifact` with the
+original error as `cause`: nothing of the write remains, so `ArtifactCoordinator` never deletes the
+key afterwards. A conditional write that fails while closing is `ObjectWriteIndeterminateError`.
 
 Keys are validated with `assertObjectKey()` from `@mirk/artifact` on every call.
 

@@ -28,7 +28,7 @@ import {
   cloneJson,
 } from "./util.js";
 import { compareCodePoints } from "@mirk/store";
-import { ArtifactOperationError } from "./errors.js";
+import { ArtifactOperationError, ObjectWriteRejectedError } from "./errors.js";
 
 export class ObjectAlreadyExistsError extends Error {
   declare readonly name: "ObjectAlreadyExistsError";
@@ -74,10 +74,17 @@ export class InMemoryObjectStore implements ListableObjectStore {
       throw new ObjectAlreadyExistsError(key);
     const parts: Uint8Array[] = [];
     let sizeBytes = 0;
-    for await (const part of chunks(source)) {
-      parts.push(part.slice());
-      sizeBytes += part.byteLength;
+    try {
+      for await (const part of chunks(source)) {
+        parts.push(part.slice());
+        sizeBytes += part.byteLength;
+      }
+    } catch (cause) {
+      throw new ObjectWriteRejectedError(key, { cause });
     }
+    // Another writer may have created the key while the source streamed.
+    if (options.ifAbsent && this.#objects.has(key))
+      throw new ObjectAlreadyExistsError(key);
     const bytes = new Uint8Array(sizeBytes);
     let offset = 0;
     for (const part of parts) {

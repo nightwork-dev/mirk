@@ -15,6 +15,7 @@ import {
   chunks,
   ObjectAlreadyExistsError,
   ObjectWriteIndeterminateError,
+  ObjectWriteRejectedError,
 } from "@mirk/artifact";
 
 /** The SDK calls the adapter makes. Tests and wrappers can supply their own. */
@@ -58,6 +59,11 @@ function isRequestRefusal(error: unknown): boolean {
 }
 
 export interface VercelBlobObjectStoreOptions {
+  /** The pathname prefix this store owns, such as `mirk-artifacts`. Every key
+   *  is stored as `<root>/<key>`, and `list()` never returns anything outside
+   *  it, so maintenance can only ever touch this store's objects. Required:
+   *  a Blob store is usually shared with other uploads. */
+  root: string;
   /** A read-write token. Omit it to let the SDK use managed Vercel OIDC credentials. */
   token?: string;
   storeId?: string;
@@ -75,8 +81,13 @@ export interface VercelBlobObjectStoreOptions {
 export class VercelBlobObjectStore implements ListableObjectStore {
   private readonly sdk: VercelBlobSdk;
   private readonly maxBytes: number;
+  private readonly prefix: string;
 
-  constructor(private readonly options: VercelBlobObjectStoreOptions = {}) {
+  constructor(private readonly options: VercelBlobObjectStoreOptions) {
+    if (typeof options?.root !== "string") throw new TypeError("VercelBlobObjectStore requires a root");
+    const root = options.root.replace(/\/+$/, "");
+    assertObjectKey(root);
+    this.prefix = `${root}/`;
     this.sdk = options.sdk ?? blob;
     this.maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
     if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 1) {
@@ -131,7 +142,7 @@ export class VercelBlobObjectStore implements ListableObjectStore {
       { highWaterMark: 0 },
     );
     try {
-      const result = await this.sdk.put(key, stream, {
+      const result = await this.sdk.put(this.prefix + key, stream, {
         ...this.request(),
         access: "private",
         addRandomSuffix: false,
@@ -143,14 +154,14 @@ export class VercelBlobObjectStore implements ListableObjectStore {
     } catch (error) {
       await iterator.return?.().catch(() => undefined);
       // The body failed before it was complete, so the upload never finished.
-      if (sourceError) throw sourceError.error;
+      if (sourceError) throw new ObjectWriteRejectedError(key, { cause: sourceError.error });
       // A stream body is sent once: the SDK cannot replay it on a retry, so a
       // refusal of the existing pathname answers this upload, not an earlier
       // attempt of it. Our bytes did not land.
       if (options.ifAbsent && isExistingPathRefusal(error)) {
         throw new ObjectAlreadyExistsError(key);
       }
-      if (isRequestRefusal(error)) throw error;
+      if (isRequestRefusal(error)) throw new ObjectWriteRejectedError(key, { cause: error });
       // Anything else may have failed after the bytes reached the service,
       // such as a lost reply. Deleting could remove another writer's object.
       throw new ObjectWriteIndeterminateError(key, { cause: error });
@@ -159,7 +170,7 @@ export class VercelBlobObjectStore implements ListableObjectStore {
 
   async get(key: string): Promise<ByteStream | undefined> {
     assertObjectKey(key);
-    const result = await this.sdk.get(key, { ...this.request(), access: "private", useCache: false });
+    const result = await this.sdk.get(this.prefix + key, { ...this.request(), access: "private", useCache: false });
     if (!result) return undefined;
     if (result.statusCode !== 200 || !result.stream) {
       throw new Error("Unexpected private Blob read response");
@@ -183,7 +194,7 @@ export class VercelBlobObjectStore implements ListableObjectStore {
   async head(key: string): Promise<ObjectInfo | undefined> {
     assertObjectKey(key);
     try {
-      const result = await this.sdk.head(key, this.request());
+      const result = await this.sdk.head(this.prefix + key, this.request());
       return {
         key,
         sizeBytes: result.size,
@@ -211,7 +222,7 @@ export class VercelBlobObjectStore implements ListableObjectStore {
       );
     }
     try {
-      await this.sdk.del(key, { ...this.request(), ifMatch: prior.etag });
+      await this.sdk.del(this.prefix + key, { ...this.request(), ifMatch: prior.etag });
     } catch (error) {
       if (error instanceof blob.BlobNotFoundError || error instanceof blob.BlobPreconditionFailedError) {
         return false;
@@ -230,12 +241,13 @@ export class VercelBlobObjectStore implements ListableObjectStore {
       const page = await this.sdk.list({
         ...this.request(),
         limit: this.options.listPageSize ?? 1000,
-        ...(prefix ? { prefix } : {}),
+        prefix: this.prefix + prefix,
         ...(cursor ? { cursor } : {}),
       });
       for (const item of page.blobs) {
+        if (!item.pathname.startsWith(this.prefix)) continue;
         objects.push({
-          key: item.pathname,
+          key: item.pathname.slice(this.prefix.length),
           sizeBytes: item.size,
           etag: item.etag,
           lastModifiedAt: item.uploadedAt.getTime(),
