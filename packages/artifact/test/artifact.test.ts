@@ -4,6 +4,7 @@ import {
   ArtifactCoordinator,
   InMemoryArtifactRepository,
   InMemoryObjectStore,
+  ObjectWriteIndeterminateError,
   digestStream,
 } from "../src/index.js";
 
@@ -161,6 +162,27 @@ describe("ArtifactCoordinator", () => {
       coordinator.write({ bytes: bytes("new"), mediaType: "text/plain" })
     ).rejects.toMatchObject({ cleanup: "succeeded" });
     expect(await objects.head("artifacts/fixed")).toBeUndefined();
+  });
+
+  it("keeps the object when the store cannot tell whose bytes landed", async () => {
+    const objects = new InMemoryObjectStore();
+    const put = objects.put.bind(objects);
+    objects.put = async (key, source, options) => {
+      await put(key, source, options);
+      throw new ObjectWriteIndeterminateError(key);
+    };
+    const repository = new InMemoryArtifactRepository();
+    const coordinator = new ArtifactCoordinator(objects, repository, {
+      idFactory: () => "uncertain",
+    });
+    await expect(
+      coordinator.write({ bytes: bytes("maybe"), mediaType: "text/plain" })
+    ).rejects.toMatchObject({
+      cleanup: "preserved-indeterminate",
+      cause: expect.any(ObjectWriteIndeterminateError),
+    });
+    expect(await objects.head("artifacts/uncertain")).toBeDefined();
+    expect(await repository.get("uncertain")).toBeUndefined();
   });
 
   it("keeps shared imported bytes until the final artifact record is deleted", async () => {
