@@ -26,7 +26,7 @@ export function assertSafeTableIdentifier(identifier: string): string {
 }
 
 export function collectionTable(collection: string): string {
-  if (collection.length === 0) throw new SurrealIdentifierError("invalid-collection-name", "Invalid collection name.");
+  if (collection.length === 0) throw new SurrealIdentifierError("invalid-collection-name", "Invalid collection name");
   return assertSafeTableIdentifier(`mirk_c_${utf8Hex(collection)}`);
 }
 

@@ -135,8 +135,22 @@ object keys; dotted names are not interpreted as paths. The adapter stores user 
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
 Collection sorting follows Mirk's rules: strings use Unicode code-point order, null and missing
 values stay last in both directions, and pagination applies after sorting. A negative limit returns
-no rows. Insertion order is not preserved: an unsorted `list()`, and rows with equal sort values,
-return in SurrealDB record order rather than the insertion order the other Mirk stores use.
+no rows. An unsorted `list()` returns insertion order, and rows with equal sort values keep it, as in
+the other Mirk stores. Putting an existing id again updates it in place; removing it and putting it
+again moves it to the end.
+
+Each record carries a `mirk_ordinal` from a SurrealDB sequence (`DEFINE SEQUENCE
+mirk_collection_order`), so a remote server must support sequences; the embedded `3.3.4` engines
+do. Records written by `@mirk/surreal` 0.2.0 and earlier have no ordinal. They still load, filter,
+count, and sort, and an unsorted `list()` returns them first, in Unicode code point order of their
+id, followed by the ordered records. Putting one of them again keeps that place. A record whose
+`mirk_ordinal` is not a finite number is treated the same way. Concurrent puts each get an ordinal;
+their relative order is the order the server allocated them.
+
+SurrealDB strings are UTF-8. A string value that holds a lone UTF-16 surrogate is stored as its
+UTF-16 code units and read back unchanged. Object keys, record ids, and KV keys are stored as
+SurrealDB strings, so a lone surrogate in one of them becomes U+FFFD. SurrealDB rejects an empty
+record id, so the empty id and the empty KV key are stored under the array id `[""]`.
 
 Vector, graph, search, and object-storage subpaths are separate adapter entry points and are not
 re-exported from the root. The store adapter does not implement `@mirk/store/atomic` mutation.
