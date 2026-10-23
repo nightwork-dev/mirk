@@ -5,6 +5,7 @@ import {
   InMemoryArtifactRepository,
   ObjectAlreadyExistsError,
   ObjectWriteIndeterminateError,
+  ObjectWriteRejectedError,
 } from "@mirk/artifact";
 import { ArtifactMaintenance } from "@mirk/artifact/maintenance";
 import { describe, expect, it } from "vitest";
@@ -115,15 +116,17 @@ function fakeSdk() {
   return { sdk: sdk as unknown as VercelBlobSdk, raw: sdk, calls, objects };
 }
 
+const ROOT = "mirk-artifacts";
+
 objectStoreConformance("VercelBlobObjectStore", {
-  createStore: () => new VercelBlobObjectStore({ sdk: fakeSdk().sdk }),
+  createStore: () => new VercelBlobObjectStore({ root: ROOT, sdk: fakeSdk().sdk }),
   supportsMetadata: false,
 });
 
 describe("VercelBlobObjectStore", () => {
   it("uses private objects at deterministic keys, reads from origin, and never returns URLs", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk, token: "token", storeId: "store" });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk, token: "token", storeId: "store" });
     const info = await store.put("a", new Uint8Array([1]), { ifAbsent: true });
     expect(info).not.toHaveProperty("url");
     expect(fixture.calls.find((call) => call.operation === "put")?.options).toMatchObject({
@@ -151,7 +154,7 @@ describe("VercelBlobObjectStore", () => {
       throw new Error("reply lost");
     };
     const coordinator = new ArtifactCoordinator(
-      new VercelBlobObjectStore({ sdk: fixture.sdk }),
+      new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk }),
       new InMemoryArtifactRepository(),
       { idFactory: () => "lost-reply" },
     );
@@ -160,6 +163,7 @@ describe("VercelBlobObjectStore", () => {
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ArtifactWriteError);
     expect((failure as ArtifactWriteError).cleanup).toBe("preserved-indeterminate");
+    expect((failure as ArtifactWriteError).cause).toBeInstanceOf(ObjectWriteIndeterminateError);
     expect(fixture.objects.size).toBe(1);
     expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
   });
@@ -171,7 +175,7 @@ describe("VercelBlobObjectStore", () => {
       fixture.objects.set(key, { bytes: new Uint8Array([9]), contentType: "application/octet-stream", etag: "winner" });
       return put(key, source, options);
     };
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     const coordinator = new ArtifactCoordinator(store, new InMemoryArtifactRepository(), { idFactory: () => "race" });
     await expect(
       coordinator.write({ mediaType: "application/octet-stream", bytes: new Uint8Array([1]) }),
@@ -183,12 +187,12 @@ describe("VercelBlobObjectStore", () => {
     expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
   });
 
-  it("reports a source over the byte limit as itself: nothing landed", async () => {
+  it("reports a source over the byte limit as a write that stored nothing", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk, maxBytes: 2 });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk, maxBytes: 2 });
     const failure = await store.put("too-large", new Uint8Array([1, 2, 3])).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(RangeError);
-    expect(failure).not.toBeInstanceOf(ObjectWriteIndeterminateError);
+    expect(failure).toBeInstanceOf(ObjectWriteRejectedError);
+    expect((failure as Error).cause).toBeInstanceOf(RangeError);
     expect(fixture.objects.size).toBe(0);
   });
 
@@ -197,23 +201,23 @@ describe("VercelBlobObjectStore", () => {
     fixture.raw.put = async () => {
       throw new BlobAccessError();
     };
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     const failure = await store.put("refused", new Uint8Array([1])).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(BlobAccessError);
-    expect(failure).not.toBeInstanceOf(ObjectWriteIndeterminateError);
+    expect(failure).toBeInstanceOf(ObjectWriteRejectedError);
+    expect((failure as Error).cause).toBeInstanceOf(BlobAccessError);
   });
 
   it("returns false to the loser of a delete race", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     await store.put("k", new Uint8Array([1]));
     expect((await Promise.all([store.delete("k"), store.delete("k")])).sort()).toEqual([false, true]);
-    expect(fixture.objects.has("k")).toBe(false);
+    expect(fixture.objects.has(`${ROOT}/k`)).toBe(false);
   });
 
   it("deletes only the version it observed and returns false after a concurrent overwrite", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     await store.put("k", new Uint8Array([1]));
     const head = fixture.raw.head;
     fixture.raw.head = async (key, options) => {
@@ -222,25 +226,25 @@ describe("VercelBlobObjectStore", () => {
       return seen;
     };
     expect(await store.delete("k")).toBe(false);
-    expect(fixture.objects.get("k")?.etag).toBe("newer");
+    expect(fixture.objects.get(`${ROOT}/k`)?.etag).toBe("newer");
   });
 
   it("refuses to delete an object it cannot pin to a version", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     await store.put("k", new Uint8Array([1]));
     const head = fixture.raw.head;
     fixture.raw.head = async (key, options) => ({ ...(await head(key, options)), etag: "" });
     const refusal = await store.delete("k").catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(VercelBlobObjectStoreError);
     expect(refusal).toMatchObject({ code: "missing-etag" });
-    expect(fixture.objects.has("k")).toBe(true);
+    expect(fixture.objects.has(`${ROOT}/k`)).toBe(true);
     expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
   });
 
   it("lists objects by prefix across pages, in key order", async () => {
     const fixture = fakeSdk();
-    const store = new VercelBlobObjectStore({ sdk: fixture.sdk, listPageSize: 2 });
+    const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk, listPageSize: 2 });
     for (const key of ["b/2", "a/1", "b/1", "b/3"]) await store.put(key, new Uint8Array([1]));
     expect((await store.list("b/")).map((info) => info.key)).toEqual(["b/1", "b/2", "b/3"]);
     expect((await store.list()).map((info) => info.key)).toEqual(["a/1", "b/1", "b/2", "b/3"]);
@@ -253,7 +257,7 @@ describe("VercelBlobObjectStore", () => {
       await put(...args);
       throw new Error("reply lost");
     };
-    const objects = new VercelBlobObjectStore({ sdk: fixture.sdk });
+    const objects = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
     const repository = new InMemoryArtifactRepository();
     const coordinator = new ArtifactCoordinator(objects, repository, { idFactory: () => "orphan" });
     await expect(
@@ -271,7 +275,58 @@ describe("VercelBlobObjectStore", () => {
     expect(fixture.objects.size).toBe(0);
   });
 
+  for (const [label, fail] of [
+    ["an over-limit upload", "limit"],
+    ["a refused upload", "refused"],
+  ] as const) {
+    it(`never deletes a concurrent writer's object after ${label}`, async () => {
+      const fixture = fakeSdk();
+      const put = fixture.raw.put;
+      fixture.raw.put = async (key, source, options) => {
+        // Another writer with the same deterministic id lands first.
+        fixture.objects.set(key, { bytes: new Uint8Array([9]), contentType: "application/octet-stream", etag: "winner" });
+        if (fail === "refused") throw new BlobAccessError();
+        return put(key, source, { ...options, allowOverwrite: true });
+      };
+      const store = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk, maxBytes: 2 });
+      const coordinator = new ArtifactCoordinator(store, new InMemoryArtifactRepository(), { idFactory: () => "same" });
+      await expect(
+        coordinator.write({ mediaType: "application/octet-stream", bytes: new Uint8Array([1, 2, 3]) }),
+      ).rejects.toMatchObject({ cleanup: "not-needed" });
+      expect(fixture.objects.get(`${ROOT}/artifacts/same`)?.etag).toBe("winner");
+      expect(fixture.calls.some((call) => call.operation === "del")).toBe(false);
+    });
+  }
+
+  it("keeps every key under its root and never lists or repairs outside it", async () => {
+    const fixture = fakeSdk();
+    const outside = ["other-app/upload", "mirk-artifacts-old/x", "artifacts/at-bucket-root"];
+    for (const key of outside) {
+      fixture.objects.set(key, { bytes: new Uint8Array([1]), contentType: "application/octet-stream", etag: "x" });
+    }
+    const objects = new VercelBlobObjectStore({ root: ROOT, sdk: fixture.sdk });
+    await objects.put("artifacts/orphan", new Uint8Array([2]));
+    await objects.put("imports/elsewhere", new Uint8Array([3]));
+    expect(fixture.objects.has(`${ROOT}/artifacts/orphan`)).toBe(true);
+    expect((await objects.list()).map((info) => info.key)).toEqual(["artifacts/orphan", "imports/elsewhere"]);
+    expect(await objects.head("other-app/upload")).toBeUndefined();
+
+    const maintenance = new ArtifactMaintenance(objects, new InMemoryArtifactRepository(), { namespace: "artifacts" });
+    const plan = await maintenance.planRepair(await maintenance.audit());
+    expect(plan.actions.map((action) => action.operation)).toEqual(["delete-unreferenced-object"]);
+    await maintenance.applyRepair(plan);
+    expect(fixture.objects.has(`${ROOT}/artifacts/orphan`)).toBe(false);
+    expect(fixture.objects.has(`${ROOT}/imports/elsewhere`)).toBe(true);
+    for (const key of outside) expect(fixture.objects.has(key)).toBe(true);
+  });
+
+  it("requires a valid root", () => {
+    expect(() => new VercelBlobObjectStore({} as never)).toThrow();
+    expect(() => new VercelBlobObjectStore({ root: "" })).toThrow();
+    expect(() => new VercelBlobObjectStore({ root: "../escape" })).toThrow();
+  });
+
   it("rejects a non-positive byte limit", () => {
-    expect(() => new VercelBlobObjectStore({ maxBytes: 0 })).toThrow(RangeError);
+    expect(() => new VercelBlobObjectStore({ root: ROOT, maxBytes: 0 })).toThrow(RangeError);
   });
 });

@@ -4,6 +4,11 @@ import {
   drain,
   objectStoreConformance,
 } from "../../artifact/test/object-store-conformance.js";
+import {
+  ArtifactCoordinator,
+  InMemoryArtifactRepository,
+  ObjectWriteRejectedError,
+} from "@mirk/artifact";
 import { OpenDalObjectStore, OpenDalObjectStoreError } from "../src/index.js";
 
 objectStoreConformance("OpenDalObjectStore memory backend", {
@@ -40,14 +45,13 @@ describe("OpenDalObjectStore", () => {
     const store = new OpenDalObjectStore(new Operator("memory"), {
       digestMetadataKey: "content-sha256",
     });
-    const rejection = expect(
-      store.put("objects/digest", new TextEncoder().encode("hello"))
-    ).rejects;
-    await rejection.toThrow(OpenDalObjectStoreError);
-    await rejection.toMatchObject({ code: "unsupported-user-metadata" });
-    const error = await store
+    const rejected = await store
       .put("objects/digest", new TextEncoder().encode("hello"))
       .catch((caught: unknown) => caught);
+    expect(rejected).toBeInstanceOf(ObjectWriteRejectedError);
+    const error = (rejected as ObjectWriteRejectedError).cause;
+    expect(error).toBeInstanceOf(OpenDalObjectStoreError);
+    expect(error).toMatchObject({ code: "unsupported-user-metadata" });
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).name).toBe("OpenDalObjectStoreError");
     expect(Object.keys(error as object)).not.toContain("name");
@@ -94,8 +98,30 @@ describe("OpenDalObjectStore", () => {
     }
     await expect(
       store.put("objects/failure", failing(), { ifAbsent: true })
-    ).rejects.toBe(sourceError);
+    ).rejects.toMatchObject({ name: "ObjectWriteRejectedError", cause: sourceError });
     await store.put("objects/failure", new Uint8Array([2]), { ifAbsent: true });
     expect(await store.head("objects/failure")).toMatchObject({ sizeBytes: 1 });
+  });
+
+  it("never deletes a concurrent writer's object after a write that stored nothing", async () => {
+    const store = new OpenDalObjectStore(new Operator("memory"));
+    const put = store.put.bind(store);
+    store.put = async (key, source, options) => {
+      try {
+        return await put(key, source, options);
+      } catch (error) {
+        if (key === "artifacts/same") await put(key, new TextEncoder().encode("winner"), { mediaType: "text/plain" });
+        throw error;
+      }
+    };
+    async function* failing(): AsyncIterable<Uint8Array> {
+      yield new Uint8Array([1]);
+      throw new Error("source failed");
+    }
+    const coordinator = new ArtifactCoordinator(store, new InMemoryArtifactRepository(), { idFactory: () => "same" });
+    await expect(coordinator.write({ bytes: failing(), mediaType: "text/plain" })).rejects.toMatchObject({
+      cleanup: "not-needed",
+    });
+    expect(new TextDecoder().decode(await drain(await store.get("artifacts/same")))).toBe("winner");
   });
 });

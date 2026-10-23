@@ -12,7 +12,7 @@ import type {
 } from "./types.js";
 import { ObjectAlreadyExistsError } from "./memory.js";
 import { assertObjectKey, chunks } from "./util.js";
-import { ArtifactValidationError } from "./errors.js";
+import { ArtifactValidationError, ObjectWriteRejectedError } from "./errors.js";
 import { compareCodePoints } from "@mirk/store";
 
 export { ArtifactValidationError } from "./errors.js";
@@ -82,7 +82,7 @@ export class FileObjectStore implements ListableObjectStore {
       ) {
         throw new ObjectAlreadyExistsError(key);
       }
-      throw error;
+      throw new ObjectWriteRejectedError(key, { cause: error });
     }
 
     let sizeBytes = 0;
@@ -98,7 +98,10 @@ export class FileObjectStore implements ListableObjectStore {
       // On overwrite we leave it: the pre-existing bytes are already gone and
       // deleting would lose data the caller may still expect on retry.
       await handle.close();
-      if (options.ifAbsent) await rm(bytesPath, { force: true });
+      if (options.ifAbsent) {
+        await rm(bytesPath, { force: true });
+        throw new ObjectWriteRejectedError(key, { cause: error });
+      }
       throw error;
     } finally {
       await handle.close();
@@ -115,8 +118,10 @@ export class FileObjectStore implements ListableObjectStore {
     } catch (error) {
       // An ifAbsent write owns this path. Do not leave a byte object that can
       // poison the next retry when its metadata commit fails.
-      if (options.ifAbsent)
-        await rm(bytesPath, { force: true }).catch(() => undefined);
+      if (options.ifAbsent) {
+        await rm(bytesPath, { force: true });
+        throw new ObjectWriteRejectedError(key, { cause: error });
+      }
       throw error;
     }
     return info;

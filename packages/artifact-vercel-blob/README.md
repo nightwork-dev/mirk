@@ -34,7 +34,7 @@ import { VercelBlobObjectStore } from "@mirk/artifact-vercel-blob";
 
 const postgres = await PostgresAdapter.open({ connectionString: process.env.DATABASE_URL });
 const artifacts = new ArtifactCoordinator(
-  new VercelBlobObjectStore({ token: process.env.BLOB_READ_WRITE_TOKEN }),
+  new VercelBlobObjectStore({ root: "mirk-artifacts", token: process.env.BLOB_READ_WRITE_TOKEN }),
   new StoreArtifactRepository(postgres.kv, { namespace: "artifacts" }),
   { concurrency: { mode: "repository-atomic" } },
 );
@@ -55,6 +55,7 @@ idempotent output at once and get one artifact.
 
 ```ts
 new VercelBlobObjectStore({
+  root,       // required: the pathname prefix this store owns, such as "mirk-artifacts"
   token,      // a read-write token; omit it to use the SDK's managed Vercel OIDC credentials
   storeId,    // the Blob store, when the credentials do not imply one
   maxBytes,   // largest object put accepts; default 16 MiB
@@ -63,7 +64,11 @@ new VercelBlobObjectStore({
 });
 ```
 
-The constructor throws a `RangeError` unless `maxBytes` is a positive safe integer.
+Every key is stored as `<root>/<key>`. `get`, `head`, `delete` and `list` only ever address
+pathnames under the root, so objects that other apps or uploads keep in the same Blob store are
+invisible to the artifact layer and to maintenance. The root must be a valid relative key; the
+constructor throws without one, and throws a `RangeError` unless `maxBytes` is a positive safe
+integer.
 
 ## Behavior
 
@@ -92,9 +97,11 @@ creates no record. A retry that writes the same bytes under the same id adopts t
 `@mirk/artifact/maintenance` finds any other leftover and removes it with
 `delete-unreferenced-object`.
 
-These failures prove nothing landed and are reported as themselves: a source over `maxBytes`,
-the service refusing to overwrite an existing key (`ObjectAlreadyExistsError`), and refusals of the
-request itself such as `BlobAccessError`, `BlobStoreNotFoundError`, or `BlobFileTooLargeError`.
+These failures prove nothing landed. The service refusing to overwrite an existing key is
+`ObjectAlreadyExistsError`. A source over `maxBytes` or failing mid-stream, and refusals of the
+request itself such as `BlobAccessError`, `BlobStoreNotFoundError`, or `BlobFileTooLargeError`, are
+`ObjectWriteRejectedError` with the original error as `cause`. The coordinator never deletes the
+key after either, so a concurrent writer's object at the same key survives.
 The overwrite refusal is recognized by the SDK's message, because the SDK has no typed error for
 it; the body is a stream the SDK sends once, so the refusal cannot be the answer to a retry of an
 upload that already landed.
