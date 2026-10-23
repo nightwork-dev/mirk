@@ -1,0 +1,141 @@
+{
+  "id": "store/field-names-with-json-escapes",
+  "title": "field names holding a double quote, a backslash or a newline name that key in where, sortBy and listWhereIn",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "q\"uote": "x",
+          "back\\slash": 2,
+          "new\nline": "b"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "q\"uote": "y",
+          "back\\slash": 1,
+          "new\nline": "a"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "c",
+          "back\\slash": 3
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "q\"uote": "x"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "back\\slash": 1
+          }
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "back\\slash",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "c",
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "new\nline"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "q\"uote",
+        [
+          "y"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "b"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "new\nline",
+        [
+          "a",
+          "b"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

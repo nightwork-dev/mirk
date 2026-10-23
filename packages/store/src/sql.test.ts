@@ -7,8 +7,10 @@ describe("jsonPath", () => {
     expect(jsonPath("rank")).toBe('$."rank"');
     expect(jsonPath("a.b")).toBe('$."a.b"');
   });
-  it('doubles embedded quotes (JSON-path quoting)', () => {
-    expect(jsonPath('a"b')).toBe('$."a""b"');
+  it("writes the label as a JSON string, which is how SQLite decodes it", () => {
+    expect(jsonPath('a"b')).toBe('$."a\\u0022b"');
+    expect(jsonPath("a\\b")).toBe('$."a\\\\b"');
+    expect(jsonPath("a\nb")).toBe('$."a\\nb"');
   });
 });
 
