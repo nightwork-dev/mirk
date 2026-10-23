@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-artifact"
-version = "0.13.0"
+version = "0.13.1"
 description = "Portable artifact identity, integrity, lineage, and coordination."
 readme = "README.md"
 license = "Apache-2.0"

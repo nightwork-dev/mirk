@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-vector-qdrant"
-version = "0.13.0"
+version = "0.13.1"
 description = "Qdrant source adapter for mirk-store's synchronous vector port."
 readme = "README.md"
 license = "Apache-2.0"
