@@ -26,7 +26,7 @@ import {
   targetKey,
   validateAtomicRequest,
 } from "../atomic.js";
-import { compareCodePoints } from "../order.js";
+import { compareCodePoints, sortAndPageStoreItems } from "../order.js";
 import { NON_SCALAR_FILTER_MESSAGE, StoreFilterError } from "../sql.js";
 
 /** The message the SQLite adapter already raises for a non-scalar `listWhereIn`
@@ -437,41 +437,5 @@ function applyFilter<T>(items: T[], filter?: StoreFilter): T[] {
     result = result.filter((item) => matchesWhere(item, where));
   }
 
-  // Sort — stable, so ties keep insertion order
-  if (filter.sortBy) {
-    const field = filter.sortBy;
-    const dir = filter.sortDir === "desc" ? -1 : 1;
-    result = [...result].sort((a, b) => {
-      const aVal = (a as Record<string, unknown>)[field];
-      const bVal = (b as Record<string, unknown>)[field];
-      const aMissing = aVal === undefined || aVal === null;
-      const bMissing = bVal === undefined || bVal === null;
-      // Null and missing sort LAST in both directions, so the direction
-      // multiplier deliberately does not apply to them.
-      if (aMissing && bMissing) return 0;
-      if (aMissing) return 1;
-      if (bMissing) return -1;
-      if (aVal === bVal) return 0;
-      if (typeof aVal === "string" && typeof bVal === "string") {
-        // JS `<` on strings compares UTF-16 code units; SQLite's BINARY
-        // collation compares UTF-8 bytes. They differ above the BMP.
-        return compareCodePoints(aVal, bVal) * dir;
-      }
-      return aVal < bVal ? -1 * dir : 1 * dir;
-    });
-  }
-
-  // Offset, then limit — both after the sort
-  if (filter.offset !== undefined && filter.offset > 0) {
-    result = result.slice(Math.floor(filter.offset));
-  }
-
-  // A negative limit clamps to zero (no rows), matching the SQLite adapter's
-  // `LIMIT max(0, floor(limit))`. Returning everything for `limit: -1` was the
-  // reference's own reading of "no limit".
-  if (filter.limit !== undefined) {
-    result = result.slice(0, Math.max(0, Math.floor(filter.limit)));
-  }
-
-  return result;
+  return sortAndPageStoreItems(result, filter);
 }
