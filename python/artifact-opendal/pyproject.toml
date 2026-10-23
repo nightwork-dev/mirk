@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-artifact-opendal"
-version = "0.12.0"
+version = "0.13.0"
 description = "OpenDAL object storage adapter for Mirk artifacts."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-dependencies = ["mirk-artifact>=0.12.0,<0.13", "opendal>=0.47.12,<0.48"]
+dependencies = ["mirk-artifact>=0.13.0,<0.14", "opendal>=0.47.12,<0.48"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
