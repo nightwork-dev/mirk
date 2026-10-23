@@ -5,6 +5,22 @@ distribution carries the same version and is bumped together, so "mirk 0.12.0" m
 thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
 This file records each release and repository-wide contract changes.
 
+## 0.13.1 — 2026-10-23
+
+### Fixes
+
+- `@mirk/store-libsql` and `@mirk/store-postgres` — `mutateAtomically` now costs a constant number of
+  round trips, however many operations a request holds. Before, each operation and each condition
+  took its own round trip, and on libSQL each operation also looked up its collection's table
+  again, so 100 puts against a remote libSQL database took about 700 round trips. A request now
+  takes 3–5 on libSQL and 4–7 on PostgreSQL. With an 80 ms round trip, 100 puts drop from about
+  58 s to about 1 s. Conditions are still evaluated under the write lock, receipts still replay,
+  and version tokens are still never reused. Older rows without a version token get one on their
+  next `getVersioned`, rather than when a condition reads them.
+
+All other packages, and the Python distributions, move to 0.13.1 with the version set and have no
+changes.
+
 ## 0.13.0 — 2026-10-23
 
 ### Breaking changes
