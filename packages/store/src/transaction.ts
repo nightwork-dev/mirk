@@ -59,6 +59,9 @@ interface Scope<C> {
   rolledBack: boolean;
   /** Serializes sibling nested transactions on this scope. */
   tail: Promise<unknown>;
+  /** Outermost scope only: a nested rollback failed, so the transaction
+   *  holds writes it could not undo and must not commit. */
+  unsafe?: { error: unknown };
 }
 
 function ended(): TransactionScopeError {
@@ -144,6 +147,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
       // a call that arrives later is refused rather than run outside.
       await settle(scope, () => {
         scope.active = false;
+        if (scope.unsafe) throw scope.unsafe.error;
         return this.backend.commit(connection);
       });
     } catch (error) {
@@ -198,8 +202,16 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
         await settle(child, () => undefined);
         child.rolledBack = true;
         if (created) {
-          await this.backend.rollbackToSavepoint(parent.connection, name);
-          await this.backend.releaseSavepoint(parent.connection, name);
+          try {
+            await this.backend.rollbackToSavepoint(parent.connection, name);
+            await this.backend.releaseSavepoint(parent.connection, name);
+          } catch (rollbackError) {
+            // The savepoint's writes may still be in the transaction. Report
+            // the work's own error, and make the outermost transaction roll
+            // back instead of committing them.
+            outermostOf(parent).unsafe ??= { error: rollbackError };
+            attachRollbackError(error, rollbackError);
+          }
         }
         throw error;
       } finally {
@@ -220,6 +232,24 @@ async function settle<C, R>(scope: Scope<C>, next: () => R | Promise<R>): Promis
     await tail;
     if (tail === scope.tail) return next();
   }
+}
+
+function outermostOf<C>(scope: Scope<C>): Scope<C> {
+  let current = scope;
+  while (current.parent) current = current.parent;
+  return current;
+}
+
+/** Attach a failed rollback to the error that caused it, as `rollbackError`. */
+function attachRollbackError(error: unknown, rollbackError: unknown): void {
+  if (error === null || (typeof error !== "object" && typeof error !== "function")) return;
+  if (!Object.isExtensible(error) || Object.hasOwn(error, "rollbackError")) return;
+  Object.defineProperty(error, "rollbackError", {
+    value: rollbackError,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
 }
 
 function rolledBackChain<C>(scope: Scope<C> | undefined): boolean {

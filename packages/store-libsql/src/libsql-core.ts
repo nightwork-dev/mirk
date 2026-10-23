@@ -178,7 +178,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     this.client = client;
     this.ownsClient = ownsClient;
     const names = tableNames(opts.tablePrefix ?? "");
-    this.database = new LibsqlDatabase(client, opts.url, opts.busyTimeoutMs ?? 30_000);
+    this.database = new LibsqlDatabase(client, opts.url, names.sequence, opts.busyTimeoutMs ?? 30_000);
     const local = client.protocol === "file";
     this.kv = new LibsqlKvFacet(
       this.database,
@@ -205,7 +205,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
   /** Close the underlying connection (shared by both facets). No-op for a client
    *  the caller passed in via `opts.client`. */
   close(): void {
-    this.database.closed = true;
+    this.database.close();
     if (this.ownsClient) this.client.close();
   }
 
@@ -235,14 +235,16 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
         ? { url: opts.url, authToken: opts.authToken }
         : { url: opts.url },
     );
+  let adapter: T | undefined;
   try {
-    const adapter = construct(client, ownsClient, opts);
+    adapter = construct(client, ownsClient, opts);
     await adapter.initialize(opts.versionIdentity ?? crypto.randomUUID());
     return adapter;
   } catch (err) {
     // A facet init can throw (e.g. dimension mismatch). Don't leak a client we
     // opened — but never close a client the caller passed in.
-    if (ownsClient) {
+    adapter?.close();
+    if (ownsClient && !adapter) {
       try {
         client.close();
       } catch {
@@ -333,23 +335,41 @@ class Mutex {
   }
 }
 
-const localWriters = new Map<string, Mutex>();
+const localWriters = new Map<string, { mutex: Mutex; adapters: number }>();
 
 /** The writer lock shared by every adapter in this process on the database
- *  file `url` names. URLs that spell one file differently get separate locks
- *  and fall back to SQLite's busy handling. In-memory databases are private to
- *  their connection, so each gets its own. */
-function fileWriters(url: string): Mutex {
+ *  file `url` names, and a `detach` the adapter calls once on close; the lock
+ *  is forgotten when its last adapter detaches. URLs that spell one file
+ *  differently get separate locks and fall back to SQLite's busy handling.
+ *  In-memory databases are private to their connection, so each gets its
+ *  own. */
+function fileWriters(url: string): { mutex: Mutex; detach: () => void } {
   const path = url.replace(/^file:/i, "").replace(/\?.*$/, "");
   if (!/^file:/i.test(url) || path === "" || path === ":memory:" || /[?&]mode=memory\b/.test(url)) {
-    return new Mutex();
+    return { mutex: new Mutex(), detach: () => undefined };
   }
-  let writers = localWriters.get(path);
-  if (!writers) {
-    writers = new Mutex();
-    localWriters.set(path, writers);
+  let entry = localWriters.get(path);
+  if (!entry) {
+    entry = { mutex: new Mutex(), adapters: 0 };
+    localWriters.set(path, entry);
   }
-  return writers;
+  entry.adapters += 1;
+  const shared = entry;
+  let detached = false;
+  return {
+    mutex: shared.mutex,
+    detach: () => {
+      if (detached) return;
+      detached = true;
+      shared.adapters -= 1;
+      if (shared.adapters === 0 && localWriters.get(path) === shared) localWriters.delete(path);
+    },
+  };
+}
+
+/** @internal The number of files with a shared writer lock, for tests. */
+export function localWriterCount(): number {
+  return localWriters.size;
 }
 
 /**
@@ -377,21 +397,25 @@ class LibsqlDatabase {
   /** Local: this adapter's one connection. */
   private readonly connection = new Mutex();
   /** Local: the writers of this file in this process. */
-  private readonly writers: Mutex;
+  private readonly writers: Mutex | undefined;
   /** Local: a statement on the connection failed busy. libSQL keeps such a
    *  statement active until it is garbage collected, and SQLite refuses a
    *  savepoint while it is, so the next transaction starts on a new
    *  connection. */
   private stale = false;
-  sequenceTable = "";
+  /** Local: gives this adapter's share of the file's writer lock back. */
+  private readonly detach: () => void;
 
   constructor(
     private readonly client: Client,
     url: string,
+    private readonly sequenceTable: string,
     private readonly busyTimeoutMs: number,
   ) {
     this.local = client.protocol === "file";
-    this.writers = this.local ? fileWriters(url) : this.connection;
+    const writers = this.local ? fileWriters(url) : undefined;
+    this.writers = writers?.mutex;
+    this.detach = writers?.detach ?? (() => undefined);
     this.transactions = new AsyncTransactionCoordinator<OpenTransaction>({
       begin: () => this.begin(),
       commit: async (open) => {
@@ -421,6 +445,11 @@ class LibsqlDatabase {
         }
       },
     });
+  }
+
+  close(): void {
+    this.closed = true;
+    this.detach();
   }
 
   /** Run a statement in the calling context's transaction, or on its own. */
@@ -475,15 +504,15 @@ class LibsqlDatabase {
     if (this.closed) throw new LibsqlAdapterError("adapter-closed", "The libSQL adapter is closed.");
     const minted = this.floor;
     const opening: InStatement[] = [`SAVEPOINT ${OUTER_SAVEPOINT}`];
-    if (minted > 0 && this.sequenceTable !== "") {
+    if (minted > 0) {
       opening.push({
         sql: `UPDATE ${this.sequenceTable} SET value = max(value, ?) WHERE id = 1`,
         args: [minted],
       });
     }
     if (this.local) {
-      const releaseWriters = await this.writers.acquire();
-      const releaseConnection = this.writers === this.connection ? () => undefined : await this.connection.acquire();
+      const releaseWriters = await this.writers!.acquire();
+      const releaseConnection = await this.connection.acquire();
       const release = () => {
         releaseConnection();
         releaseWriters();
@@ -556,6 +585,12 @@ class LibsqlDatabase {
     }
   }
 
+  /** Roll back the work. When it issued version numbers, return to the
+   *  opening savepoint and commit only the sequence past them. If that commit
+   *  fails, the work is still not applied: ROLLBACK TO already discarded it, so
+   *  the failure is reported as definite. Only the sequence is uncertain, and
+   *  `end` keeps its floor so this adapter's next transaction moves the
+   *  sequence past those numbers before it issues any. */
   private async rollbackOpen(open: OpenTransaction): Promise<void> {
     if (open.minted === 0) {
       if (open.stream) await guard(open.stream.rollback());
@@ -563,7 +598,8 @@ class LibsqlDatabase {
       return;
     }
     await guard(open.batch([`ROLLBACK TO SAVEPOINT ${OUTER_SAVEPOINT}`, ...this.keepMinted(open)]));
-    await this.commitOpen(open);
+    if (open.stream) await guard(open.stream.commit());
+    else await this.whileBusy(() => this.client.execute("COMMIT"));
     if (this.floor <= open.minted) this.floor = 0;
   }
 
@@ -833,7 +869,6 @@ class LibsqlKvFacet implements LibsqlKvStore {
     });
     const identity = await this.db.execute(`SELECT value FROM ${n.identity} WHERE id = 1`);
     this.versionPrefix = identity.rows[0]!.value as string;
-    this.db.sequenceTable = n.sequence;
   }
 
   /** Physical table for a collection, via the `_mirk_tables` registry, created
@@ -956,9 +991,11 @@ class LibsqlKvFacet implements LibsqlKvStore {
   async getVersioned<T>(target: StoreTarget): Promise<VersionedStoreValue<T> | null> {
     const row = await this.readVersioned(target);
     if (!row) return null;
-    // A row written before this adapter issued version tokens gets one now.
-    const version = row.version ?? (await this.write(() => this.backfillVersion(target)));
-    return version === null ? null : { value: JSON.parse(row.value) as T, version };
+    // A row written before this adapter issued version tokens gets one now,
+    // with the value read in the same transaction: another host may have
+    // written the row since the read above.
+    const versioned = row.version === null ? await this.write(() => this.backfillVersion(target)) : row;
+    return versioned === null ? null : { value: JSON.parse(versioned.value) as T, version: versioned.version! };
   }
 
   async mutateAtomically(request: AtomicMutationRequest): Promise<AtomicMutationResult> {
@@ -1180,10 +1217,10 @@ class LibsqlKvFacet implements LibsqlKvStore {
     return deleted!.rowsAffected > 0;
   }
 
-  private async backfillVersion(target: StoreTarget): Promise<StoreVersion | null> {
+  private async backfillVersion(target: StoreTarget): Promise<{ value: string; version: StoreVersion } | null> {
     const row = await this.readVersioned(target);
     if (!row) return null;
-    return row.version ?? this.mint(target, []);
+    return { value: row.value, version: row.version ?? (await this.mint(target, [])) };
   }
 }
 

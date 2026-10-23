@@ -465,6 +465,10 @@ interface AsyncStoreTransactions {
 
 - A version token minted inside work that rolled back is never issued again, so a caller that
   kept it cannot match a later write by accident.
+- If a nested transaction's savepoint cannot be rolled back, the nested call still rejects with
+  its work's own error, with the rollback failure attached as `rollbackError`. Its writes may still
+  be in the transaction, so the outermost transaction rolls back instead of committing and rejects
+  with the rollback failure.
 
 Await every store call inside `work`. A call that outlives its transaction throws
 `TransactionScopeError` (`transaction-ended`). Calls made from the parent while a nested
