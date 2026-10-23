@@ -115,7 +115,7 @@ the same async shape.
 | A local database file on Node 22           | `@mirk/store/sqlite` with `better-sqlite3` | everything                              |
 | Records that people edit as Markdown files | `@mirk/store-markdown`                     | key-values and collections              |
 | Storage in the browser                     | `@mirk/store-indexeddb`                    | key-values and collections              |
-| A hosted SQLite database (Turso, `sqld`)   | `@mirk/store-libsql`                       | key-values, collections, and vectors    |
+| A hosted SQLite database (Turso, `sqld`)   | `@mirk/store-libsql`                       | key-values, collections, vectors, transactions |
 | Many processes writing at once             | `@mirk/store-postgres`                     | key-values, collections, transactions   |
 | SurrealDB, embedded or remote              | `@mirk/surreal`                            | key-values, collections, vectors, links |
 | A dedicated vector database                | `@mirk/vector-qdrant`                      | vectors                                 |

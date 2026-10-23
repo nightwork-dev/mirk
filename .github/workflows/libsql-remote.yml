@@ -37,6 +37,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @mirk/store build
+      - run: pnpm --filter @mirk/fixtures build
       - run: pnpm --filter @mirk/store-libsql build
       - name: Download isolated libSQL test server
         run: |
@@ -48,3 +49,7 @@ jobs:
         env:
           MIRK_LIBSQL_SERVER: ${{ runner.temp }}/libsql-server-x86_64-unknown-linux-gnu/sqld
         run: pnpm --filter @mirk/store-libsql test:remote
+      - name: Transactions, conformance, fencing, and failures on sqld
+        env:
+          MIRK_LIBSQL_SERVER: ${{ runner.temp }}/libsql-server-x86_64-unknown-linux-gnu/sqld
+        run: pnpm --filter @mirk/store-libsql test
