@@ -72,21 +72,6 @@ interpreter with installed wheels; the harness verifies that its imports come fr
 For an existing test service, set `MIRK_QDRANT_URL` when running either adapter's tests directly.
 Each test creates and removes its own physical collection.
 
-## Electron SQLite acceptance
-
-The Electron workflow opens both SQLite adapters in an Electron 45 main process. Each driver writes
-key-value, vector, and full-text search data to one temporary file. The other driver reopens and reads
-that data, then the write direction is reversed. The harness also checks nested key-value rollback
-and opens no browser window.
-
-After building the store package, run the harness with an Electron 45 binary:
-
-```bash
-/path/to/electron scripts/check-electron-sqlite.cjs
-```
-
-This checks runtime compatibility. An Electron security update is a separate requirement.
-
 ## The conformance corpus
 
 `conformance/**/*.json` is generated from `packages/store/scripts/scenarios/` and replayed by both

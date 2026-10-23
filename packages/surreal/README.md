@@ -103,7 +103,7 @@ supported by the current browser helper as well as `mem://`.
 The SurrealDB SDK and embedded engine versions above include the current SurrealDB security fixes.
 The published `3.3.4` native engine source still resolves `rustls` `0.23.45`; this package does
 not claim that a separate `rustls` `0.23.46` remediation is included. Remote TLS connections use
-the caller's Node or Electron runtime and do not use the embedded native engine.
+the caller's Node runtime and do not use the embedded native engine.
 
 ### Several processes
 
@@ -135,7 +135,8 @@ object keys; dotted names are not interpreted as paths. The adapter stores user 
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
 Collection sorting follows Mirk's rules: strings use Unicode code-point order, null and missing
 values stay last in both directions, and pagination applies after sorting. A negative limit returns
-no rows.
+no rows. Insertion order is not preserved: an unsorted `list()`, and rows with equal sort values,
+return in SurrealDB record order rather than the insertion order the other Mirk stores use.
 
 Vector, graph, search, and object-storage subpaths are separate adapter entry points and are not
 re-exported from the root. The store adapter does not implement `@mirk/store/atomic` mutation.

@@ -1,5 +1,5 @@
 // ─── @mirk/store/node-sqlite ───────────────────────────────────────────────
-// The built-in Node/Electron SQLite source adapter. It shares every store
+// The built-in Node SQLite source adapter. It shares every store
 // facet and schema with @mirk/store/sqlite, but opens node:sqlite's synchronous
 // DatabaseSync instead of loading a better-sqlite3 native binding.
 
@@ -17,7 +17,7 @@ import {
 
 // Keep the `node:` scheme in the published ESM. tsup/esbuild strips the
 // prefix from a static built-in import, which would turn this one into the
-// non-existent package `sqlite`; createRequire preserves the Node/Electron
+// non-existent package `sqlite`; createRequire preserves the Node
 // builtin resolution while retaining the type from node:sqlite.
 const sqlite = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 const { DatabaseSync } = sqlite;
