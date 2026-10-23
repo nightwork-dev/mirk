@@ -18,6 +18,7 @@ __all__ = [
     "StoreMeta",
     "SyncStore",
     "SyncStoreInQuery",
+    "SyncStoreIndexes",
 ]
 
 Json = Any
@@ -79,3 +80,14 @@ class SyncStoreInQuery(Protocol):
         values: list[Any],
         filter: StoreFilter | None = None,
     ) -> list[Any]: ...
+
+
+@runtime_checkable
+class SyncStoreIndexes(Protocol):
+    """Optional collection capability: declare a field that queries filter or sort on.
+
+    Idempotent and safe on every start. Backends with no query planner accept it
+    and do nothing.
+    """
+
+    def ensureIndex(self, collection: str, field: str) -> None: ...

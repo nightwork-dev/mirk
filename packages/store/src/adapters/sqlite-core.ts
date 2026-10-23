@@ -23,8 +23,10 @@ import {
 import type {
   AsyncStore,
   AsyncStoreInQuery,
+  AsyncStoreIndexes,
   SyncStore,
   SyncStoreInQuery,
+  SyncStoreIndexes,
   StoreMeta,
   StoreFilter,
 } from "../types.js";
@@ -93,6 +95,7 @@ import {
   buildOrderBy,
   buildLimitOffset,
   buildInClause,
+  buildEnsureIndexSql,
   hashName,
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
@@ -423,11 +426,12 @@ export class SqliteAdapterCore {
   /** Depth of queued awaitable store calls currently executing. */
   private asyncCallDepth = 0;
   private syncSavepoints = 0;
-  readonly kv!: SyncStore & SyncStoreInQuery & SyncAtomicMutationStore & SyncReceiptPruning;
+  readonly kv!: SyncStore & SyncStoreInQuery & SyncStoreIndexes & SyncAtomicMutationStore & SyncReceiptPruning;
   /** The same store as `.kv`, awaitable and serialized with
    *  {@link asyncTransaction} on this database file. */
   readonly asyncKv!: AsyncStore &
     AsyncStoreInQuery &
+    AsyncStoreIndexes &
     AsyncAtomicMutationStore &
     AsyncReceiptPruning;
   readonly vector!: VectorStore;
@@ -639,9 +643,9 @@ export class SqliteAdapterCore {
   }
 
   private serializedAsyncStore(
-    lifted: AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore,
+    lifted: AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore,
     pruning: SyncReceiptPruning
-  ): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning {
+  ): AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore & AsyncReceiptPruning {
     const run = <T>(op: () => Promise<T>): Promise<T> => this.runSerialized(op);
     return {
       get meta() {
@@ -658,6 +662,7 @@ export class SqliteAdapterCore {
       list: (collection, filter) => run(() => lifted.list(collection, filter)),
       listWhereIn: (collection, field, values, filter) =>
         run(() => lifted.listWhereIn(collection, field, values, filter)),
+      ensureIndex: (collection, field) => run(() => lifted.ensureIndex(collection, field)),
       getById: (collection, id) => run(() => lifted.getById(collection, id)),
       put: (collection, item) => run(() => lifted.put(collection, item)),
       remove: (collection, id) => run(() => lifted.remove(collection, id)),
@@ -784,7 +789,7 @@ export class SqliteAdapterCore {
 // ─── KV facet (SyncStore) ────────────────────────────────────────────────────
 
 class SqliteKvFacet
-  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore, SyncReceiptPruning
+  implements SyncStore, SyncStoreInQuery, SyncStoreIndexes, SyncAtomicMutationStore, SyncReceiptPruning
 {
   readonly meta: StoreMeta = { backend: "sqlite" };
   private readonly initializedTables = new Set<string>();
@@ -982,6 +987,10 @@ class SqliteKvFacet
       data: string;
     }[];
     return rows.map((r) => JSON.parse(r.data) as T);
+  }
+
+  ensureIndex(collection: string, field: string): void {
+    this.db.exec(buildEnsureIndexSql(this.ensureTable(collection), field));
   }
 
   getById<T>(collection: string, id: string): T | null {

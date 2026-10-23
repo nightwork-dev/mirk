@@ -125,8 +125,14 @@ describe any behaviour outside these rules.
   test.
 - `keys()` returns keys in code point order, not insertion order.
 - Unsorted `list()` returns records in insertion order.
-- A dotted `where` field such as `"a.b"` is one literal top-level key, never a nested path. Filters
-  match JSON scalars only. `where: { v: null }` matches a stored `null`, never a missing field.
+- A dotted `where` field such as `"a.b"` is one literal top-level key, never a nested path. A JSON
+  scalar matches exactly. `where: { v: null }` matches a stored `null`, never a missing field.
+- A `where` value made only of `gt`, `gte`, `lt` and `lte` bounds is a range:
+  `where: { seenAt: { gte: since } }`. A number bound matches only numbers. A string bound matches
+  only strings, compared by Unicode code point. `null` and missing never match a range, and bounds
+  of both kinds match nothing. A bound that is not a finite number or a string throws
+  `StoreFilterError` with code `invalid-range-bound`; any other object or array value throws code
+  `non-scalar-filter`.
 - Sorted results put `null` and missing values last, in both ascending and descending order. `0` is
   a value and sorts before `null`. Strings sort by Unicode code point, and equal values keep their
   input order.
@@ -146,9 +152,24 @@ const kv = new InMemoryKv();
 kv.put("posts", { id: "p1", title: "Hello", pinned: true });
 kv.getById("posts", "p1"); // { id: "p1", title: "Hello", pinned: true }
 kv.list("posts", { where: { pinned: true }, sortBy: "title", limit: 10 });
+kv.list("posts", { where: { publishedAt: { gte: "2026-10-01" } } });
 kv.count("posts"); // 1
 kv.remove("posts", "p1");
 kv.keys("user:"); // key-value keys starting with "user:", in code point order
+```
+
+### Declared indexes
+
+`kv.ensureIndex(collection, field)` declares that queries filter or sort on `field`. Call it on
+every start; it is idempotent and runs one statement. It changes no query's result. The SQLite,
+libSQL and PostgreSQL adapters create an index that serves equality, `listWhereIn`, ranges and (on
+SQLite and libSQL) `sortBy` on that field. The in-memory reference and IndexedDB accept the call and
+do nothing, so portable code can always make it. The capability is typed as `SyncStoreIndexes` and
+`AsyncStoreIndexes`, and `toAsync` lifts it.
+
+```ts
+for (const field of ["sourceRecordId", "seenAt"]) kv.ensureIndex("sightings", field);
+kv.list("sightings", { where: { seenAt: { gte: since } } });
 ```
 
 ### Namespaces
@@ -378,10 +399,20 @@ Every connection the adapter opens or receives is switched to WAL mode with fore
 `kv.listWhereIn(collection, field, values, filter?)` is one statement. Strings and numbers become
 `json_extract(data, '$."field"') IN (?, …)`, with a `json_type` check that keeps a stored boolean
 from matching `1` or `0`. A boolean or `null` value adds its own term on the same expression. A
-string never matches a number. `null` matches a stored `null` and never a missing field. The path is
-written into the SQL text, not bound, so an expression index on `json_extract(data, '$."field"')`
-can serve the query. `jsonPathLiteral` in `@mirk/store/sql` returns that literal. The libSQL adapter
-uses the same SQL.
+string never matches a number. `null` matches a stored `null` and never a missing field. The libSQL
+adapter uses the same SQL.
+
+### Indexes and query plans
+
+`ensureIndex(collection, field)` runs
+`CREATE INDEX IF NOT EXISTS ix_<table>_<hex of field> ON <table> (json_extract(data, '$."field"'))`
+on the collection's table. The Python adapter derives the same name, so either language sees the
+other's index as present. Every `where` term, `listWhereIn` and `sortBy` write the JSON path into
+the SQL text, not as a bound parameter, so the index matches. `jsonPathLiteral` in
+`@mirk/store/sql` returns that literal. With the index, `EXPLAIN QUERY PLAN` shows `SEARCH … USING
+INDEX` for equality, `listWhereIn` and ranges, and `SCAN … USING INDEX` for `sortBy`. Sorting puts
+missing values last with `NULLS LAST`. A range term carries an `unlikely()` hint, because without
+`ANALYZE` statistics SQLite would otherwise scan the table in insertion order to skip a sort.
 
 ### Transactions
 

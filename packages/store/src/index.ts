@@ -18,6 +18,8 @@ export type {
   AsyncStore,
   SyncStoreInQuery,
   AsyncStoreInQuery,
+  SyncStoreIndexes,
+  AsyncStoreIndexes,
   StoreMeta,
   StoreFilter,
 } from "./types.js";
@@ -30,7 +32,7 @@ export type { NamespaceErrorCode } from "./namespace.js";
 // uses node:async_hooks, so it lives at @mirk/store/transaction instead.
 export type { AsyncStoreTransactions, AfterCommitNotify } from "./transaction-types.js";
 export { StoreFilterError } from "./sql.js";
-export type { StoreFilterErrorCode } from "./sql.js";
+export type { StoreFilterErrorCode, StoreRange, StoreRangeOperator } from "./sql.js";
 // The ordering primitive every port's tie-break is defined in terms of. It was
 // only reachable as the deprecated `compareCodePoint` alias on
 // `@mirk/store/atomic`; consumers that sort ids alongside the store need it

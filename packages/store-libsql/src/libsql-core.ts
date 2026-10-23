@@ -20,6 +20,7 @@ import type {
   AsyncReceiptPruning,
   AsyncStore,
   AsyncStoreInQuery,
+  AsyncStoreIndexes,
   AsyncStoreTransactions,
   AtomicCompletedMutationResult,
   AtomicMutationLimits,
@@ -65,6 +66,7 @@ import {
   buildOrderBy,
   buildLimitOffset,
   buildInClause,
+  buildEnsureIndexSql,
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
   INSERT_REGISTERED_TABLE_SQL,
@@ -171,7 +173,7 @@ export type LibsqlClientFactory = (config: {
 }) => Client;
 export type LibsqlClient = Client;
 
-type LibsqlKvStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning;
+type LibsqlKvStore = AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 /** Multi-capability libSQL source adapter. The concrete entry point supplies the
  *  client factory so this shared core has no runtime dependency on a driver.
@@ -1045,6 +1047,13 @@ class LibsqlKvFacet implements LibsqlKvStore {
       args: [...where.params, ...inWhere.params, ...orderBy.params],
     });
     return rs.rows.map((r) => JSON.parse(r.data as string) as T);
+  }
+
+  async ensureIndex(collection: string, field: string): Promise<void> {
+    const table = await this.ensureTable(collection);
+    await this.write(async () => {
+      await this.db.execute(buildEnsureIndexSql(table, field));
+    });
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {

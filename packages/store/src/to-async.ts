@@ -1,8 +1,10 @@
 import type {
   SyncStore,
   SyncStoreInQuery,
+  SyncStoreIndexes,
   AsyncStore,
   AsyncStoreInQuery,
+  AsyncStoreIndexes,
   StoreMeta,
   StoreFilter,
 } from "./types.js";
@@ -19,6 +21,12 @@ function hasListWhereIn(
   return typeof (store as Partial<SyncStoreInQuery>).listWhereIn === "function";
 }
 
+function hasEnsureIndex(
+  store: SyncStore
+): store is SyncStore & SyncStoreIndexes {
+  return typeof (store as Partial<SyncStoreIndexes>).ensureIndex === "function";
+}
+
 // Adapter: present a synchronous store through the AsyncStore interface by
 // resolving every result. This is the one-way bridge — a sync store can serve an
 // async consumer, but an async store can never be made sync (you cannot block on
@@ -27,9 +35,11 @@ class AsyncStoreAdapter
   implements
     AsyncStore,
     Partial<AsyncStoreInQuery>,
+    Partial<AsyncStoreIndexes>,
     Partial<AsyncAtomicMutationStore>
 {
   readonly listWhereIn?: AsyncStoreInQuery["listWhereIn"];
+  readonly ensureIndex?: AsyncStoreIndexes["ensureIndex"];
   readonly atomicLimits?: AsyncAtomicMutationStore["atomicLimits"];
   readonly getVersioned?: AsyncAtomicMutationStore["getVersioned"];
   readonly mutateAtomically?: AsyncAtomicMutationStore["mutateAtomically"];
@@ -42,6 +52,10 @@ class AsyncStoreAdapter
         values: readonly unknown[],
         filter?: StoreFilter
       ): Promise<T[]> => sync.listWhereIn<T>(collection, field, values, filter);
+    }
+    if (hasEnsureIndex(sync)) {
+      this.ensureIndex = async (collection: string, field: string) =>
+        sync.ensureIndex(collection, field);
     }
     if (supportsAtomicMutation(sync)) {
       // Lifting to async changes nothing about what the request may contain.
@@ -91,6 +105,9 @@ class AsyncStoreAdapter
 
 /** Lift a synchronous store to the {@link AsyncStore} interface. The bridge only
  *  goes this direction — sync ⊂ async. Optional sync capabilities are lifted too. */
+export function toAsync(
+  store: SyncStore & SyncStoreInQuery & SyncStoreIndexes & SyncAtomicMutationStore
+): AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore;
 export function toAsync(
   store: SyncStore & SyncStoreInQuery & SyncAtomicMutationStore
 ): AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;

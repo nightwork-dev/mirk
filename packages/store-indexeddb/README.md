@@ -58,7 +58,7 @@ runtime with an `indexedDB` global.
 | Capability | Covered | Notes |
 | --- | --- | --- |
 | Key-values | yes | `adapter.kv` implements `AsyncStore` |
-| Collections | yes | same facet; `listWhereIn` is not implemented |
+| Collections | yes | same facet; `listWhereIn` is not implemented; `ensureIndex` is accepted and does nothing |
 | Vectors | no | |
 | Full-text search | no | |
 | Atomic writes | yes | `AsyncAtomicMutationStore` (`mutateAtomically`), with version tokens and idempotency receipts |
@@ -156,7 +156,8 @@ Every error class has a stable `code`.
 | `IndexedDbBackupError` | `unsupported-schema`, `invalid-shape`, `invalid-row`, `duplicate-row`, `dangling-version`, `invalid-metadata`, `not-cloneable` | — | `importState` rejected the backup. The database is unchanged. |
 
 A value that cannot be structured-cloned rejects with `AtomicMutationBackendError` code
-`serialization-failure`. A non-scalar `where` value throws `StoreFilterError` from `@mirk/store`.
+`serialization-failure`. A `where` value that is neither a JSON scalar nor a range, or a range bound
+that is not a finite number or a string, throws `StoreFilterError` from `@mirk/store`.
 Invalid atomic requests throw `AtomicMutationRejectedError` before any transaction starts.
 `IndexedDbTransactionError.kind` is a deprecated alias of `code`.
 
