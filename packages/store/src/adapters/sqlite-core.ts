@@ -92,9 +92,8 @@ import {
   buildWhereClause,
   buildOrderBy,
   buildLimitOffset,
+  buildInClause,
   hashName,
-  jsonPath,
-  type SqlParam,
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
   ftsTableFor,
@@ -105,7 +104,6 @@ import {
   MIRK_REGISTRY_DDL,
   MIRK_SCHEMA_VERSION,
   schemaVersionTooNewMessage,
-  StoreFilterError,
   SEARCH_DOCS_TABLE_PREFIX,
   SEARCH_TABLE_KIND,
   SELECT_REGISTERED_TABLE_SQL,
@@ -350,48 +348,6 @@ function resolveTableOnce(
   return step.value;
 }
 
-const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
-
-/** One OR-ed, json_type-guarded term per value — never a bare `IN (...)` list.
- *  json_extract collapses a JSON boolean to SQL 1/0, so an unguarded IN makes
- *  `listWhereIn(f, [true])` match a stored 1 and `[1]` match a stored true. The
- *  guards mirror `buildWhereClause` in ../sql.ts exactly, which is what keeps the
- *  in-memory reference (`Set.has`, where true !== 1) and SQLite in step. */
-function buildJsonInWhere(
-  field: string,
-  values: readonly unknown[],
-  hasPriorWhere: boolean
-): { clause: string; params: SqlParam[] } {
-  const path = jsonPath(field);
-  const params: SqlParam[] = [];
-  const parts: string[] = [];
-
-  for (const value of values) {
-    if (value === null) {
-      parts.push(`json_type(data, ?) = 'null'`);
-      params.push(path);
-    } else if (typeof value === "boolean") {
-      parts.push(`json_type(data, ?) = '${value ? "true" : "false"}'`);
-      params.push(path);
-    } else if (typeof value === "string") {
-      parts.push(`(json_type(data, ?) = 'text' AND json_extract(data, ?) = ?)`);
-      params.push(path, path, value);
-    } else if (typeof value === "number" || typeof value === "bigint") {
-      parts.push(
-        `(json_type(data, ?) IN ('integer', 'real') AND json_extract(data, ?) = ?)`
-      );
-      params.push(path, path, value);
-    } else {
-      throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
-    }
-  }
-
-  return {
-    clause: `${hasPriorWhere ? " AND" : " WHERE"} (${parts.join(" OR ")})`,
-    params,
-  };
-}
-
 export interface SqliteAdapterCoreOptions {
   /** Path to the SQLite database file. Use ":memory:" for in-memory. */
   path: string;
@@ -467,7 +423,7 @@ export class SqliteAdapterCore {
   /** Depth of queued awaitable store calls currently executing. */
   private asyncCallDepth = 0;
   private syncSavepoints = 0;
-  readonly kv!: SyncStore & SyncAtomicMutationStore & SyncReceiptPruning;
+  readonly kv!: SyncStore & SyncStoreInQuery & SyncAtomicMutationStore & SyncReceiptPruning;
   /** The same store as `.kv`, awaitable and serialized with
    *  {@link asyncTransaction} on this database file. */
   readonly asyncKv!: AsyncStore &
@@ -1016,7 +972,7 @@ class SqliteKvFacet
     if (values.length === 0) return [];
     const table = this.ensureTable(collection);
     const where = buildWhereClause(filter);
-    const inWhere = buildJsonInWhere(field, values, where.clause.length > 0);
+    const inWhere = buildInClause(field, values, where.clause.length > 0);
     const orderBy = buildOrderBy(filter);
     const limitOffset = buildLimitOffset(filter);
     const sql = `SELECT data FROM ${table}${where.clause}${inWhere.clause}${orderBy.clause}${limitOffset}`;

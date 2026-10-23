@@ -88,12 +88,11 @@ ESM-only (there is no CommonJS build).
 | Capability | Covered | Where |
 | --- | --- | --- |
 | Key-values | yes | `adapter.kv` (`AsyncStore`) |
-| Collections | yes | `adapter.kv` (`AsyncStore`) |
+| Collections | yes | `adapter.kv` (`AsyncStore`), plus `listWhereIn` (`AsyncStoreInQuery`) |
 | Vectors | yes | `adapter.vector` (`AsyncVectorStore`), needs `dimensions` |
 | Atomic writes | yes | `adapter.kv` (`AsyncAtomicMutationStore`): `getVersioned`, `mutateAtomically` |
 | Transactions | yes | the adapter implements `AsyncStoreTransactions`: `transaction()` and `afterCommit()` |
 | Full-text search | no | use `@mirk/store/sqlite` or another `AsyncSearchStore` backend |
-| `listWhereIn` | no | `AsyncStoreInQuery` is not implemented |
 
 One libSQL client serves both facets over one connection. They are separate objects, not one class,
 because the key-value and vector ports declare `get`, `remove`, and `count` with different shapes.
@@ -105,7 +104,7 @@ The in-memory and SQLite stores are the reference. Compared with them:
 - All calls return Promises.
 - Vector search without filters uses libSQL's native index; with `where` or `whereNot` it scores
   exactly in JavaScript, with the reference semantics (see below).
-- There is no search facet and no `listWhereIn`.
+- There is no search facet.
 - A server uses the portable atomic limits (128 operations per request); a local database uses the
   in-process limits, like `@mirk/store/sqlite`.
 

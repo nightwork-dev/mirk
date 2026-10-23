@@ -180,23 +180,58 @@ def build_limit_offset(filter: StoreFilter | None = None) -> str:
     return sql
 
 
+def json_path_literal(field: str) -> str | None:
+    """``json_path(field)`` as a quoted SQL literal, or None if it holds NUL.
+
+    An expression index on ``json_extract(data, <literal>)`` only serves a query
+    that spells the same literal, never a bound parameter.
+    """
+    if "\0" in field:
+        return None
+    return "'" + json_path(field).replace("'", "''") + "'"
+
+
 def _build_in_clause(
     field: str, values: list[Any], has_prior_where: bool
 ) -> tuple[str, list[SqlParam]]:
-    path = json_path(field)
-    parts: list[str] = []
-    params: list[SqlParam] = []
+    """One index-friendly condition, matching ``buildInClause`` in TypeScript.
+
+    Strings and numbers share one ``json_extract(...) IN (...)``; SQLite never
+    equates TEXT with a number, and the json_type guard keeps a stored boolean
+    (extracted as 1/0) out. Booleans and null are their own guarded terms.
+    """
+    literal = json_path_literal(field)
+    path_params: list[SqlParam] = [json_path(field)] if literal is None else []
+    path = literal if literal is not None else "?"
+    scalars: list[SqlParam] = []
+    kinds: dict[str, None] = {}
     for value in values:
         if value is None:
-            parts.append("json_type(data, ?) = 'null'")
-            params.append(path)
-            continue
-        if not is_scalar(value):
+            kinds["null"] = None
+        elif isinstance(value, bool):
+            kinds["true" if value else "false"] = None
+        elif is_scalar(value):
+            scalars.append(_bind(value))
+        else:
             raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
-        parts.append(f"(json_extract(data, ?) = ? AND {_type_guard(value)})")
-        params.extend([path, _bind(value), path])
+
+    extract = f"json_extract(data, {path})"
+    type_of = f"json_type(data, {path})"
+    terms: list[str] = []
+    params: list[SqlParam] = []
+    if scalars:
+        placeholders = ", ".join("?" for _ in scalars)
+        terms.append(
+            f"({extract} IN ({placeholders}) AND {type_of} IN ('integer', 'real', 'text'))"
+        )
+        params.extend([*path_params, *scalars, *path_params])
+    for kind in kinds:
+        match = {"null": "IS NULL", "true": "= 1", "false": "= 0"}[kind]
+        terms.append(f"({extract} {match} AND {type_of} = '{kind}')")
+        params.extend([*path_params, *path_params])
+    condition = terms[0] if len(terms) == 1 else f"({' OR '.join(terms)})"
     keyword = " AND" if has_prior_where else " WHERE"
-    return (f"{keyword} ({' OR '.join(parts)})", params)
+    return (f"{keyword} {condition}", params)
 
 
 _REGISTRY_DDL = (

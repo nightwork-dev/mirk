@@ -37,18 +37,12 @@ const scenarios = scenarioPaths(corpusRoot).map(
 
 const METHODS = [
   "get", "set", "has", "delete", "keys",
-  "list", "getById", "put", "remove", "count",
+  "list", "listWhereIn", "getById", "put", "remove", "count",
   "getVersioned", "mutateAtomically", "pruneExpiredReceipts",
 ] as const;
 
 // Every skip names the scenario and the README difference it reflects. A
 // scenario that neither runs green nor matches an entry fails.
-const NO_IN_QUERY = "the adapter does not implement AsyncStoreInQuery (listWhereIn)";
-const SKIPS = new Map<string, string>(
-  scenarios
-    .filter((scenario) => scenario.steps.some((step) => step.op === "listWhereIn"))
-    .map((scenario) => [scenario.id, NO_IN_QUERY]),
-);
 const REMOTE_SKIPS = new Map<string, string>([
   ["store/atomic/reject-operation-limit-exceeded", "a server uses the portable maxOperations of 128, not the in-process 4096"],
 ]);
@@ -59,7 +53,7 @@ function replay(target: Target): void {
   });
 
   for (const scenario of scenarios) {
-    const skip = SKIPS.get(scenario.id) ?? (target.remote ? REMOTE_SKIPS.get(scenario.id) : undefined);
+    const skip = target.remote ? REMOTE_SKIPS.get(scenario.id) : undefined;
     if (skip) {
       it.skip(`${scenario.id} [skip: ${skip}]`, () => {});
       continue;
