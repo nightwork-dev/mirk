@@ -237,7 +237,7 @@ wheels = [
 
 [[package]]
 name = "mirk-artifact"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "artifact" }
 dependencies = [
     { name = "mirk-store" },
@@ -262,7 +262,7 @@ dev = [
 
 [[package]]
 name = "mirk-artifact-opendal"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "artifact-opendal" }
 dependencies = [
     { name = "mirk-artifact" },
@@ -291,7 +291,7 @@ dev = [
 
 [[package]]
 name = "mirk-fixtures"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "fixtures" }
 dependencies = [
     { name = "mirk-store" },
@@ -318,7 +318,7 @@ dev = [
 
 [[package]]
 name = "mirk-store"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "store" }
 
 [package.dev-dependencies]
@@ -341,7 +341,7 @@ dev = [
 
 [[package]]
 name = "mirk-store-markdown"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "store-markdown" }
 dependencies = [
     { name = "mirk-store" },
@@ -370,7 +370,7 @@ dev = [
 
 [[package]]
 name = "mirk-vector-qdrant"
-version = "0.12.0"
+version = "0.13.0"
 source = { editable = "vector-qdrant" }
 dependencies = [
     { name = "certifi" },

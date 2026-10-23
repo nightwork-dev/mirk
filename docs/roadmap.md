@@ -11,12 +11,12 @@ still open.
 | ------ | --------------------------------------------------------- | ------------------------------------ | ------------- |
 | MR-01  | Graph primitive — edge model and traversal                | `@mirk/store/graph`                  | shipped       |
 | MR-02  | Event primitive                                           | —                                    | closed        |
-| MR-03  | Append-only ordered log (no inbox semantics)              | `@mirk/store/log`, `python/store`    | unreleased    |
+| MR-03  | Append-only ordered log (no inbox semantics)              | `@mirk/store/log`, `python/store`    | shipped       |
 | MR-04  | Batch/IN collection matching                              | `@mirk/store`                        | shipped       |
 | MR-05  | Full-text search primitive                                | `@mirk/store/search`                 | shipped       |
 | MR-06  | Lazy SQLite vector dimensions                             | `@mirk/store/sqlite`                 | shipped       |
 | MR-07  | Authored-data fixture loader                              | `@mirk/fixtures`                     | shipped       |
-| MR-08  | Qdrant vector adapters for TypeScript and Python          | `@mirk/vector-qdrant`, `mirk-vector-qdrant` | unreleased |
+| MR-08  | Qdrant vector adapters for TypeScript and Python          | `@mirk/vector-qdrant`, `mirk-vector-qdrant` | shipped       |
 | MR-09  | Shared-connection SurrealDB adapters                      | `@mirk/surreal`                      | shipped       |
 | MR-10  | Durable artifact substrate                                | `@mirk/artifact`                     | shipped       |
 | MR-11  | Markdown and YAML-headmatter store                        | `@mirk/store-markdown`               | shipped       |
@@ -31,14 +31,14 @@ still open.
 | MR-20  | Python port of `@mirk/store`                              | `python/store` (`mirk-store`)        | shipped       |
 | MR-21  | Collision-safe physical table naming                      | `@mirk/store`, `python/store`        | shipped       |
 | MR-22  | Remove the never-executed sqlite-vec path                 | `@mirk/store/sqlite`, `python/store` | shipped       |
-| MR-22b | Does the libSQL native vector path execute?               | `@mirk/store-libsql`                 | open question |
+| MR-22b | Does the libSQL native vector path execute?               | `@mirk/store-libsql`                 | answered      |
 | MR-23  | Python port of `@mirk/fixtures`                           | `python/fixtures` (`mirk-fixtures`)  | shipped       |
-| MR-24  | Python port of `@mirk/artifact`                           | `python/artifact` (`mirk-artifact`)  | unreleased |
-| MR-25  | Python Markdown storage adapter                          | `python/store-markdown`             | unreleased |
-| MR-26  | Python S3/OpenDAL artifact object adapter                 | `python/artifact-opendal`           | unreleased |
-| MR-27  | Built-in Node SQLite adapter and better-sqlite3 13 support | `@mirk/store/node-sqlite`, `@mirk/statements` | unreleased |
-| MR-28  | Async transaction contract; PostgreSQL atomic writes and transactions | `@mirk/store`, `@mirk/store-postgres` | unreleased |
-| MR-29  | Private Vercel Blob artifact object adapter              | `@mirk/artifact-vercel-blob`         | unreleased |
+| MR-24  | Python port of `@mirk/artifact`                           | `python/artifact` (`mirk-artifact`)  | shipped       |
+| MR-25  | Python Markdown storage adapter                          | `python/store-markdown`             | shipped       |
+| MR-26  | Python S3/OpenDAL artifact object adapter                 | `python/artifact-opendal`           | shipped       |
+| MR-27  | Built-in Node SQLite adapter and better-sqlite3 13 support | `@mirk/store/node-sqlite`, `@mirk/statements` | shipped       |
+| MR-28  | Async transaction contract; PostgreSQL atomic writes and transactions | `@mirk/store`, `@mirk/store-postgres` | shipped       |
+| MR-29  | Private Vercel Blob artifact object adapter              | `@mirk/artifact-vercel-blob`         | shipped       |
 
 "Shipped" means implemented and tested on the default branch. "Unreleased" means that
 the source and tests contain the feature without a release entry for it yet. Published
@@ -65,9 +65,11 @@ owner is deferred; use PostgreSQL for sustained multi-writer workloads.
 
 ### MR-22b · Does the libSQL native vector path execute?
 
-`@mirk/store-libsql` reports `accelerated` for its `vector_top_k` path, but no test yet shows that
-path executes rather than falling back to JS cosine. Until one does, treat libSQL vector search as
-exact cosine.
+Answered in 0.12.0: it does. The native `vector_top_k` path had never run, because the neighbour
+count was sent as a float and a catch-all fell back to a full JavaScript scan. The count is now bound
+as an integer, native errors are reported instead of hidden, and a test in
+`packages/store-libsql/src/__tests__/libsql.test.ts` ("surfaces native index failures instead of
+silently scanning the collection") fails if search falls back.
 
 ## Narrowed
 
