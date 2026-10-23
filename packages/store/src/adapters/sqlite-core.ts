@@ -112,6 +112,7 @@ import {
 } from "../sql.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export type SqliteAdapterErrorCode =
   | "unsupported-schema-version"
@@ -123,12 +124,29 @@ export type SqliteAdapterErrorCode =
 // synchronously and block the event loop the open transaction needs to finish.
 // In-memory databases are private to one connection and key on the adapter.
 type AsyncFileKey = string | SqliteAdapterCore;
+const OUTERMOST_SAVEPOINT = "mirk_tx_outermost";
 const asyncOwners = new Map<AsyncFileKey, SqliteAdapterCore>();
 const asyncTails = new Map<AsyncFileKey, Promise<unknown>>();
 
+/** The real path of the database file, so a plain path and a `file:` URI
+ *  naming the same file share one queue. In-memory databases have none. */
 function asyncFileKeyFor(path: string): string | undefined {
-  if (path === "" || path === ":memory:" || path.startsWith("file:")) return undefined;
-  return existsSync(path) ? realpathSync(path) : undefined;
+  let file = path;
+  if (path.startsWith("file:")) {
+    const query = path.indexOf("?");
+    const params = new URLSearchParams(query === -1 ? "" : path.slice(query + 1));
+    if (params.get("mode") === "memory") return undefined;
+    const location = (query === -1 ? path : path.slice(0, query)).replace(/#.*$/, "");
+    try {
+      file = location.startsWith("file://")
+        ? fileURLToPath(location)
+        : decodeURIComponent(location.slice("file:".length));
+    } catch {
+      return undefined;
+    }
+  }
+  if (file === "" || file === ":memory:") return undefined;
+  return existsSync(file) ? realpathSync(file) : undefined;
 }
 
 /** Wait for the file's previous awaitable unit, then own the file until the
@@ -144,8 +162,11 @@ async function acquireAsyncFile(
   asyncTails.set(key, tail);
   await previous;
   asyncOwners.set(key, owner);
+  let released = false;
   return () => {
-    asyncOwners.delete(key);
+    if (released) return;
+    released = true;
+    if (asyncOwners.get(key) === owner) asyncOwners.delete(key);
     if (asyncTails.get(key) === tail) asyncTails.delete(key);
     release();
   };
@@ -419,6 +440,7 @@ export class SqliteAdapterCore {
   private readonly asyncTransactions: AsyncTransactionCoordinator<() => void>;
   /** Depth of queued awaitable store calls currently executing. */
   private asyncCallDepth = 0;
+  private syncSavepoints = 0;
   readonly kv!: SyncStore & SyncAtomicMutationStore;
   /** The same store as `.kv`, awaitable and serialized with
    *  {@link asyncTransaction} on this database file. */
@@ -446,7 +468,9 @@ export class SqliteAdapterCore {
         const release = await acquireAsyncFile(this.asyncKey, this);
         try {
           this.rawDb.exec("BEGIN IMMEDIATE");
+          this.rawDb.exec(`SAVEPOINT ${OUTERMOST_SAVEPOINT}`);
         } catch (error) {
+          if (this.rawDb.inTransaction) this.rawDb.exec("ROLLBACK");
           release();
           throw error;
         }
@@ -455,18 +479,19 @@ export class SqliteAdapterCore {
       commit: () => this.rawDb.exec("COMMIT"),
       rollback: () => {
         if (!this.rawDb.inTransaction) return;
-        const minted = this.mintedVersions();
-        this.rawDb.exec("ROLLBACK");
-        this.keepVersionsMinted(minted);
+        try {
+          this.rollbackKeepingVersions(OUTERMOST_SAVEPOINT);
+          this.rawDb.exec("COMMIT");
+        } catch (error) {
+          if (this.rawDb.inTransaction) this.rawDb.exec("ROLLBACK");
+          throw error;
+        }
       },
       savepoint: (_release, name) => this.rawDb.exec(`SAVEPOINT ${name}`),
       releaseSavepoint: (_release, name) =>
         this.rawDb.exec(`RELEASE SAVEPOINT ${name}`),
-      rollbackToSavepoint: (_release, name) => {
-        const minted = this.mintedVersions();
-        this.rawDb.exec(`ROLLBACK TO SAVEPOINT ${name}`);
-        this.keepVersionsMinted(minted);
-      },
+      rollbackToSavepoint: (_release, name) =>
+        this.rollbackKeepingVersions(name),
       end: (release) => release(),
     });
     try {
@@ -519,20 +544,42 @@ export class SqliteAdapterCore {
    * database transaction open until the callback returns.
    */
   transaction<T>(work: () => T, mode: SqliteTransactionMode = "deferred"): T {
-    let minted = 0;
-    const transaction = this.db.transaction(() => {
+    // The work runs in a savepoint so a failure can be undone while the
+    // transaction, and its write lock, still hold: the sequence is moved past
+    // any token the work minted before anyone else can mint again.
+    let failure: { error: unknown } | undefined;
+    const name = `mirk_work_${++this.syncSavepoints}`;
+    const value = this.db.transaction((): T | undefined => {
+      this.rawDb.exec(`SAVEPOINT ${name}`);
       try {
-        return work();
-      } finally {
-        minted = this.mintedVersions();
+        const result = work();
+        if (
+          result !== null &&
+          (typeof result === "object" || typeof result === "function") &&
+          typeof (result as { then?: unknown }).then === "function"
+        ) {
+          throw new TypeError("Transaction function cannot return a promise");
+        }
+        this.rawDb.exec(`RELEASE SAVEPOINT ${name}`);
+        return result;
+      } catch (error) {
+        failure = { error };
+        this.rollbackKeepingVersions(name);
+        this.rawDb.exec(`RELEASE SAVEPOINT ${name}`);
+        return undefined;
       }
-    });
-    try {
-      return transaction[mode]();
-    } catch (error) {
-      if (minted > 0) this.keepVersionsMinted(minted);
-      throw error;
-    }
+    })[mode]();
+    if (failure) throw failure.error;
+    return value as T;
+  }
+
+  /** Roll back to `savepoint` inside the open transaction, then move the
+   *  version sequence past every token minted since, before the write lock is
+   *  released, so a token a caller may hold is never issued again. */
+  private rollbackKeepingVersions(savepoint: string): void {
+    const minted = this.mintedVersions();
+    this.rawDb.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    this.keepVersionsMinted(minted);
   }
 
   /** The last version number minted on this connection, including by the
@@ -551,7 +598,7 @@ export class SqliteAdapterCore {
   private keepVersionsMinted(minted: number): void {
     if (minted <= this.mintedVersions()) return;
     this.rawDb
-      .prepare("UPDATE _mirk_atomic_sequence SET value = ? WHERE id = 1")
+      .prepare("UPDATE _mirk_atomic_sequence SET value = max(value, ?) WHERE id = 1")
       .run(minted);
   }
 
@@ -1152,13 +1199,12 @@ class SqliteKvFacet
       target.kind === "key"
         ? ["key", "", target.key]
         : ["record", target.collection, target.id];
-    this.db
-      .prepare(
-        "UPDATE _mirk_atomic_sequence SET value = value + 1 WHERE id = 1"
-      )
-      .run();
+    // One statement, so another process cannot mint between the increment
+    // and the read when this runs outside a transaction.
     const row = this.db
-      .prepare("SELECT value FROM _mirk_atomic_sequence WHERE id = 1")
+      .prepare(
+        "UPDATE _mirk_atomic_sequence SET value = value + 1 WHERE id = 1 RETURNING value"
+      )
       .get() as { value: number };
     const version = `${this.versionPrefix}-v${row.value}` as StoreVersion;
     this.db
