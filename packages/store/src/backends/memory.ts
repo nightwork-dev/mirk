@@ -17,12 +17,16 @@ import type {
   StoreTarget,
   StoreVersion,
   SyncAtomicMutationStore,
+  SyncReceiptPruning,
   VersionedStoreValue,
 } from "../atomic.js";
 import {
   cloneJson,
   IN_PROCESS_ATOMIC_LIMITS,
+  isReceiptExpired,
+  RECEIPT_PRUNE_BATCH,
   resolveAtomicLimits,
+  resolveReceiptRetention,
   targetKey,
   validateAtomicRequest,
 } from "../atomic.js";
@@ -67,10 +71,17 @@ export interface InMemoryStoreOptions {
    *  per-process serial (`m1`, `m2`, …); pin it when tokens themselves are the
    *  thing under comparison, as the conformance corpus does. */
   versionIdentity?: string;
+  /** How long, in milliseconds, an idempotency receipt is kept. A request
+   *  whose key matches only an expired receipt is applied as new. Defaults to
+   *  keeping receipts forever. */
+  receiptRetentionMs?: number;
+  /** The clock, in milliseconds since the epoch, that stamps and expires
+   *  idempotency receipts. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export class InMemoryStore
-  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore
+  implements SyncStore, SyncStoreInQuery, SyncAtomicMutationStore, SyncReceiptPruning
 {
   readonly meta: StoreMeta = {
     backend: "memory",
@@ -78,12 +89,16 @@ export class InMemoryStore
 
   /** The reference runs in-process, so it carries the in-process bounds. */
   readonly atomicLimits: AtomicMutationLimits;
+  readonly receiptRetentionMs: number | undefined;
+  private readonly now: () => number;
 
   constructor(options: InMemoryStoreOptions = {}) {
     this.atomicLimits = resolveAtomicLimits(
       options.atomicLimits,
       IN_PROCESS_ATOMIC_LIMITS
     );
+    this.receiptRetentionMs = resolveReceiptRetention(options.receiptRetentionMs);
+    this.now = options.now ?? Date.now;
     this.versionPrefix = options.versionIdentity ?? `m${nextMemoryStoreId++}`;
   }
 
@@ -102,6 +117,7 @@ export class InMemoryStore
     {
       requestDigest: string;
       result: AtomicCompletedMutationResult & { status: "applied" };
+      createdAt: number;
     }
   >();
 
@@ -242,8 +258,10 @@ export class InMemoryStore
   mutateAtomically(request: AtomicMutationRequest): AtomicMutationResult {
     const validated = validateAtomicRequest(request, this.atomicLimits);
     const idempotencyKey = validated.idempotency?.key;
+    const now = idempotencyKey === undefined ? 0 : this.now();
     if (idempotencyKey !== undefined) {
-      const prior = this.receipts.get(idempotencyKey);
+      this.pruneReceiptBatch(now);
+      const prior = this.readReceipt(idempotencyKey, now);
       if (prior) {
         if (prior.requestDigest !== validated.requestDigest) {
           return {
@@ -324,7 +342,7 @@ export class InMemoryStore
         : { outcome: cloneJson(validated.outcome) }),
     };
     if (idempotencyKey !== undefined) {
-      this.receipts.set(idempotencyKey, {
+      this.writeReceipt(idempotencyKey, now, {
         requestDigest: validated.requestDigest,
         result: {
           ...applied,
@@ -339,6 +357,60 @@ export class InMemoryStore
       });
     }
     return applied;
+  }
+
+  pruneExpiredReceipts(): number {
+    if (this.receiptRetentionMs === undefined) return 0;
+    const now = this.now();
+    let removed = 0;
+    for (const [key, receipt] of this.receipts) {
+      if (isReceiptExpired(receipt.createdAt, now, this.receiptRetentionMs)) {
+        this.receipts.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  // ── Idempotency receipts ──────────────────────────────────────────
+  // Every receipt read and write goes through these three methods.
+
+  private readReceipt(key: string, now: number) {
+    const receipt = this.receipts.get(key);
+    if (!receipt) return undefined;
+    return isReceiptExpired(receipt.createdAt, now, this.receiptRetentionMs)
+      ? undefined
+      : receipt;
+  }
+
+  private writeReceipt(
+    key: string,
+    now: number,
+    receipt: {
+      requestDigest: string;
+      result: AtomicCompletedMutationResult & { status: "applied" };
+    }
+  ): void {
+    // An expired receipt under this key is replaced, and moves to the end of
+    // the insertion order with its new creation time.
+    this.receipts.delete(key);
+    this.receipts.set(key, { ...receipt, createdAt: now });
+  }
+
+  /** Delete at most one batch of expired receipts. */
+  private pruneReceiptBatch(now: number): number {
+    if (this.receiptRetentionMs === undefined) return 0;
+    // Receipts are kept in creation order, so the scan stops at the first live
+    // one. A clock that stepped back can leave an expired receipt behind a
+    // live one; it is still treated as absent and pruned on a later pass.
+    let removed = 0;
+    for (const [key, receipt] of this.receipts) {
+      if (removed >= RECEIPT_PRUNE_BATCH) break;
+      if (!isReceiptExpired(receipt.createdAt, now, this.receiptRetentionMs)) break;
+      this.receipts.delete(key);
+      removed += 1;
+    }
+    return removed;
   }
 
   private newVersion(): StoreVersion {

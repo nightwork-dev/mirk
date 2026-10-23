@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { compareExpect } from "../../../store/src/conformance/compare.js";
-import { executeStep, targetKindFor } from "../../../store/src/conformance/runner.js";
+import { executeStep, scenarioStoreSetup, targetKindFor } from "../../../store/src/conformance/runner.js";
 import type { Scenario } from "../../../store/src/conformance/format.js";
 import {
   dropTables,
@@ -38,7 +38,7 @@ const scenarios = scenarioPaths(corpusRoot).map(
 const METHODS = [
   "get", "set", "has", "delete", "keys",
   "list", "getById", "put", "remove", "count",
-  "getVersioned", "mutateAtomically",
+  "getVersioned", "mutateAtomically", "pruneExpiredReceipts",
 ] as const;
 
 // Every skip names the scenario and the README difference it reflects. A
@@ -68,9 +68,10 @@ function replay(target: Target): void {
       expect(targetKindFor(scenario.ports)).toBe("store");
       const database = await target.fresh();
       try {
-        const adapter = await database.open({ versionIdentity: "conformance" });
+        const setup = scenarioStoreSetup(scenario);
+        const adapter = await database.open({ versionIdentity: "conformance", ...setup.options });
         const store = adapter.kv as unknown as Record<string, (...args: unknown[]) => unknown>;
-        const api = Object.fromEntries(METHODS.map((name) => [name, store[name]!.bind(store)]));
+        const api = { ...Object.fromEntries(METHODS.map((name) => [name, store[name]!.bind(store)])), ...setup.api };
         for (const [index, step] of scenario.steps.entries()) {
           const outcome = await executeStep({ kind: "store", api }, step);
           if (step.expect === undefined) {

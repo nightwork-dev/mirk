@@ -17,6 +17,7 @@ import type { Client, InStatement, ResultSet, Transaction } from "@libsql/client
 import type {
   AfterCommitNotify,
   AsyncAtomicMutationStore,
+  AsyncReceiptPruning,
   AsyncStore,
   AsyncStoreTransactions,
   AtomicCompletedMutationResult,
@@ -50,7 +51,9 @@ import {
   AtomicMutationIndeterminateError,
   DEFAULT_ATOMIC_LIMITS,
   IN_PROCESS_ATOMIC_LIMITS,
+  RECEIPT_PRUNE_BATCH,
   resolveAtomicLimits,
+  resolveReceiptRetention,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
@@ -150,8 +153,13 @@ export interface LibsqlAdapterOptions {
    *  when the database reports it busy before failing with `busy`. Defaults
    *  to 30000. */
   busyTimeoutMs?: number;
-  /** The clock, in milliseconds since the epoch, that stamps idempotency
-   *  receipts. Defaults to `Date.now`. */
+  /** How long, in milliseconds, an idempotency receipt is kept. A request
+   *  whose key matches only an expired receipt is applied as new. Defaults to
+   *  keeping receipts forever. */
+  receiptRetentionMs?: number;
+  /** The clock, in milliseconds since the epoch, that stamps and expires
+   *  idempotency receipts. Defaults to the database's clock, so every host
+   *  writing to the database agrees on a receipt's age. */
   now?: () => number;
 }
 
@@ -161,7 +169,7 @@ export type LibsqlClientFactory = (config: {
 }) => Client;
 export type LibsqlClient = Client;
 
-type LibsqlKvStore = AsyncStore & AsyncAtomicMutationStore;
+type LibsqlKvStore = AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 /** Multi-capability libSQL source adapter. The concrete entry point supplies the
  *  client factory so this shared core has no runtime dependency on a driver.
@@ -184,7 +192,8 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
       this.database,
       names,
       resolveAtomicLimits(opts.atomicLimits, local ? IN_PROCESS_ATOMIC_LIMITS : DEFAULT_ATOMIC_LIMITS),
-      opts.now ?? Date.now,
+      resolveReceiptRetention(opts.receiptRetentionMs),
+      opts.now,
     );
     this.vector = new LibsqlVectorFacet(this.database, names, opts.url, opts.dimensions, opts.forceJsCosine);
   }
@@ -798,6 +807,10 @@ async function resolveTableOnce(
 
 type VersionKey = [kind: string, collection: string, key: string];
 
+/** "Now" in milliseconds since the epoch: the bound injected reading, or the
+ *  database's clock when that argument is null. */
+const NOW_MS_SQL = "COALESCE(?, CAST(unixepoch('subsec') * 1000 AS INTEGER))";
+
 function versionKey(target: StoreTarget): VersionKey {
   return target.kind === "key" ? ["key", "", target.key] : ["record", target.collection, target.id];
 }
@@ -811,7 +824,8 @@ class LibsqlKvFacet implements LibsqlKvStore {
     private readonly db: LibsqlDatabase,
     private readonly names: TableNames,
     readonly atomicLimits: AtomicMutationLimits,
-    private readonly now: () => number,
+    readonly receiptRetentionMs: number | undefined,
+    private readonly now: (() => number) | undefined,
   ) {}
 
   /** Runs inside the adapter's opening transaction. */
@@ -857,6 +871,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
     if (!receiptColumns.rows.some((row) => row.name === "created_at")) {
       await this.db.execute(`ALTER TABLE ${n.receipts} ADD COLUMN created_at INTEGER`);
     }
+    await this.db.execute(
+      `CREATE INDEX IF NOT EXISTS ${n.receipts}_created_at ON ${n.receipts} (created_at)`,
+    );
     await this.db.execute(`
       CREATE TABLE IF NOT EXISTS ${n.identity} (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1024,8 +1041,10 @@ class LibsqlKvFacet implements LibsqlKvStore {
 
   private async decideAtomic(validated: ReturnType<typeof validateAtomicRequest>): Promise<AtomicMutationResult> {
     const key = validated.idempotency?.key;
+    const now = key === undefined ? null : this.clock();
     if (key !== undefined) {
-      const prior = await this.readReceipt(key);
+      await this.pruneReceiptBatch(now);
+      const prior = await this.readReceipt(key, now);
       if (prior) {
         const priorDigest = prior.requestDigest;
         if (priorDigest !== validated.requestDigest) {
@@ -1093,35 +1112,87 @@ class LibsqlKvFacet implements LibsqlKvStore {
       versions,
       ...(validated.outcome === undefined ? {} : { outcome: validated.outcome }),
     };
-    if (key !== undefined) await this.writeReceipt(key, validated.requestDigest, applied);
+    if (key !== undefined) await this.writeReceipt(key, validated.requestDigest, applied, now);
     return applied;
   }
 
-  // ─── Idempotency receipts ──────────────────────────────────────────────────
-  // Every receipt read and write goes through these two methods.
+  async pruneExpiredReceipts(): Promise<number> {
+    if (this.receiptRetentionMs === undefined) return 0;
+    let removed = 0;
+    for (;;) {
+      const batch = await this.write(() => this.pruneReceiptBatch(this.clock()));
+      removed += batch;
+      if (batch < RECEIPT_PRUNE_BATCH) return removed;
+    }
+  }
 
+  // ─── Idempotency receipts ──────────────────────────────────────────────────
+  // Every receipt read and write goes through these methods. `now` is the
+  // injected clock's reading, or null to use the database's clock.
+
+  private clock(): number | null {
+    return this.now === undefined ? null : this.now();
+  }
+
+  /** The live receipt under `key`, or null when there is none or it has
+   *  expired. */
   private async readReceipt(
     key: string,
-  ): Promise<{ requestDigest: string; result: AtomicCompletedMutationResult; createdAt: number | null } | null> {
+    now: number | null,
+  ): Promise<{ requestDigest: string; result: AtomicCompletedMutationResult } | null> {
+    const live = this.receiptRetentionMs === undefined
+      ? ""
+      : ` AND (created_at IS NULL OR created_at >= ${NOW_MS_SQL} - ?)`;
     const row = (
       await this.db.execute({
-        sql: `SELECT request_digest, result_json, created_at FROM ${this.names.receipts} WHERE idempotency_key = ?`,
-        args: [key],
+        sql: `SELECT request_digest, result_json FROM ${this.names.receipts} WHERE idempotency_key = ?${live}`,
+        args: this.receiptRetentionMs === undefined ? [key] : [key, now, this.receiptRetentionMs],
       })
     ).rows[0];
     if (!row) return null;
     return {
       requestDigest: row.request_digest as string,
       result: JSON.parse(row.result_json as string) as AtomicCompletedMutationResult,
-      createdAt: row.created_at === null || row.created_at === undefined ? null : Number(row.created_at),
     };
   }
 
-  private async writeReceipt(key: string, requestDigest: string, result: AtomicCompletedMutationResult): Promise<void> {
+  /** Write a receipt, replacing an expired one under the same key. */
+  private async writeReceipt(
+    key: string,
+    requestDigest: string,
+    result: AtomicCompletedMutationResult,
+    now: number | null,
+  ): Promise<void> {
     await this.db.execute({
-      sql: `INSERT INTO ${this.names.receipts} (idempotency_key, request_digest, result_json, created_at) VALUES (?, ?, ?, ?)`,
-      args: [key, requestDigest, JSON.stringify(result), this.now()],
+      sql: `INSERT INTO ${this.names.receipts} (idempotency_key, request_digest, result_json, created_at)
+            VALUES (?, ?, ?, ${NOW_MS_SQL})
+            ON CONFLICT(idempotency_key) DO UPDATE SET request_digest = excluded.request_digest,
+              result_json = excluded.result_json, created_at = excluded.created_at`,
+      args: [key, requestDigest, JSON.stringify(result), now],
     });
+  }
+
+  /** In the open transaction and one round trip, stamp at most one batch of
+   *  receipts that have no creation time with now, then delete at most one
+   *  batch of expired receipts. Returns how many were deleted. */
+  private async pruneReceiptBatch(now: number | null): Promise<number> {
+    const retention = this.receiptRetentionMs;
+    if (retention === undefined) return 0;
+    const table = this.names.receipts;
+    const [, deleted] = await this.db.inTransaction((open) => guard(open.batch([
+      {
+        sql: `UPDATE ${table} SET created_at = ${NOW_MS_SQL} WHERE idempotency_key IN (
+                SELECT idempotency_key FROM ${table} WHERE created_at IS NULL LIMIT ?)`,
+        args: [now, RECEIPT_PRUNE_BATCH],
+      },
+      {
+        sql: `DELETE FROM ${table} WHERE idempotency_key IN (
+                SELECT idempotency_key FROM ${table} WHERE created_at < ${NOW_MS_SQL} - ?
+                ORDER BY created_at LIMIT ?)`,
+        args: [now, retention, RECEIPT_PRUNE_BATCH],
+      },
+    ])));
+    return deleted!.rowsAffected;
   }
 
   private async readVersioned(target: StoreTarget): Promise<{ value: string; version: StoreVersion | null } | null> {

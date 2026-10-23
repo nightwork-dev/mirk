@@ -23,6 +23,7 @@ import { neighbors, traverse, traverseFrontierBatched } from "../graph.js";
 import {
   targetKindFor,
   vectorDimensionsFor,
+  scenarioStoreSetup,
   type BackendName,
   type Target,
   type TargetRequest,
@@ -47,6 +48,7 @@ const STORE_METHODS = [
   "listWhereIn",
   "getVersioned",
   "mutateAtomically",
+  "pruneExpiredReceipts",
 ] as const;
 
 /** Every version token in the corpus is pinned, so both conformance stores mint
@@ -163,14 +165,19 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
       const store = new InMemorySearchStore();
       return { target: { kind, api: methodApi(store, SEARCH_METHODS) }, dispose: () => {} };
     }
-    const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+    const setup = scenarioStoreSetup(scenario);
+    const store = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY, ...setup.options });
     return {
-      target: { kind, api: kind === "graph" ? graphApi(store) : methodApi(store, STORE_METHODS) },
+      target: {
+        kind,
+        api: kind === "graph" ? graphApi(store) : { ...methodApi(store, STORE_METHODS), ...setup.api },
+      },
       dispose: () => {},
     };
   }
 
   const Adapter = backend === "node-sqlite" ? NodeSqliteAdapter : SqliteAdapter;
+  const setup = scenarioStoreSetup(scenario);
   const adapter = new Adapter(
     kind === "vector"
       ? {
@@ -178,7 +185,7 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
           dimensions: vectorDimensionsFor(scenario.steps),
           versionIdentity: CONFORMANCE_VERSION_IDENTITY,
         }
-      : { path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY },
+      : { path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY, ...setup.options },
   );
   const dispose = () => adapter.close();
 
@@ -201,7 +208,10 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   return {
     target: {
       kind,
-      api: kind === "graph" ? graphApi(adapter.kv) : methodApi(adapter.kv, STORE_METHODS),
+      api:
+        kind === "graph"
+          ? graphApi(adapter.kv)
+          : { ...methodApi(adapter.kv, STORE_METHODS), ...setup.api },
     },
     dispose,
   };

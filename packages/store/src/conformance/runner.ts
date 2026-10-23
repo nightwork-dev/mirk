@@ -234,8 +234,32 @@ export async function executeStep(
   }
 }
 
-/** What a backend factory is handed: enough of a scenario to pick a target and
- *  size a vector store. */
-export type TargetRequest = Pick<Scenario, "ports"> & {
+/** What a backend factory is handed: enough of a scenario to pick a target,
+ *  size a vector store, and build the store with the scenario's options. */
+export type TargetRequest = Pick<Scenario, "ports" | "store"> & {
   steps: ReadonlyArray<{ args: unknown[] }>;
 };
+
+/** Where the manual clock of a scenario with `store` options starts:
+ *  2026-01-01T00:00:00Z, in milliseconds since the epoch. */
+export const CONFORMANCE_CLOCK_START_MS = 1_767_225_600_000;
+
+/** The store options a scenario asks for, and the ops that drive them. Every
+ *  store replay passes `options` to the store it builds and merges `api` into
+ *  the store target, so `advanceClock(ms)` means the same in each. */
+export function scenarioStoreSetup(scenario: Pick<Scenario, "store">): {
+  options: { receiptRetentionMs?: number; now?: () => number };
+  api: Record<string, unknown>;
+} {
+  if (scenario.store === undefined) return { options: {}, api: {} };
+  let now = CONFORMANCE_CLOCK_START_MS;
+  return {
+    options: { receiptRetentionMs: scenario.store.receiptRetentionMs, now: () => now },
+    api: {
+      advanceClock: (ms: number) => {
+        now += ms;
+        return null;
+      },
+    },
+  };
+}

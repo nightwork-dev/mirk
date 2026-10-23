@@ -5,6 +5,7 @@ import { Pool, type PoolClient, type PoolConfig, type QueryResult } from "pg";
 import type {
   AfterCommitNotify,
   AsyncAtomicMutationStore,
+  AsyncReceiptPruning,
   AsyncStore,
   AsyncStoreInQuery,
   AsyncStoreTransactions,
@@ -20,7 +21,9 @@ import type {
 } from "@mirk/store";
 import {
   AtomicMutationIndeterminateError,
+  RECEIPT_PRUNE_BATCH,
   resolveAtomicLimits,
+  resolveReceiptRetention,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
@@ -106,6 +109,14 @@ export interface PostgresAdapterOptions {
    *  This bounds how long a frozen or killed host can block other writers.
    *  Defaults to 60000; 0 disables the limit. */
   transactionIdleTimeoutMs?: number;
+  /** How long, in milliseconds, an idempotency receipt is kept. A request
+   *  whose key matches only an expired receipt is applied as new. Defaults to
+   *  keeping receipts forever. */
+  receiptRetentionMs?: number;
+  /** The clock, in milliseconds since the epoch, that stamps and expires
+   *  idempotency receipts. Defaults to the database's clock, so every host
+   *  writing to the schema agrees on a receipt's age. */
+  now?: () => number;
 }
 
 /** Not part of the public options: the conformance replay pins the prefix of
@@ -122,7 +133,7 @@ interface Queryable {
   ): Promise<QueryResult<R>>;
 }
 
-type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore;
+type PostgresStore = AsyncStore & AsyncStoreInQuery & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 /** Transport failures after which a COMMIT may or may not have taken effect. */
 const INDETERMINATE_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01", "08000", "08003", "08006"]);
@@ -220,6 +231,8 @@ export class PostgresAdapter implements AsyncStoreTransactions {
       schema,
       this.transactions,
       resolveAtomicLimits(options.atomicLimits),
+      resolveReceiptRetention(options.receiptRetentionMs),
+      options.now,
     );
   }
 
@@ -287,6 +300,8 @@ class PostgresStoreFacet implements PostgresStore {
     schema: string,
     private readonly transactions: AsyncTransactionCoordinator<PoolClient>,
     readonly atomicLimits: AtomicMutationLimits,
+    readonly receiptRetentionMs: number | undefined,
+    private readonly now: (() => number) | undefined,
   ) {
     const quotedSchema = quoteIdentifier(schema);
     this.kvTable = `${quotedSchema}.kv`;
@@ -326,9 +341,22 @@ class PostgresStoreFacet implements PostgresStore {
       CREATE TABLE IF NOT EXISTS ${this.receiptsTable} (
         key TEXT PRIMARY KEY,
         request_digest TEXT NOT NULL,
-        result JSONB NOT NULL
+        result JSONB NOT NULL,
+        created_at BIGINT
       )
     `);
+    // Receipts written by an earlier release carry no creation time.
+    const receiptColumn = await this.database.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_schema = $1 AND table_name = 'atomic_receipts' AND column_name = 'created_at'`,
+      [schema],
+    );
+    if ((receiptColumn.rowCount ?? 0) === 0) {
+      await this.database.query(`ALTER TABLE ${this.receiptsTable} ADD COLUMN created_at BIGINT`);
+    }
+    await this.database.query(
+      `CREATE INDEX IF NOT EXISTS atomic_receipts_created_at ON ${this.receiptsTable} (created_at)`,
+    );
     await this.database.query(`
       CREATE TABLE IF NOT EXISTS ${this.stateTable} (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -484,13 +512,10 @@ class PostgresStoreFacet implements PostgresStore {
 
   private async decideAtomic(validated: ReturnType<typeof validateAtomicRequest>): Promise<AtomicMutationResult> {
     const key = validated.idempotency?.key;
+    const now = key === undefined ? null : this.clock();
     if (key !== undefined) {
-      const prior = (
-        await this.database.query<{ request_digest: string; result: CompletedResult }>(
-          `SELECT request_digest, result FROM ${this.receiptsTable} WHERE key = $1`,
-          [key],
-        )
-      ).rows[0];
+      await this.pruneReceiptBatch(now);
+      const prior = await this.readReceipt(key, now);
       if (prior) {
         if (prior.request_digest !== validated.requestDigest) {
           return {
@@ -556,13 +581,80 @@ class PostgresStoreFacet implements PostgresStore {
       versions,
       ...(validated.outcome === undefined ? {} : { outcome: validated.outcome }),
     };
-    if (key !== undefined) {
-      await this.database.query(
-        `INSERT INTO ${this.receiptsTable} (key, request_digest, result) VALUES ($1, $2, $3::jsonb)`,
-        [key, validated.requestDigest, encodeJson(applied)],
-      );
-    }
+    if (key !== undefined) await this.writeReceipt(key, validated.requestDigest, applied, now);
     return applied;
+  }
+
+  async pruneExpiredReceipts(): Promise<number> {
+    if (this.receiptRetentionMs === undefined) return 0;
+    let removed = 0;
+    for (;;) {
+      const batch = await this.write(() => this.pruneReceiptBatch(this.clock()));
+      removed += batch;
+      if (batch < RECEIPT_PRUNE_BATCH) return removed;
+    }
+  }
+
+  // ─── Idempotency receipts ──────────────────────────────────────────────────
+  // Every receipt read and write goes through these methods. `now` is the
+  // injected clock's reading, or null to use the database's clock.
+
+  private clock(): number | null {
+    return this.now === undefined ? null : this.now();
+  }
+
+  /** The SQL for "now" in milliseconds, given the parameter that carries an
+   *  injected reading or null. */
+  private static nowSql(parameter: string): string {
+    return `COALESCE(${parameter}::bigint, (extract(epoch FROM now()) * 1000)::bigint)`;
+  }
+
+  /** The live receipt under `key`, or undefined when there is none or it has
+   *  expired. */
+  private async readReceipt(
+    key: string,
+    now: number | null,
+  ): Promise<{ request_digest: string; result: CompletedResult } | undefined> {
+    const live = this.receiptRetentionMs === undefined
+      ? ""
+      : ` AND (created_at IS NULL OR created_at >= ${PostgresStoreFacet.nowSql("$2")} - $3::bigint)`;
+    const values = this.receiptRetentionMs === undefined ? [key] : [key, now, this.receiptRetentionMs];
+    const result = await this.database.query<{ request_digest: string; result: CompletedResult }>(
+      `SELECT request_digest, result FROM ${this.receiptsTable} WHERE key = $1${live}`,
+      values,
+    );
+    return result.rows[0];
+  }
+
+  /** Write a receipt, replacing an expired one under the same key. */
+  private async writeReceipt(key: string, requestDigest: string, result: CompletedResult, now: number | null): Promise<void> {
+    await this.database.query(
+      `INSERT INTO ${this.receiptsTable} (key, request_digest, result, created_at)
+       VALUES ($1, $2, $3::jsonb, ${PostgresStoreFacet.nowSql("$4")})
+       ON CONFLICT (key) DO UPDATE SET request_digest = excluded.request_digest,
+         result = excluded.result, created_at = excluded.created_at`,
+      [key, requestDigest, encodeJson(result), now],
+    );
+  }
+
+  /** In the open transaction, stamp at most one batch of receipts that have no
+   *  creation time with now, then delete at most one batch of expired receipts.
+   *  Returns how many were deleted. */
+  private async pruneReceiptBatch(now: number | null): Promise<number> {
+    if (this.receiptRetentionMs === undefined) return 0;
+    await this.database.query(
+      `UPDATE ${this.receiptsTable} SET created_at = ${PostgresStoreFacet.nowSql("$1")}
+       WHERE key IN (SELECT key FROM ${this.receiptsTable} WHERE created_at IS NULL LIMIT $2)`,
+      [now, RECEIPT_PRUNE_BATCH],
+    );
+    const deleted = await this.database.query(
+      `DELETE FROM ${this.receiptsTable} WHERE key IN (
+         SELECT key FROM ${this.receiptsTable}
+         WHERE created_at < ${PostgresStoreFacet.nowSql("$1")} - $2::bigint
+         ORDER BY created_at LIMIT $3)`,
+      [now, this.receiptRetentionMs, RECEIPT_PRUNE_BATCH],
+    );
+    return deleted.rowCount ?? 0;
   }
 
   /** Every write holds the schema lock: alone in its own transaction, or as a

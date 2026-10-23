@@ -39,6 +39,31 @@ const PINNED_REQUEST = {
   operations: [{ op: "set", key: "pin", value: true }],
 };
 
+/** The receipt window of the expiry scenarios, on the manual clock. */
+const RETENTION_MS = 60_000;
+
+const KEYED_REQUEST = {
+  operations: [{ op: "set", key: "job", value: { step: 1 } }],
+  idempotency: { key: "job-1", outcome: { done: true } },
+};
+
+/** A different mutation under KEYED_REQUEST's idempotency key. */
+const SAME_KEY_OTHER_REQUEST = {
+  operations: [{ op: "set", key: "other", value: 2 }],
+  idempotency: { key: "job-1" },
+};
+
+const OTHER_KEY_REQUEST = {
+  operations: [{ op: "set", key: "other", value: 2 }],
+  idempotency: { key: "job-2" },
+};
+
+const GUARDED_REQUEST = {
+  conditions: [{ target: { kind: "key", key: "lock" }, expected: "missing" }],
+  operations: [{ op: "set", key: "lock", value: "held" }],
+  idempotency: { key: "take-lock" },
+};
+
 function reject(name: string, title: string, request: unknown, ports = ["atomic"]) {
   return defineScenario({
     id: `store/atomic/${name}`,
@@ -608,6 +633,112 @@ export const scenarios = [
         ],
         expect: { value: true },
       },
+    ],
+  }),
+
+  // ── Idempotency receipt expiry ──────────────────────────────────────────
+  // These stores keep a receipt for RETENTION_MS on a manual clock. A receipt
+  // is live while its age is at most the window and expired once its age
+  // exceeds it. A request whose key matches only an expired receipt is
+  // evaluated and applied as new, and gets a fresh receipt. A replay does not
+  // renew a receipt.
+  defineScenario({
+    id: "store/atomic/receipt-expiry-replays-at-the-window",
+    title: "a receipt exactly as old as the retention window still replays",
+    ports: ["atomic"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS] },
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "getVersioned", args: [{ kind: "key", key: "job" }], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-expiry-applies-a-request-again",
+    title: "past the window the same request is applied again and gets a fresh receipt",
+    ports: ["atomic"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS + 1] },
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "getVersioned", args: [{ kind: "key", key: "job" }], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS] },
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-expiry-frees-the-key",
+    title: "a different request under a key conflicts inside the window and is applied after it",
+    ports: ["atomic"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS] },
+      { op: "mutateAtomically", args: [SAME_KEY_OTHER_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [1] },
+      { op: "mutateAtomically", args: [SAME_KEY_OTHER_REQUEST], expect: { value: true } },
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-expiry-reevaluates-conditions",
+    title: "past the window a retried request is evaluated again, so its condition can now conflict",
+    ports: ["atomic", "kv"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [GUARDED_REQUEST], expect: { value: true } },
+      { op: "mutateAtomically", args: [GUARDED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS + 1] },
+      { op: "mutateAtomically", args: [GUARDED_REQUEST], expect: { value: true } },
+      { op: "set", args: ["next", true] },
+      { op: "getVersioned", args: [{ kind: "key", key: "next" }], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-prune-removes-only-expired",
+    title: "an explicit prune removes the expired receipts and keeps the live ones",
+    ports: ["atomic"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS / 2] },
+      { op: "mutateAtomically", args: [OTHER_KEY_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS / 2 + 1] },
+      { op: "pruneExpiredReceipts", args: [], expect: { value: true } },
+      { op: "pruneExpiredReceipts", args: [], expect: { value: true } },
+      { op: "mutateAtomically", args: [OTHER_KEY_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS / 2] },
+      { op: "pruneExpiredReceipts", args: [], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-prune-runs-on-keyed-writes",
+    title: "an atomic write with an idempotency key prunes expired receipts before it decides",
+    ports: ["atomic"],
+    store: { receiptRetentionMs: RETENTION_MS },
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "advanceClock", args: [RETENTION_MS + 1] },
+      { op: "mutateAtomically", args: [OTHER_KEY_REQUEST], expect: { value: true } },
+      { op: "pruneExpiredReceipts", args: [], expect: { value: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/atomic/receipt-prune-without-retention",
+    title: "without a retention window an explicit prune removes nothing and receipts still replay",
+    ports: ["atomic"],
+    steps: [
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
+      { op: "pruneExpiredReceipts", args: [], expect: { value: true } },
+      { op: "mutateAtomically", args: [KEYED_REQUEST], expect: { value: true } },
     ],
   }),
 ];
