@@ -230,6 +230,9 @@ JSON has no byte type. The target therefore uses base64 strings for every byte f
 - `read` returns `bytes` as base64 output.
 - `putObject` uses its value as base64 input.
 
+Maintenance runs with the coordinator's namespace (`artifacts` unless `configure` sets one), so
+only objects under `<namespace>/` are audited and repaired.
+
 Artifact projections omit physical `objectKey` values and internal receipt fields. The target runs
 against the in-memory and SQLite metadata repositories in both languages. The object-store target
 uses the in-memory object store for lifecycle scenarios; the Python package also verifies the
@@ -380,7 +383,17 @@ scenario raises a message Mirk itself writes, so those stay exact-message
 
 ### Retired scenario ids
 
-None yet.
+Artifact maintenance audits only the coordinator's namespace by default, so an
+object at a key outside `artifacts/` is no longer a repair candidate. These
+scenarios placed their orphan at the bare key `orphan` and are replaced by the
+same steps under `artifacts/orphan`:
+
+| Retired id | Replaced by |
+| --- | --- |
+| `artifact/lifecycle/audit-and-repair-orphan` | `artifact/lifecycle/audit-and-repair-namespaced-orphan` |
+| `artifact/lifecycle/repair-changed-orphan-conflicts` | `artifact/lifecycle/repair-changed-namespaced-orphan-conflicts` |
+| `artifact/lifecycle/repair-new-reference-conflicts` | `artifact/lifecycle/repair-namespaced-new-reference-conflicts` |
+| `artifact/lifecycle/repair-blocked-by-writer` | `artifact/lifecycle/repair-namespaced-blocked-by-writer` |
 
 ## What conformance does not prove
 

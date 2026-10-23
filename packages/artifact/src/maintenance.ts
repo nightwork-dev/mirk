@@ -18,11 +18,12 @@ import { assertObjectKey, digestStream, makeId, metadataFingerprint } from "./ut
 import type { ArtifactLineageEdge } from "./types.js";
 
 export interface ArtifactMaintenanceOptions {
-  /** Audit and repair only objects whose keys start with `${namespace}/`,
-   *  the coordinator's namespace. Set it whenever the object store holds
-   *  anything else; without it every unreferenced object in the store is a
-   *  deletion candidate. */
-  namespace?: string;
+  /** The coordinator namespace whose objects this audits and repairs: only
+   *  keys under `${namespace}/` are scanned, so nothing else in the store can
+   *  become a deletion candidate. Defaults to `"artifacts"`, the coordinator's
+   *  default. `null` scans the whole store; use it only when the store holds
+   *  nothing but this repository's objects. */
+  namespace?: string | null;
   now?: () => number;
   ownerId?: string;
   leaseTtlMs?: number;
@@ -47,7 +48,7 @@ export class ArtifactMaintenance {
   readonly #ownerId: string;
   readonly #leaseTtlMs: number;
   readonly #auditIdFactory: () => string;
-  readonly #namespace: string | undefined;
+  readonly #namespace: string | null;
   readonly #snapshots = new Map<string, Snapshot>();
 
   constructor(
@@ -61,8 +62,10 @@ export class ArtifactMaintenance {
       `artifact-maintenance-${Math.random().toString(36).slice(2)}`;
     this.#leaseTtlMs = Math.max(1, options.leaseTtlMs ?? 30_000);
     this.#auditIdFactory = options.auditIdFactory ?? makeId;
-    if (options.namespace !== undefined) assertObjectKey(options.namespace);
-    this.#namespace = options.namespace;
+    const namespace =
+      options.namespace === undefined ? "artifacts" : options.namespace;
+    if (namespace !== null) assertObjectKey(namespace);
+    this.#namespace = namespace;
   }
 
   async audit(): Promise<ArtifactAuditReport> {
@@ -123,7 +126,7 @@ export class ArtifactMaintenance {
     let scannedObjects: number | undefined;
     const listable = this.#listable();
     if (listable) {
-      const scope = this.#namespace === undefined ? undefined : `${this.#namespace}/`;
+      const scope = this.#namespace === null ? undefined : `${this.#namespace}/`;
       const infos = (await listable.list(scope)).filter(
         (info) => scope === undefined || info.key.startsWith(scope)
       );
