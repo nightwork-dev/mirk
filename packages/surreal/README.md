@@ -1,7 +1,70 @@
 # @mirk/surreal
 
-SurrealDB source adapters for Mirk. Open one `SurrealConnection`, then import only the adapter
-subpaths you need.
+Use SurrealDB as the place your Mirk data lives: records, graph links, embeddings, and stored
+files, over one shared connection.
+
+## Why
+
+Mirk starts with a single SQLite file, which is the right choice for one app on one machine. Some
+apps outgrow that in a specific way:
+
+- Several processes or several machines need to read and write the same data.
+- The app runs in a browser and needs data that survives a reload.
+- The team already runs a SurrealDB server, and the app's data should live there.
+- Links between records should be walked by the database itself, to a bounded depth.
+
+`@mirk/surreal` answers those cases. It implements Mirk's async interfaces (`AsyncStore` and the
+graph, vector, and object-store interfaces). Code that already uses the async form of a Mirk store,
+for example through `toAsync`, keeps working when you change the line that opens the store.
+
+You open one `SurrealConnection`. Each adapter then lives on its own subpath, so you import only
+what you use:
+
+| Subpath | Status | What it gives you |
+|---|---|---|
+| `@mirk/surreal` | supported | `SurrealConnection`, the one connection every adapter shares |
+| `@mirk/surreal/store` | supported | `AsyncStore` and `AsyncStoreInQuery`: key-values and queryable collections |
+| `@mirk/surreal/graph` | supported | explicit relation mapping and native bounded traversal |
+| `@mirk/surreal/vector` | supported | async cosine vector operations |
+| `@mirk/surreal/storage` | supported | chunked `ObjectStore` with renewable upload leases |
+| `@mirk/surreal/search` | unsupported by design | fails closed; Surreal's current single-field FTS cannot satisfy Mirk's weighted multi-field search contract |
+| `@mirk/surreal/node` | supported | owned Node embedded connection; `surrealkv://` data persists across reopen |
+| `@mirk/surreal/wasm` | supported | owned browser WASM connection for `mem://` and `indxdb://` |
+
+If you need full-text search, use the SQLite adapters.
+
+## A first look
+
+This opens an embedded SurrealDB that keeps its data in a folder, then stores and queries records.
+It needs the optional Node engine (see [Embedded in Node](#embedded-in-node)).
+
+```ts
+import { createNodeSurrealConnection } from "@mirk/surreal/node";
+import { SurrealStoreAdapter } from "@mirk/surreal/store";
+
+const connection = await createNodeSurrealConnection({
+  endpoint: "surrealkv://data/app",
+  namespace: "app",
+  database: "prod",
+});
+const store = await SurrealStoreAdapter.open(connection);
+
+await store.set("settings/theme", "dark");
+await store.put("projects", { id: "p1", name: "Beta", priority: 1 });
+await store.put("projects", { id: "p2", name: "Alpha", priority: 1 });
+await store.put("projects", { id: "p3", name: "Gamma", priority: 2 });
+
+await store.get("settings/theme"); // "dark"
+await store.list("projects", { where: { priority: 1 }, sortBy: "name" });
+// [{ id: "p2", name: "Alpha", priority: 1 }, { id: "p1", name: "Beta", priority: 1 }]
+
+await connection.close();
+```
+
+Run it again and the data is still there, because `surrealkv://` persists.
+
+To use a SurrealDB server instead, open the connection with the server's address. The rest of the
+code is unchanged:
 
 ```ts
 import { SurrealConnection } from "@mirk/surreal";
@@ -51,6 +114,8 @@ const connection = await SurrealConnection.open({
 Closing a `SurrealConnection` closes only clients it created itself. Injected clients stay owned by
 the caller. Adapters never close the shared connection and never open hidden clients.
 
+### Embedded in Node
+
 For an owned Node embedded connection, install the optional `@surrealdb/node` plugin with the
 native engine pinned to `3.3.4`, then use the dedicated subpath:
 
@@ -71,6 +136,8 @@ const connection = await createNodeSurrealConnection({
 This package pins the native engine peer to `3.3.4`. The plugin and engine versions are independent;
 `@surrealdb/node` exposes `engineVersion()` when an application needs to verify the loaded embedded
 engine.
+
+### Embedded in the browser
 
 For an owned browser-embedded connection, install the optional `@surrealdb/wasm` plugin with the
 native engine pinned to `3.3.4`, then use the dedicated subpath:
@@ -98,17 +165,17 @@ that was missing from the `3.0.0`–`3.0.3` engine builds (upstream
 [surrealdb.js#571](https://github.com/surrealdb/surrealdb.js/issues/571)), so `indxdb://` is
 supported by the current browser helper as well as `mem://`.
 
+### Several processes
+
+An embedded engine (`mem://`, `surrealkv://`) belongs to one process. For several processes or
+hosts sharing data, connect each to a SurrealDB server endpoint.
+
 ### Security and version scope
 
 The SurrealDB SDK and embedded engine versions above include the current SurrealDB security fixes.
 The published `3.3.4` native engine source still resolves `rustls` `0.23.45`; this package does
 not claim that a separate `rustls` `0.23.46` remediation is included. Remote TLS connections use
 the caller's Node runtime and do not use the embedded native engine.
-
-### Several processes
-
-An embedded engine (`mem://`, `surrealkv://`) belongs to one process. For several processes or
-hosts sharing data, connect each to a SurrealDB server endpoint.
 
 ## Store
 
@@ -133,6 +200,9 @@ Collection names are encoded into deterministic safe Surreal table names, so nam
 `foo-bar` and `foo_bar` do not alias. Filter and sort field names are treated as literal top-level
 object keys; dotted names are not interpreted as paths. The adapter stores user records under a data
 field and returns only that data, so Surreal record ids do not leak into Mirk values.
+
+### Ordering
+
 Collection sorting follows Mirk's rules: strings use Unicode code-point order, null and missing
 values stay last in both directions, and pagination applies after sorting. A negative limit returns
 no rows. An unsorted `list()` returns insertion order, and rows with equal sort values keep it, as in
@@ -147,25 +217,20 @@ id, followed by the ordered records. Putting one of them again keeps that place.
 `mirk_ordinal` is not a finite number is treated the same way. Concurrent puts each get an ordinal;
 their relative order is the order the server allocated them.
 
+### Strings and ids
+
 SurrealDB strings are UTF-8. A string value that holds a lone UTF-16 surrogate is stored as its
 UTF-16 code units and read back unchanged. Object keys, record ids, and KV keys are stored as
 SurrealDB strings, so a lone surrogate in one of them becomes U+FFFD. SurrealDB rejects an empty
 record id, so the empty id and the empty KV key are stored under the array id `[""]`.
 
+### Limits
+
 Vector, graph, search, and object-storage subpaths are separate adapter entry points and are not
 re-exported from the root. The store adapter does not implement `@mirk/store/atomic` mutation.
 
-## Support matrix
+## Sharing one connection
 
-| Subpath | Status | Contract |
-|---|---|---|
-| `@mirk/surreal/store` | supported | `AsyncStore` and `AsyncStoreInQuery` |
-| `@mirk/surreal/graph` | supported | explicit relation mapping and native bounded traversal |
-| `@mirk/surreal/vector` | supported | async cosine vector operations |
-| `@mirk/surreal/storage` | supported | chunked `ObjectStore` with renewable upload leases |
-| `@mirk/surreal/search` | unsupported by design | fails closed; Surreal's current single-field FTS cannot satisfy Mirk's weighted multi-field search contract |
-| `@mirk/surreal/node` | supported | owned Node embedded connection; `surrealkv://` data persists across reopen |
-| `@mirk/surreal/wasm` | supported | owned browser WASM connection for `mem://` and `indxdb://` |
-
-`SurrealStoreAdapter` and `SurrealObjectStore` can share one connection as the backing for
-`@mirk/artifact`'s `StoreArtifactRepository` and `ArtifactCoordinator`.
+Adapters open on the same `SurrealConnection`. `SurrealStoreAdapter` and `SurrealObjectStore` can
+share one connection as the backing for `@mirk/artifact`'s `StoreArtifactRepository` and
+`ArtifactCoordinator`: the record lives in the store, the bytes in the object store.

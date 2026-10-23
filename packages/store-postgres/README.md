@@ -1,14 +1,26 @@
 # @mirk/store-postgres
 
-PostgreSQL source adapter for `@mirk/store`'s asynchronous key-value and collection ports. Use it
-when several processes or hosts need to write the same store concurrently; PostgreSQL's MVCC lets
-readers and writers proceed together, where SQLite admits one writer at a time.
+> **Mirk's records in PostgreSQL, shared by every process that needs them.** Key-values and
+> collections, with many writers at once.
 
-```bash
-npm install @mirk/store-postgres
-```
+## Why
 
-`pg` and `@mirk/store` are regular dependencies.
+A SQLite file admits one writer at a time. That is fine for one app on one machine. It becomes a
+bottleneck when several servers, workers, or processes all write the same data, and a file on one
+disk cannot be shared across hosts at all.
+
+PostgreSQL is built for that. Its MVCC lets readers and writers proceed together. This adapter
+puts Mirk's key-value and collection interfaces on top of it, so code written against `@mirk/store`
+runs unchanged against a shared database.
+
+What you give up compared with the SQLite file in `@mirk/store`:
+
+- **Every call is async.**
+- **Only key-values and collections.** No vectors, no full-text search, no links.
+- **No atomic batches and no transactions** through the store interface.
+- **You run a Postgres server**, and the role needs permission to create two tables.
+
+## A first look
 
 ```ts
 import { PostgresAdapter } from "@mirk/store-postgres";
@@ -19,9 +31,41 @@ const postgres = await PostgresAdapter.open({
 
 await postgres.kv.set("settings", { theme: "dark" });
 await postgres.kv.put("projects", { id: "mirk", status: "active" });
+await postgres.kv.put("projects", { id: "gonk", status: "paused" });
+
+const active = await postgres.kv.list("projects", { where: { status: "active" } });
+const both = await postgres.kv.listWhereIn("projects", "id", ["mirk", "gonk"]);
 
 await postgres.close();
 ```
+
+## Install
+
+```bash
+npm install @mirk/store-postgres
+```
+
+`pg` and `@mirk/store` are regular dependencies.
+
+## What it covers
+
+| Capability | Covered | Notes |
+| --- | --- | --- |
+| Key-values | yes | `postgres.kv` implements `AsyncStore` |
+| Collections | yes | same facet, plus the optional `AsyncStoreInQuery` capability (`listWhereIn`) |
+| Vectors | no | pgvector is not used |
+| Full-text search | no | PostgreSQL full-text search is not used |
+| Atomic writes | no | no atomic mutation, versioned reads, or transactions |
+
+### Where it differs from the reference
+
+The in-memory and SQLite stores are the reference. This adapter follows them for filtering,
+ordering, and counting (see [Contract semantics](#contract-semantics)). The differences:
+
+- Calls are async.
+- Values and records round-trip through `jsonb`, so they must be JSON-serializable.
+- `keys(prefix)` orders under the database's collation.
+- No vectors, search, or atomic mutation.
 
 ## Connection and ownership
 
@@ -38,7 +82,9 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const postgres = await PostgresAdapter.open({ pool, schema: "mirk" });
 ```
 
-## Physical model
+## Reference
+
+### Physical model
 
 The adapter provisions two fixed tables in the configured schema (default `mirk`) with
 `CREATE ... IF NOT EXISTS`, so the role needs permission to create them unless they already exist:
@@ -53,7 +99,7 @@ mirk.records(collection text, id text, data jsonb not null,
 The schema name is quoted once at construction. Keys, collection names, record IDs, filter fields,
 and values are always bound query parameters; they never become SQL identifiers or create tables.
 
-## Contract semantics
+### Contract semantics
 
 `postgres.kv` implements `AsyncStore` and the optional `AsyncStoreInQuery` capability.
 
@@ -70,7 +116,7 @@ and values are always bound query parameters; they never become SQL identifiers 
 - `count` applies `where` and ignores pagination and sorting. Negative or fractional `limit` and
   `offset` are rejected.
 
-## Not supported
+### Not supported
 
 - Atomic mutation, versioned reads, or transactions.
 - `LISTEN`/`NOTIFY` change streams.
