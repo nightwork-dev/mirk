@@ -48,6 +48,12 @@ class Scenario:
         return [str(capability) for capability in cast(list[Any], value)]
 
     @property
+    def store(self) -> dict[str, Any] | None:
+        """How the scenario's store is built, or ``None`` for the defaults."""
+        value = self.data.get("store")
+        return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+    @property
     def has_assertion(self) -> bool:
         """Whether any step checks a result.
 

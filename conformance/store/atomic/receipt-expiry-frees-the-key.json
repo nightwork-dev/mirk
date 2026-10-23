@@ -1,0 +1,152 @@
+{
+  "id": "store/atomic/receipt-expiry-frees-the-key",
+  "title": "a different request under a key conflicts inside the window and is applied after it",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "store": {
+    "receiptRetentionMs": 60000
+  },
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "job",
+              "value": {
+                "step": 1
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "job-1",
+            "outcome": {
+              "done": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "job"
+              },
+              "version": "conformance-v1"
+            }
+          ],
+          "outcome": {
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "op": "advanceClock",
+      "args": [
+        60000
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "other",
+              "value": 2
+            }
+          ],
+          "idempotency": {
+            "key": "job-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "idempotency-conflict",
+          "key": "job-1",
+          "expectedRequestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653",
+          "receivedRequestDigest": "e549b8df27f544490047314c1e5176a918173c6bd14dbfd5c43779048d2531cd"
+        }
+      }
+    },
+    {
+      "op": "advanceClock",
+      "args": [
+        1
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "other",
+              "value": 2
+            }
+          ],
+          "idempotency": {
+            "key": "job-1"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "e549b8df27f544490047314c1e5176a918173c6bd14dbfd5c43779048d2531cd",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "other"
+              },
+              "version": "conformance-v2"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "job",
+              "value": {
+                "step": 1
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "job-1",
+            "outcome": {
+              "done": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "idempotency-conflict",
+          "key": "job-1",
+          "expectedRequestDigest": "e549b8df27f544490047314c1e5176a918173c6bd14dbfd5c43779048d2531cd",
+          "receivedRequestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653"
+        }
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { StoreFilterError, compareCodePoints } from "@mirk/store";
 import type { AsyncStore, StoreFilter, StoreMeta } from "@mirk/store";
 import type {
   AsyncAtomicMutationStore,
+  AsyncReceiptPruning,
   AtomicCompletedMutationResult,
   AtomicMutationLimits,
   AtomicMutationRequest,
@@ -16,14 +17,18 @@ import {
   IN_PROCESS_ATOMIC_LIMITS,
   canonicalJson,
   cloneJson,
+  isReceiptExpired,
+  RECEIPT_PRUNE_BATCH,
   resolveAtomicLimits,
+  resolveReceiptRetention,
   targetKey,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
 
 /** Version 2 guarantees that every stored key and record has a version row;
- *  opening a version 1 database backfills the missing rows in the upgrade. */
-const DATABASE_VERSION = 2;
+ *  opening a version 1 database backfills the missing rows in the upgrade.
+ *  Version 3 indexes receipts by creation time and stamps older receipts. */
+const DATABASE_VERSION = 3;
 const STORE_KV = "kv";
 const STORE_RECORDS = "records";
 const STORE_VERSIONS = "versions";
@@ -31,6 +36,7 @@ const STORE_RECEIPTS = "receipts";
 const STORE_META = "meta";
 const META_KEY = "state";
 const COLLECTION_INDEX = "collection";
+const RECEIPT_CREATED_INDEX = "createdAt";
 const STORE_NAMES = [
   STORE_KV,
   STORE_RECORDS,
@@ -64,6 +70,9 @@ export interface ReceiptRow {
   key: string;
   requestDigest: string;
   result: AtomicCompletedMutationResult & { status: "applied" };
+  /** When the receipt was written, in milliseconds since the epoch. A backup
+   *  row without it is stamped when it is imported. */
+  createdAt?: number;
 }
 
 export interface MetaRow {
@@ -118,6 +127,13 @@ export interface IndexedDbAdapterOptions {
   versionIdentity?: string;
   /** Injectable factory for an embedding with its own IndexedDB global. */
   indexedDB?: IDBFactory;
+  /** How long, in milliseconds, an idempotency receipt is kept. A request
+   *  whose key matches only an expired receipt is applied as new. Defaults to
+   *  keeping receipts forever. */
+  receiptRetentionMs?: number;
+  /** The clock, in milliseconds since the epoch, that stamps and expires
+   *  idempotency receipts. Defaults to `Date.now`. */
+  now?: () => number;
 }
 
 export type IndexedDbConnectionErrorCode =
@@ -205,7 +221,7 @@ Object.defineProperty(IndexedDbBackupError.prototype, "name", {
   enumerable: false,
 });
 
-export type IndexedDbStore = AsyncStore & AsyncAtomicMutationStore;
+export type IndexedDbStore = AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning;
 
 type Fail = (error: unknown) => void;
 
@@ -242,6 +258,7 @@ export async function openIndexedDbAdapter(
       try {
         ensureSchema(request.result, tx);
         if (event.oldVersion === 1) backfillVersions(tx, versionIdentity);
+        if (event.oldVersion >= 1 && event.oldVersion < 3) stampReceipts(tx, (options.now ?? Date.now)());
       } catch (error) {
         fail(openError(error));
         try {
@@ -274,9 +291,11 @@ export async function openIndexedDbAdapter(
 export class IndexedDbAdapter implements IndexedDbStore {
   readonly meta: StoreMeta = { backend: "indexeddb" };
   readonly atomicLimits: AtomicMutationLimits;
+  readonly receiptRetentionMs: number | undefined;
   readonly kv: IndexedDbStore;
   private unusable: IndexedDbConnectionError | null = null;
   private readonly versionIdentity: string;
+  private readonly now: () => number;
 
   constructor(
     private readonly db: IDBDatabase,
@@ -284,6 +303,8 @@ export class IndexedDbAdapter implements IndexedDbStore {
     options: IndexedDbAdapterOptions,
   ) {
     this.atomicLimits = resolveAtomicLimits(options.atomicLimits, IN_PROCESS_ATOMIC_LIMITS);
+    this.receiptRetentionMs = resolveReceiptRetention(options.receiptRetentionMs);
+    this.now = options.now ?? Date.now;
     this.versionIdentity = options.versionIdentity ?? randomIdentity();
     this.kv = this;
     db.onversionchange = () =>
@@ -447,7 +468,11 @@ export class IndexedDbAdapter implements IndexedDbStore {
   async mutateAtomically(request: AtomicMutationRequest): Promise<AtomicMutationResult> {
     const validated = validateAtomicRequest(request, this.atomicLimits);
     const idempotencyKey = validated.idempotency?.key;
+    const now = idempotencyKey === undefined ? 0 : this.now();
     return this.run(STORE_NAMES, "readwrite", (tx, finish, fail) => {
+      // The receipt under this request's own key is never pruned here: it is
+      // either live or replaced below.
+      if (idempotencyKey !== undefined) this.pruneReceiptBatch(tx, now, fail, idempotencyKey, () => {});
       const reads: IDBRequest[] = [tx.objectStore(STORE_META).get(META_KEY)];
       if (idempotencyKey !== undefined) reads.push(tx.objectStore(STORE_RECEIPTS).get(idempotencyKey));
       for (const condition of validated.conditions) {
@@ -464,7 +489,10 @@ export class IndexedDbAdapter implements IndexedDbStore {
       }
       onAll(reads, fail, (results) => {
         const meta = results[0] as MetaRow | undefined;
-        const receipt = idempotencyKey === undefined ? undefined : (results[1] as ReceiptRow | undefined);
+        const stored = idempotencyKey === undefined ? undefined : (results[1] as ReceiptRow | undefined);
+        const receipt = stored !== undefined && isReceiptExpired(stored.createdAt, now, this.receiptRetentionMs)
+          ? undefined
+          : stored;
         let cursor = idempotencyKey === undefined ? 1 : 2;
 
         if (receipt) {
@@ -560,11 +588,62 @@ export class IndexedDbAdapter implements IndexedDbStore {
             key: idempotencyKey,
             requestDigest: validated.requestDigest,
             result: applied,
+            createdAt: now,
           } satisfies ReceiptRow);
         }
         finish(applied);
       });
     });
+  }
+
+  async pruneExpiredReceipts(): Promise<number> {
+    if (this.receiptRetentionMs === undefined) return 0;
+    let removed = 0;
+    for (;;) {
+      const now = this.now();
+      const batch = await this.run<number>([STORE_RECEIPTS], "readwrite", (tx, finish, fail) => {
+        this.pruneReceiptBatch(tx, now, fail, undefined, finish);
+      });
+      removed += batch;
+      if (batch < RECEIPT_PRUNE_BATCH) return removed;
+    }
+  }
+
+  /** In `tx`, delete at most one batch of receipts that expired by `now`,
+   *  skipping `keep`, and report how many were deleted. */
+  private pruneReceiptBatch(
+    tx: IDBTransaction,
+    now: number,
+    fail: Fail,
+    keep: string | undefined,
+    done: (removed: number) => void,
+  ): void {
+    const retention = this.receiptRetentionMs;
+    if (retention === undefined) {
+      done(0);
+      return;
+    }
+    let removed = 0;
+    const cursor = tx
+      .objectStore(STORE_RECEIPTS)
+      .index(RECEIPT_CREATED_INDEX)
+      .openCursor(IDBKeyRange.upperBound(now - retention, true));
+    cursor.onsuccess = () => {
+      try {
+        const current = cursor.result;
+        if (current === null || removed >= RECEIPT_PRUNE_BATCH) {
+          done(removed);
+          return;
+        }
+        if ((current.value as ReceiptRow).key !== keep) {
+          current.delete();
+          removed += 1;
+        }
+        current.continue();
+      } catch (error) {
+        fail(error);
+      }
+    };
   }
 
   /** Run a synchronous reader against keys, records, and versions read in one
@@ -636,7 +715,10 @@ export class IndexedDbAdapter implements IndexedDbStore {
       for (const row of state.kv) tx.objectStore(STORE_KV).put(row);
       for (const row of state.records) tx.objectStore(STORE_RECORDS).put(row);
       for (const row of [...state.versions, ...backfill.versions]) tx.objectStore(STORE_VERSIONS).put(row);
-      for (const row of state.receipts) tx.objectStore(STORE_RECEIPTS).put(row);
+      const importedAt = this.now();
+      for (const row of state.receipts) {
+        tx.objectStore(STORE_RECEIPTS).put(row.createdAt === undefined ? { ...row, createdAt: importedAt } : row);
+      }
       if (backfill.meta !== undefined) tx.objectStore(STORE_META).put(backfill.meta);
       finish(undefined);
     });
@@ -807,8 +889,26 @@ function ensureSchema(db: IDBDatabase, transaction: IDBTransaction): void {
     }
   }
   if (!db.objectStoreNames.contains(STORE_VERSIONS)) db.createObjectStore(STORE_VERSIONS, { keyPath: "targetKey" });
-  if (!db.objectStoreNames.contains(STORE_RECEIPTS)) db.createObjectStore(STORE_RECEIPTS, { keyPath: "key" });
+  const receipts = db.objectStoreNames.contains(STORE_RECEIPTS)
+    ? transaction.objectStore(STORE_RECEIPTS)
+    : db.createObjectStore(STORE_RECEIPTS, { keyPath: "key" });
+  if (!receipts.indexNames.contains(RECEIPT_CREATED_INDEX)) {
+    receipts.createIndex(RECEIPT_CREATED_INDEX, "createdAt", { unique: false });
+  }
   if (!db.objectStoreNames.contains(STORE_META)) db.createObjectStore(STORE_META, { keyPath: "name" });
+}
+
+/** Stamp every receipt written before receipts carried a creation time, so it
+ *  expires one window after this upgrade. */
+function stampReceipts(tx: IDBTransaction, now: number): void {
+  const cursor = tx.objectStore(STORE_RECEIPTS).openCursor();
+  cursor.onsuccess = () => {
+    const current = cursor.result;
+    if (current === null) return;
+    const row = current.value as ReceiptRow;
+    if (row.createdAt === undefined) current.update({ ...row, createdAt: now });
+    current.continue();
+  };
 }
 
 function assertCollectionName(collection: string): void {
@@ -907,7 +1007,8 @@ export function validateIndexedDbExport(value: unknown): asserts value is Indexe
       !isPlainRecord(row.result) ||
       row.result.status !== "applied" ||
       row.result.requestDigest !== row.requestDigest ||
-      !Array.isArray(row.result.versions)
+      !Array.isArray(row.result.versions) ||
+      !(row.createdAt === undefined || (typeof row.createdAt === "number" && Number.isFinite(row.createdAt)))
     ) {
       throw new IndexedDbBackupError("invalid-row", "Invalid IndexedDB receipt row.");
     }

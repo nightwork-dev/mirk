@@ -1,0 +1,163 @@
+{
+  "id": "store/atomic/receipt-expiry-reevaluates-conditions",
+  "title": "past the window a retried request is evaluated again, so its condition can now conflict",
+  "ports": [
+    "atomic",
+    "kv"
+  ],
+  "capabilities": [],
+  "store": {
+    "receiptRetentionMs": 60000
+  },
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lock"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "lock",
+              "value": "held"
+            }
+          ],
+          "idempotency": {
+            "key": "take-lock"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "4811acf28f5ad02f16e8e94e924e3b96c8918eaf603c5a70ba10ddd51663f6e3",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lock"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lock"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "lock",
+              "value": "held"
+            }
+          ],
+          "idempotency": {
+            "key": "take-lock"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "4811acf28f5ad02f16e8e94e924e3b96c8918eaf603c5a70ba10ddd51663f6e3",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lock"
+              },
+              "version": "conformance-v1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "advanceClock",
+      "args": [
+        60001
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "conditions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "lock"
+              },
+              "expected": "missing"
+            }
+          ],
+          "operations": [
+            {
+              "op": "set",
+              "key": "lock",
+              "value": "held"
+            }
+          ],
+          "idempotency": {
+            "key": "take-lock"
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "conflict",
+          "condition": {
+            "target": {
+              "kind": "key",
+              "key": "lock"
+            },
+            "expected": "missing"
+          },
+          "observed": "present"
+        }
+      }
+    },
+    {
+      "op": "set",
+      "args": [
+        "next",
+        true
+      ]
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "next"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": true,
+          "version": "conformance-v2"
+        }
+      }
+    }
+  ]
+}

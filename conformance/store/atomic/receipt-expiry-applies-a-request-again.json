@@ -1,0 +1,162 @@
+{
+  "id": "store/atomic/receipt-expiry-applies-a-request-again",
+  "title": "past the window the same request is applied again and gets a fresh receipt",
+  "ports": [
+    "atomic"
+  ],
+  "capabilities": [],
+  "store": {
+    "receiptRetentionMs": 60000
+  },
+  "steps": [
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "job",
+              "value": {
+                "step": 1
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "job-1",
+            "outcome": {
+              "done": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "job"
+              },
+              "version": "conformance-v1"
+            }
+          ],
+          "outcome": {
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "op": "advanceClock",
+      "args": [
+        60001
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "job",
+              "value": {
+                "step": 1
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "job-1",
+            "outcome": {
+              "done": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "applied",
+          "requestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "job"
+              },
+              "version": "conformance-v2"
+            }
+          ],
+          "outcome": {
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "op": "getVersioned",
+      "args": [
+        {
+          "kind": "key",
+          "key": "job"
+        }
+      ],
+      "expect": {
+        "value": {
+          "value": {
+            "step": 1
+          },
+          "version": "conformance-v2"
+        }
+      }
+    },
+    {
+      "op": "advanceClock",
+      "args": [
+        60000
+      ]
+    },
+    {
+      "op": "mutateAtomically",
+      "args": [
+        {
+          "operations": [
+            {
+              "op": "set",
+              "key": "job",
+              "value": {
+                "step": 1
+              }
+            }
+          ],
+          "idempotency": {
+            "key": "job-1",
+            "outcome": {
+              "done": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": {
+          "status": "replayed",
+          "requestDigest": "8f4faf7ec7514bde32fb3c46804b5ed23e37c9f67670d908b7b12e9313deb653",
+          "versions": [
+            {
+              "target": {
+                "kind": "key",
+                "key": "job"
+              },
+              "version": "conformance-v2"
+            }
+          ],
+          "outcome": {
+            "done": true
+          }
+        }
+      }
+    }
+  ]
+}
