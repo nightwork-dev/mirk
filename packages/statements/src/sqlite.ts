@@ -27,6 +27,7 @@ import {
 
 export type StatementStoreErrorCode =
   | "missing-database-path"
+  | "missing-coordinator"
   | "missing-required-field"
   | "terminal-initial-status"
   | "invalid-status-transition"
@@ -56,7 +57,7 @@ Object.defineProperty(StatementStoreError.prototype, "name", {
 });
 
 export interface SqliteStatementStoreOptions {
-  readonly path: string;
+  readonly path?: string;
   readonly db?: Database.Database;
   readonly coordinator?: AsyncCoordinator;
   readonly authority: StatementAdmissionAuthority;
@@ -102,16 +103,20 @@ export class SqliteStatementStore {
   readonly #receiptIdFactory: () => string;
 
   constructor(options: SqliteStatementStoreOptions) {
-    if (!options.path)
+    const { db, path, coordinator } = options;
+    if (!db && !path)
       throw new StatementStoreError("missing-database-path", "SqliteStatementStore requires a database path.");
-    this.#ownsDb = options.db === undefined;
-    this.#db =
-      options.db ??
-      new Database(options.path, { timeout: options.busyTimeoutMs ?? 30_000 });
+    if (db && !path && !coordinator)
+      throw new StatementStoreError(
+        "missing-coordinator",
+        "SqliteStatementStore given an open database needs either a path (for its default coordinator) or a coordinator."
+      );
+    this.#ownsDb = db === undefined;
+    this.#db = db ?? new Database(path as string, { timeout: options.busyTimeoutMs ?? 30_000 });
     this.#coordinator =
-      options.coordinator ??
+      coordinator ??
       createSqliteCoordinator({
-        path: options.path,
+        path: path as string,
         namespace: "mirk-statements",
         busyTimeoutMs: options.busyTimeoutMs,
       });
@@ -280,8 +285,21 @@ export class SqliteStatementStore {
     }
     appendIn(where, params, "r.status", query.statuses);
     appendIn(where, params, "r.modality", query.modalities);
+    if (query.sourceIds?.length) {
+      where.push(
+        `EXISTS (SELECT 1 FROM json_each(r.source_ids_json) WHERE value IN (${query.sourceIds.map(() => "?").join(", ")}))`
+      );
+      params.push(...query.sourceIds);
+    }
     if (query.validAt) {
-      where.push("r.valid_from_key <= ?", "r.valid_to_key >= ?");
+      // Anchor bounds (`before:` / `after:`) name events, not times, so they
+      // cannot be ordered against an instant: only instant bounds match.
+      where.push(
+        "substr(r.valid_from_key, 1, 8) = 'instant:'",
+        "substr(r.valid_to_key, 1, 8) = 'instant:'",
+        "r.valid_from_key <= ?",
+        "r.valid_to_key >= ?"
+      );
       params.push(`instant:${query.validAt}`, `instant:${query.validAt}`);
     }
     if (query.recordedFrom) {
@@ -305,12 +323,7 @@ export class SqliteStatementStore {
          LIMIT ${limit}`
       )
       .all(...params) as RevisionRow[];
-    const records = rows.map(recordFromRow);
-    if (!query.sourceIds?.length) return records;
-    const sourceSet = new Set(query.sourceIds);
-    return records.filter((record) =>
-      record.provenance.sources.some((source) => sourceSet.has(source.sourceId))
-    );
+    return rows.map(recordFromRow);
   }
 
   beginBackfill(

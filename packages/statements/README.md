@@ -131,8 +131,10 @@ current Node runtimes. ESM only. Use Node 22.23.4+, 24.22.1+, or 26.12.1+.
 A **lens** (`StatementLensQuery`) picks claims by `worldId` and `branchId` (required) and optionally
 by `contextKind`, `actorInstanceId`, `statuses`, `modalities`, `sourceIds`, `validAt`,
 `recordedFrom`, `recordedTo`, and `limit`. Results are newest-recorded first, with ties broken by
-statement id. `limit` defaults to 100. `sourceIds` is applied after `limit`, so a lens that filters
-by source can return fewer than `limit` rows even when more match.
+statement id. `limit` defaults to 100. Every filter, `sourceIds` included, applies before `limit`.
+`validAt` compares instants only: a statement whose `validTime` has a `before` or `after` anchor
+bound on either end names an event, not a time, so no `validAt` lens returns it. It is still
+returned by lenses without `validAt`.
 
 ## Two kinds of safety
 
@@ -177,10 +179,10 @@ same options.
 
 | Option           | Default                                       | Meaning                                                              |
 | ---------------- | --------------------------------------------- | -------------------------------------------------------------------- |
-| `path`           | required                                      | Database file. Empty throws `missing-database-path`.                 |
+| `path`           | required unless `db` is given                 | Database file. Missing with no `db` throws `missing-database-path`.  |
 | `authority`      | required                                      | Your admission rule (see below).                                     |
 | `db`             | opens `path`                                  | An open `better-sqlite3` database to use instead.                    |
-| `coordinator`    | a SQLite coordinator on `path`, namespace `mirk-statements` | Where admission serialization runs.                    |
+| `coordinator`    | a SQLite coordinator on `path`, namespace `mirk-statements` | Where admission serialization runs. Required when `db` is given without `path` (`missing-coordinator`); the default coordinator opens its own connection to `path`. |
 | `busyTimeoutMs`  | 30000                                         | How long SQLite waits on a locked file.                              |
 | `now`            | `() => new Date()`                            | Clock for migration and backfill timestamps.                         |
 | `receiptIdFactory` | `receipt:<uuid>`                            | Makes receipt ids.                                                   |
@@ -226,7 +228,7 @@ replay like commits do.
 ### Errors
 
 Invalid input throws `StatementStoreError`, with a `code` of `missing-database-path`,
-`missing-required-field`, `terminal-initial-status`, `invalid-status-transition`, `world-mismatch`,
+`missing-coordinator`, `missing-required-field`, `terminal-initial-status`, `invalid-status-transition`, `world-mismatch`,
 `branch-mismatch`, `missing-actor-instance`, `unexpected-actor-instance`,
 `missing-provenance-source`, or `missing-admission-receipt`. Input checks that fail before the
 write leave the store unchanged.
