@@ -3,6 +3,7 @@ import { Surreal, createRemoteEngines } from "surrealdb";
 import { createNodeEngines } from "@surrealdb/node";
 
 import { SurrealConnection } from "../src/index.js";
+import { collectionTable } from "../src/internal/identifiers.js";
 import { SurrealIdentifierError, SurrealStoreAdapter, SurrealValueError } from "../src/store.js";
 
 interface Project {
@@ -220,6 +221,52 @@ describe("SurrealStoreAdapter (AsyncStore)", () => {
 
     expect(rows.map((r) => r.id)).toEqual(["p2"]);
     expect(queryCount).toBe(1);
+  });
+
+  it("records written before insertion ordinals load first, in id order, and keep their place", async () => {
+    const table = collectionTable("legacy");
+    const writeTheOldWay = (item: { id: string; [key: string]: unknown }) =>
+      connection.query("UPSERT type::record($table, $id) CONTENT { mirk_id: $id, data: $data }", {
+        table,
+        id: item.id,
+        data: item,
+      });
+    expect(await store.count("legacy")).toBe(0);
+    await writeTheOldWay({ id: "old-c", rank: 1 });
+    await writeTheOldWay({ id: "old-a", rank: 1 });
+    await connection.query("UPSERT type::record($table, 'odd') CONTENT { mirk_id: 'odd', mirk_ordinal: 'x', data: { id: 'odd', rank: 1 } }", { table });
+    await store.put("legacy", { id: "new-z", rank: 1 });
+    await store.put("legacy", { id: "new-b", rank: 1 });
+
+    const ids = async (filter?: Parameters<typeof store.list>[1]) =>
+      (await store.list<{ id: string }>("legacy", filter)).map((row) => row.id);
+    expect(await ids()).toEqual(["odd", "old-a", "old-c", "new-z", "new-b"]);
+    expect(await ids({ sortBy: "rank", sortDir: "desc" })).toEqual(["odd", "old-a", "old-c", "new-z", "new-b"]);
+
+    await store.put("legacy", { id: "old-c", rank: 2 });
+    expect(await ids()).toEqual(["odd", "old-a", "old-c", "new-z", "new-b"]);
+    expect(await store.getById("legacy", "old-c")).toEqual({ id: "old-c", rank: 2 });
+    expect(await store.count("legacy")).toBe(5);
+  });
+
+  it("a plain overwrite of a record that held a lone surrogate drops the codec marker", async () => {
+    await store.put("codec", { id: "a", text: "x\udc00y" });
+    expect(await store.getById("codec", "a")).toEqual({ id: "a", text: "x\udc00y" });
+    expect(await store.list("codec", { where: { text: "x\udc00y" } })).toHaveLength(1);
+    await store.put("codec", { id: "a", text: "plain" });
+    expect(await store.getById("codec", "a")).toEqual({ id: "a", text: "plain" });
+    const raw = await connection.query<unknown[][]>("SELECT * FROM type::table($table)", {
+      table: collectionTable("codec"),
+    });
+    expect(raw[0]?.[0]).not.toHaveProperty("mirk_codec");
+  });
+
+  it("concurrent puts all land and list in a single deterministic order", async () => {
+    const ids = Array.from({ length: 50 }, (_, index) => `k${index}`);
+    await Promise.all(ids.map((id) => store.put("burst", { id })));
+    const first = (await store.list<{ id: string }>("burst")).map((row) => row.id);
+    expect([...first].sort()).toEqual([...ids].sort());
+    expect((await store.list<{ id: string }>("burst")).map((row) => row.id)).toEqual(first);
   });
 
   it("adapters do not close the shared connection", async () => {
