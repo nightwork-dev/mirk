@@ -437,8 +437,9 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
       )
     );
 
-    if (ROOT_BOUNDARIES.has(packageInfo.manifest.name)) {
-      checkRootDependencyBoundary(
+    const remoteBoundary = packageInfo.manifest.name === "@mirk/store-libsql";
+    if (ROOT_BOUNDARIES.has(packageInfo.manifest.name) || remoteBoundary) {
+      checkDependencyBoundary(
         packageInfo.manifest.name,
         extracted,
         packedManifest,
@@ -446,8 +447,10 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
       );
       checks.push(
         passed(
-          "root-dependency-boundary",
-          "root runtime graph is free of Node-only/native adapter dependencies"
+          remoteBoundary ? "remote-dependency-boundary" : "root-dependency-boundary",
+          remoteBoundary
+            ? "remote export selects the web client without importing the local driver"
+            : "root runtime graph is free of Node-only/native adapter dependencies"
         )
       );
     } else {
@@ -867,7 +870,7 @@ function assertPackedTarget(extracted, target, label) {
   }
 }
 
-function checkRootDependencyBoundary(
+function checkDependencyBoundary(
   packageName,
   extracted,
   manifest,
@@ -875,18 +878,17 @@ function checkRootDependencyBoundary(
 ) {
   if (packageName === "@mirk/store-libsql") {
     const remoteTarget = exportTarget(manifest.exports?.["./remote"]);
-    if (remoteTarget) {
-      const remoteFiles = reachableRuntimeFiles(resolve(extracted, remoteTarget), extracted);
-      const imports = remoteFiles.flatMap((file) => [...readFileSync(file, "utf8").matchAll(
-        /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["']([^"']+)["']/g
-      )].map((match) => match[1]));
-      const forbidden = imports.filter((name) =>
-        ["@libsql/client", "@libsql/client/node", "@libsql/client/sqlite3", "libsql"].includes(name)
-        || name.startsWith("libsql/") || /^@libsql\/(darwin|linux|win32)-/.test(name)
-      );
-      if (forbidden.length) throw new Error(`${packageName}: remote export reaches native driver ${forbidden.join(", ")}`);
-      if (!imports.includes("@libsql/client/web")) throw new Error(`${packageName}: remote export does not use the web client`);
-    }
+    if (!remoteTarget) throw new Error(`${packageName}: remote export is missing`);
+    const remoteFiles = reachableRuntimeFiles(resolve(extracted, remoteTarget), extracted);
+    const imports = remoteFiles.flatMap((file) => [...readFileSync(file, "utf8").matchAll(
+      /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["']([^"']+)["']/g
+    )].map((match) => match[1]));
+    const forbidden = imports.filter((name) =>
+      ["@libsql/client", "@libsql/client/node", "@libsql/client/sqlite3", "libsql"].includes(name)
+      || name.startsWith("libsql/") || /^@libsql\/(darwin|linux|win32)-/.test(name)
+    );
+    if (forbidden.length) throw new Error(`${packageName}: remote export reaches native driver ${forbidden.join(", ")}`);
+    if (!imports.includes("@libsql/client/web")) throw new Error(`${packageName}: remote export does not use the web client`);
   }
   const rule = ROOT_BOUNDARIES.get(packageName);
   if (!rule) return;

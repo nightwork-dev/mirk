@@ -53,6 +53,50 @@ describe.each([
     }
   });
 
+  it.each(["deferred", "immediate", "exclusive"] as const)(
+    "rejects Promise results and rolls back %s transactions",
+    (mode) => {
+      const adapter = new Adapter({ path: ":memory:" });
+      try {
+        for (const result of [Promise.resolve("done"), { then() {} }]) {
+          expect(() => adapter.transaction(() => {
+            adapter.kv.set("uncommitted", true);
+            return result;
+          }, mode)).toThrow("Transaction function cannot return a promise");
+          expect(adapter.kv.get("uncommitted")).toBeNull();
+          expect(adapter.inspect().transactionState).toBe("none");
+        }
+      } finally {
+        adapter.close();
+      }
+    },
+  );
+
+  it.each(["deferred", "immediate", "exclusive"] as const)(
+    "rolls back Promise results to a %s savepoint without aborting the outer transaction",
+    (mode) => {
+      const adapter = new Adapter({ path: ":memory:" });
+      try {
+        adapter.transaction(() => {
+          adapter.kv.set("outer-before", true);
+          for (const result of [Promise.resolve("done"), { then() {} }]) {
+            expect(() => adapter.transaction(() => {
+              adapter.kv.set("uncommitted", true);
+              return result;
+            }, mode)).toThrow("Transaction function cannot return a promise");
+            expect(adapter.kv.get("uncommitted")).toBeNull();
+          }
+          adapter.kv.set("outer-after", true);
+        });
+        expect(adapter.kv.get("outer-before")).toBe(true);
+        expect(adapter.kv.get("outer-after")).toBe(true);
+        expect(adapter.inspect().transactionState).toBe("none");
+      } finally {
+        adapter.close();
+      }
+    },
+  );
+
   it("reports configuration and does not disclose the path by default", () => {
     const path = tempDb("inspect");
     const adapter = new Adapter({ path, busyTimeoutMs: 237 });

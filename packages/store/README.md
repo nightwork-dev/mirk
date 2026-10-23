@@ -363,7 +363,8 @@ Every connection the adapter opens or receives is switched to WAL with foreign k
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter connection.
 Modes are `deferred` (default), `immediate`, and `exclusive`. The callback must not perform
 asynchronous or external work. This helper is SQLite-local; the portable contract is
-`mutateAtomically`.
+`mutateAtomically`. The built-in SQLite adapter rejects callbacks that return a Promise or thenable
+and rolls back their synchronous writes.
 
 ### Several processes, one file
 

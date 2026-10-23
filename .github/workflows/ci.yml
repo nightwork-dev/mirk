@@ -57,6 +57,9 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      - name: Test release verification
+        run: pnpm test:release-checks
+
       - name: Test supported adapters
         run: |
           if [ "${{ matrix.node }}" = "22.23.4" ]; then
