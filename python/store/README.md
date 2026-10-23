@@ -83,9 +83,19 @@ log.lastSequence("deliveries")  # 1
 ```
 
 `InMemoryLogStore` is the in-memory reference; its `transaction()` context
-manager undoes the appends made inside a block that raises. On SQLite, an
-append inside a transaction already open on the connection joins it and rolls
-back with it, and a rolled-back append's sequence goes to the next append. The
+manager undoes the appends made inside a block that raises. The block belongs
+to the asyncio task (or, outside an event loop, the thread) that opened it:
+while it is open, any call from another task or thread raises
+`LogTransactionError`, so an `await` inside the block cannot let another task's
+appends be rolled back with it.
+
+On SQLite, an append inside a transaction already open on the connection joins
+it and rolls back with it, and a rolled-back append's sequence goes to the next
+append. A transaction that reads and then appends should start with
+`BEGIN IMMEDIATE`, for the reason the TypeScript README gives; an append that
+cannot get the write lock raises `AtomicMutationBackendError` with code
+`unavailable` and `retryable` true. Sequences, `after` and `limit` accept an
+integral float such as `2.0`, as TypeScript does, and return `int`. The
 facet reads and writes the same `_mirk_log` table as the TypeScript adapter, so
 either language can continue a log the other wrote. The guarantees and limits
 are in the [`@mirk/store` README](../../packages/store/README.md#append-only-log).
