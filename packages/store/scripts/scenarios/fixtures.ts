@@ -583,6 +583,21 @@ export const scenarios = [
       },
     ],
   ),
+  scenario(
+    "layering/unresolved-reference-names-first-failed-file-in-code-point-order",
+    "when two broken map documents could hold the target, the unresolved-reference names the one that sorts first",
+    {
+      types: [type("palette", "palettes", { document: { kind: "map" } }), type("theme", "themes")],
+      sources: [
+        memory("pack", 0, {
+          "palettes/b.json": [],
+          "palettes/a.json": [],
+          "themes/t.json": { p: { $ref: "palette:red" } },
+        }),
+      ],
+    },
+    [{ op: "validateDiagnostics", args: [], expect: value }],
+  ),
 
   // ── Merge strategies ───────────────────────────────────────
   ...(

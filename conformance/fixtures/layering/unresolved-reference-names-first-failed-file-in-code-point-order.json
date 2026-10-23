@@ -1,0 +1,73 @@
+{
+  "id": "fixtures/layering/unresolved-reference-names-first-failed-file-in-code-point-order",
+  "title": "when two broken map documents could hold the target, the unresolved-reference names the one that sorts first",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "palette",
+              "directory": "palettes",
+              "document": {
+                "kind": "map"
+              }
+            },
+            {
+              "type": "theme",
+              "directory": "themes"
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "pack",
+              "priority": 0,
+              "files": {
+                "palettes/b.json": "[]",
+                "palettes/a.json": "[]",
+                "themes/t.json": "{\"p\":{\"$ref\":\"palette:red\"}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "validateDiagnostics",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "fixture": "palette",
+            "severity": "error",
+            "code": "invalid-map-document",
+            "message": "Fixture map documents must parse to an object keyed by fixture id.",
+            "source": "pack",
+            "path": "palettes/a.json"
+          },
+          {
+            "fixture": "palette",
+            "severity": "error",
+            "code": "invalid-map-document",
+            "message": "Fixture map documents must parse to an object keyed by fixture id.",
+            "source": "pack",
+            "path": "palettes/b.json"
+          },
+          {
+            "severity": "warning",
+            "code": "unresolved-reference",
+            "message": "Referenced fixture \"palette:red\" could not be checked: it may be defined in \"palettes/a.json\" (source \"pack\"), which failed to load.",
+            "fixture": "theme:t",
+            "fieldPath": "p"
+          }
+        ]
+      }
+    }
+  ]
+}
