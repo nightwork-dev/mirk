@@ -151,6 +151,14 @@ Rules:
   and the corpus pins allocation itself: the sequence starts at 1 per store,
   every `set`/`put` consumes one value, `delete`/`remove` consume none, and a
   conflict or a rejected request consumes none.
+- **Store options and the clock.** A store scenario may carry a top-level
+  `store` object, `{"receiptRetentionMs": <positive integer>}`. Runners build
+  the scenario's store with that receipt window and a manual clock that starts
+  at 1767225600000 (2026-01-01T00:00:00Z) and moves only through the
+  `advanceClock(ms)` op, which returns `null`. A scenario without `store` uses
+  the defaults and has no `advanceClock` op. The receipt expiry scenarios
+  (`store/atomic/receipt-*`) use this, and `pruneExpiredReceipts()` is an
+  ordinary store op.
 - Backends are not selectable per scenario. A behavior that differs between
   memory and SQLite is a bug in one of them, not a corpus option.
 

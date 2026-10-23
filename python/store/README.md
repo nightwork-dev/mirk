@@ -40,6 +40,32 @@ store.close()
 Method names keep the TypeScript camelCase spelling (`getById`, `listWhereIn`)
 so a corpus `op` string dispatches identically in both languages.
 
+## Idempotency receipt expiry
+
+Both stores keep every idempotency receipt forever by default. Pass
+`receipt_retention_ms` to let receipts expire, and `now` (milliseconds since
+the epoch; wall time by default) to inject a clock:
+
+```python
+store = SqliteStore("data.db", receipt_retention_ms=7 * 24 * 60 * 60 * 1000)
+store.pruneExpiredReceipts()  # how many expired receipts were deleted
+```
+
+The rules match the TypeScript stores and are pinned by the corpus. A receipt
+is live while its age is at most the window and expired once its age is
+greater; a replay does not renew it. A request whose key matches only an
+expired receipt is evaluated and applied as new, and gets a fresh receipt. An
+atomic write with an idempotency key first deletes at most
+`RECEIPT_PRUNE_BATCH` (100) expired receipts; `pruneExpiredReceipts()` deletes
+the rest, one transaction per batch. A receipt without a creation time, written
+by an earlier release, is stamped with the current time when a store with a
+window first prunes, so it expires one full window later.
+
+**The window must be longer than the longest time a caller may retry or
+reconcile a request**: a retry after it applies the mutation again. A host that
+reconciles old receipts after an expired job lease should leave expiry off or
+use a window of days.
+
 ## Threads and transactions
 
 One connection per thread; sync by design. `SqliteStore` is thread-affine, the
