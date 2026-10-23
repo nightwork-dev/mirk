@@ -6,9 +6,9 @@ import * as blob from "@vercel/blob";
 import type {
   ByteSource,
   ByteStream,
+  ListableObjectStore,
   ObjectInfo,
   ObjectPutOptions,
-  ObjectStore,
 } from "@mirk/artifact";
 import {
   assertObjectKey,
@@ -17,8 +17,45 @@ import {
   ObjectWriteIndeterminateError,
 } from "@mirk/artifact";
 
-/** The four SDK calls the adapter makes. Tests and wrappers can supply their own. */
-export type VercelBlobSdk = Pick<typeof blob, "put" | "get" | "head" | "del">;
+/** The SDK calls the adapter makes. Tests and wrappers can supply their own. */
+export type VercelBlobSdk = Pick<typeof blob, "put" | "get" | "head" | "del" | "list">;
+
+export type VercelBlobObjectStoreErrorCode = "missing-etag";
+
+/** Thrown when the adapter refuses an operation it cannot perform safely. */
+export class VercelBlobObjectStoreError extends Error {
+  declare readonly name: "VercelBlobObjectStoreError";
+  constructor(readonly code: VercelBlobObjectStoreErrorCode, message: string) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+Object.defineProperty(VercelBlobObjectStoreError.prototype, "name", {
+  value: "VercelBlobObjectStoreError",
+  writable: true,
+  configurable: true,
+  enumerable: false,
+});
+
+/** The service's refusal of an `allowOverwrite: false` upload to an existing
+ *  pathname. The SDK reports it as a plain `BlobError`. */
+function isExistingPathRefusal(error: unknown): boolean {
+  return error instanceof blob.BlobError && /already exists/i.test(error.message);
+}
+
+/** Refusals of the request itself. The service rejects every attempt of such a
+ *  request the same way, so none of its bytes were stored. */
+function isRequestRefusal(error: unknown): boolean {
+  return (
+    error instanceof blob.BlobAccessError ||
+    error instanceof blob.BlobStoreNotFoundError ||
+    error instanceof blob.BlobStoreSuspendedError ||
+    error instanceof blob.BlobContentTypeNotAllowedError ||
+    error instanceof blob.BlobFileTooLargeError ||
+    error instanceof blob.BlobPathnameMismatchError ||
+    error instanceof blob.BlobClientTokenExpiredError
+  );
+}
 
 export interface VercelBlobObjectStoreOptions {
   /** A read-write token. Omit it to let the SDK use managed Vercel OIDC credentials. */
@@ -29,11 +66,13 @@ export interface VercelBlobObjectStoreOptions {
   /** Limit for each SDK request, including its retries and a streamed download.
    *  Defaults to 10 seconds. */
   timeoutMs?: number;
+  /** Objects per `list` request. Defaults to 1000, the service maximum. */
+  listPageSize?: number;
   sdk?: VercelBlobSdk;
 }
 
 /** An `ObjectStore` on private Vercel Blob objects at deterministic keys. */
-export class VercelBlobObjectStore implements ObjectStore {
+export class VercelBlobObjectStore implements ListableObjectStore {
   private readonly sdk: VercelBlobSdk;
   private readonly maxBytes: number;
 
@@ -63,6 +102,7 @@ export class VercelBlobObjectStore implements ObjectStore {
     if (options.ifAbsent && (await this.head(key))) throw new ObjectAlreadyExistsError(key);
     let sizeBytes = 0;
     let consumed = false;
+    let sourceError: { error: unknown } | undefined;
     const iterator = chunks(bytes)[Symbol.asyncIterator]();
     const stream = new ReadableStream<Uint8Array>(
       {
@@ -80,6 +120,7 @@ export class VercelBlobObjectStore implements ObjectStore {
             }
             controller.enqueue(next.value);
           } catch (error) {
+            sourceError = { error };
             controller.error(error);
           }
         },
@@ -101,9 +142,17 @@ export class VercelBlobObjectStore implements ObjectStore {
       return { key, sizeBytes, mediaType: result.contentType, etag: result.etag };
     } catch (error) {
       await iterator.return?.().catch(() => undefined);
-      // The SDK has no typed duplicate-path error, and a reply can be lost after
-      // the upload landed. Deleting here could remove another writer's object,
-      // so every failed upload is reported as indeterminate.
+      // The body failed before it was complete, so the upload never finished.
+      if (sourceError) throw sourceError.error;
+      // A stream body is sent once: the SDK cannot replay it on a retry, so a
+      // refusal of the existing pathname answers this upload, not an earlier
+      // attempt of it. Our bytes did not land.
+      if (options.ifAbsent && isExistingPathRefusal(error)) {
+        throw new ObjectAlreadyExistsError(key);
+      }
+      if (isRequestRefusal(error)) throw error;
+      // Anything else may have failed after the bytes reached the service,
+      // such as a lost reply. Deleting could remove another writer's object.
       throw new ObjectWriteIndeterminateError(key, { cause: error });
     }
   }
@@ -148,13 +197,52 @@ export class VercelBlobObjectStore implements ObjectStore {
     }
   }
 
-  /** Deletes only the version observed by `head`, so a concurrent overwrite
-   *  survives and surfaces as the SDK's precondition error. */
+  /** Deletes only the version observed by `head`. Returns `false` when there
+   *  is nothing to delete: the key is missing, another deleter won, or a
+   *  concurrent overwrite replaced the object, which is kept. */
   async delete(key: string): Promise<boolean> {
     assertObjectKey(key);
     const prior = await this.head(key);
     if (!prior) return false;
-    await this.sdk.del(key, { ...this.request(), ...(prior.etag ? { ifMatch: prior.etag } : {}) });
+    if (!prior.etag) {
+      throw new VercelBlobObjectStoreError(
+        "missing-etag",
+        `Refusing to delete ${key}: the service returned no ETag to make the delete conditional`,
+      );
+    }
+    try {
+      await this.sdk.del(key, { ...this.request(), ifMatch: prior.etag });
+    } catch (error) {
+      if (error instanceof blob.BlobNotFoundError || error instanceof blob.BlobPreconditionFailedError) {
+        return false;
+      }
+      throw error;
+    }
     return true;
+  }
+
+  /** Every object under `prefix`, in key order, across as many pages as needed. */
+  async list(prefix = ""): Promise<readonly ObjectInfo[]> {
+    if (prefix) assertObjectKey(prefix);
+    const objects: ObjectInfo[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await this.sdk.list({
+        ...this.request(),
+        limit: this.options.listPageSize ?? 1000,
+        ...(prefix ? { prefix } : {}),
+        ...(cursor ? { cursor } : {}),
+      });
+      for (const item of page.blobs) {
+        objects.push({
+          key: item.pathname,
+          sizeBytes: item.size,
+          etag: item.etag,
+          lastModifiedAt: item.uploadedAt.getTime(),
+        });
+      }
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    return objects.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   }
 }

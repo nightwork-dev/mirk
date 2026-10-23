@@ -120,7 +120,14 @@ export class ArtifactCoordinator {
       let sizeBytes: number | undefined;
       let info: Awaited<ReturnType<ObjectStore["put"]>>;
       const preexistingObject = await this.objects.head(objectKey);
-      try {
+      const adopted =
+        preexistingObject && !(await this.#hasObjectReference(objectKey))
+          ? await this.#adoptLeftOverObject(objectKey, input)
+          : undefined;
+      if (adopted) {
+        ({ digest, sizeBytes } = adopted);
+        info = { ...preexistingObject!, sizeBytes: adopted.sizeBytes };
+      } else try {
         info = await this.objects.put(
           objectKey,
           hashingStream(input.bytes, (nextDigest, nextSize) => {
@@ -594,6 +601,30 @@ export class ArtifactCoordinator {
           prior.idempotencyKey ?? ""
         }`
       );
+  }
+
+  /** An object at a fresh write's key that no record references is left over
+   *  from an earlier write that did not finish, typically one whose outcome
+   *  was indeterminate under a deterministic id. Identical bytes are adopted;
+   *  different bytes are never overwritten or deleted here. */
+  async #adoptLeftOverObject(
+    objectKey: string,
+    input: WriteArtifactInput
+  ): Promise<{ digest: StoredArtifactRecord["digest"]; sizeBytes: number }> {
+    const existing = await this.objects.get(objectKey);
+    const mine = await digestStream(input.bytes);
+    const theirs = existing ? await digestStream(existing) : undefined;
+    if (
+      theirs &&
+      theirs.sizeBytes === mine.sizeBytes &&
+      theirs.digest.value === mine.digest.value
+    )
+      return mine;
+    throw new ArtifactOperationError(
+      "object-key-occupied",
+      "an unreferenced object with different bytes occupies this artifact's object key; " +
+        "remove it with ArtifactMaintenance (audit, planRepair, delete-unreferenced-object) or write under a new id"
+    );
   }
 
   async #deleteOwnedObject(objectKey: string): Promise<boolean> {

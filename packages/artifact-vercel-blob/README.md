@@ -59,6 +59,7 @@ new VercelBlobObjectStore({
   storeId,    // the Blob store, when the credentials do not imply one
   maxBytes,   // largest object put accepts; default 16 MiB
   timeoutMs,  // limit for each SDK request, including retries and a streamed download; default 10 s
+  listPageSize, // objects per list request; default 1000
 });
 ```
 
@@ -67,28 +68,41 @@ The constructor throws a `RangeError` unless `maxBytes` is a positive safe integ
 ## Behavior
 
 - Every object uses `access: "private"` with no random suffix, so the key is the Blob pathname.
-- `put` streams the source and fails when it exceeds `maxBytes`. `ifAbsent: true` refuses an
-  existing key with `ObjectAlreadyExistsError`, and the upload itself refuses to overwrite.
-  Without `ifAbsent`, `put` overwrites.
+- `put` streams the source and fails with a `RangeError` when it exceeds `maxBytes`; the upload
+  never completes. `ifAbsent: true` refuses an existing key with `ObjectAlreadyExistsError`, both
+  before the upload and when the service refuses to overwrite a key another writer created
+  meanwhile. Without `ifAbsent`, `put` overwrites.
 - `put` rejects arbitrary `metadata`. Keep metadata in the artifact repository.
 - `get` reads from origin (`useCache: false`), so a read after a write sees the new bytes.
-- `delete` removes only the version it observed. If the object changed in between, the SDK's
-  `BlobPreconditionFailedError` propagates and the newer object stays.
+- `delete` removes only the version it observed, with the ETag as a precondition. It returns
+  `false` when nothing was deleted: the key is missing, another deleter won, or a concurrent
+  overwrite replaced the object, which stays. Like the other object stores, it reports races as
+  `false`, not as errors. If the service returns no ETag, `delete` refuses with
+  `VercelBlobObjectStoreError` (`code: "missing-etag"`) instead of deleting unconditionally.
+- `list(prefix)` returns every object under the prefix in key order, paging through the service,
+  so `@mirk/artifact/maintenance` can audit the store completely.
 
 ## Uncertain uploads
 
-A remote upload can succeed and lose its reply, and the SDK has no typed error for losing an
-`ifAbsent` race. When an upload fails, the adapter cannot tell whether the bytes at the key are its
-own, so it throws `ObjectWriteIndeterminateError` and deletes nothing. `ArtifactCoordinator` then
-fails the write with `cleanup: "preserved-indeterminate"` and creates no record. The cost is a
-possible orphaned object, which `@mirk/artifact/maintenance` can find; the alternative would be
-deleting bytes another writer owns.
+A remote upload can succeed and lose its reply. When an upload fails in a way that does not prove
+the bytes stayed out (a network failure, a timeout, a server error), the adapter cannot tell
+whether the object at the key is its own, so it throws `ObjectWriteIndeterminateError` and deletes
+nothing. `ArtifactCoordinator` then fails the write with `cleanup: "preserved-indeterminate"` and
+creates no record. A retry that writes the same bytes under the same id adopts the object, and
+`@mirk/artifact/maintenance` finds any other leftover and removes it with
+`delete-unreferenced-object`.
+
+These failures prove nothing landed and are reported as themselves: a source over `maxBytes`,
+the service refusing to overwrite an existing key (`ObjectAlreadyExistsError`), and refusals of the
+request itself such as `BlobAccessError`, `BlobStoreNotFoundError`, or `BlobFileTooLargeError`.
+The overwrite refusal is recognized by the SDK's message, because the SDK has no typed error for
+it; the body is a stream the SDK sends once, so the refusal cannot be the answer to a retry of an
+upload that already landed.
 
 ## Contract boundaries
 
-This package implements only the `ObjectStore` byte port. It does not list objects, so
-maintenance audits over it are partial. It has no browser upload, client token, or webhook
-surface.
+This package implements only the `ListableObjectStore` byte port. It has no browser upload,
+client token, or webhook surface.
 
 ## License
 
