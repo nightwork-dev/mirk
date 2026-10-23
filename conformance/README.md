@@ -154,6 +154,9 @@ Rules:
 - Backends are not selectable per scenario. A behavior that differs between
   memory and SQLite is a bug in one of them, not a corpus option.
 
+TypeScript replays shared-store scenarios on memory, better-sqlite3, and built-in
+Node SQLite. Python replays them on memory and stdlib SQLite.
+
 ## Ports and capabilities are hard gates
 
 A runner that cannot satisfy a scenario's `ports` or `capabilities` reports the
@@ -171,7 +174,7 @@ both a typo in `ports` and a capability that stopped loading.
   scenarios; scenario inputs use the specific store port names.
 - `hash` binds a pure target with no backend behind it: `canonicalJson`,
   `canonicalDigest`, `sha256Hex(text)` and `sha256Bytes(bytes)`. A hash scenario
-  still runs on both shared-store backends so the matrix checks dispatch.
+  still runs on every selected backend so the matrix checks dispatch.
 - `fixtures` binds an authored-data loader over the backend store, described
   below. `artifact` binds the artifact lifecycle coordinator over the backend
   store and an object store. An unsatisfiable port on a selected backend is a

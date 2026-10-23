@@ -30,7 +30,7 @@ const execFileAsync = promisify(execFile);
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const ROOT_BOUNDARIES = new Map([
-  ["@mirk/store", { forbidden: ["better-sqlite3", "sqlite-vec"] }],
+  ["@mirk/store", { forbidden: ["better-sqlite3", "sqlite-vec", "node:sqlite"] }],
   [
     "@mirk/fixtures",
     { forbidden: ["node:fs", "node:path", "node:url", "node:module"] },
@@ -893,6 +893,19 @@ function checkRootDependencyBoundary(
   // only from an explicitly non-root export. This catches an accidental
   // barrel re-export while leaving adapter packages free to own their backend.
   if (packageName === "@mirk/store") {
+    const nodeSqliteTarget = exportTarget(manifest.exports?.["./node-sqlite"]);
+    if (nodeSqliteTarget) {
+      const nodeSqliteFiles = reachableRuntimeFiles(
+        resolve(extracted, nodeSqliteTarget), extracted
+      );
+      if (nodeSqliteFiles.some((file) =>
+        /(?:from\s+|import\s*(?:\(\s*)?|require\s*\(\s*)["']better-sqlite3["']/.test(
+          readFileSync(file, "utf8")
+        )
+      )) {
+        throw new Error(`${packageName}: built-in SQLite export reaches better-sqlite3`);
+      }
+    }
     for (const file of walkFiles(join(extracted, "dist"))) {
       if (!file.endsWith(".js")) continue;
       const text = readFileSync(file, "utf8");
@@ -920,7 +933,7 @@ function reachableRuntimeFiles(entry, extracted) {
     seen.add(file);
     const text = readFileSync(file, "utf8");
     for (const match of text.matchAll(
-      /(?:from\s+|import\s*\()["']([^"']+)["']/g
+      /(?:from\s+|import\s*(?:\(\s*)?)["']([^"']+)["']/g
     )) {
       const specifier = match[1];
       if (!specifier.startsWith(".")) continue;

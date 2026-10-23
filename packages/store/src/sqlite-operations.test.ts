@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { SqliteAdapter } from "./adapters/sqlite.js";
+import { NodeSqliteAdapter } from "./adapters/node-sqlite.js";
 
 function tempDb(label: string): string {
   return join(
@@ -20,9 +21,12 @@ function clean(path: string): void {
   rmSync(`${path}-shm`, { force: true });
 }
 
-describe("SQLite operational inspection", () => {
+describe.each([
+  ["better-sqlite3", SqliteAdapter],
+  ["node:sqlite", NodeSqliteAdapter],
+] as const)("SQLite operational inspection (%s)", (_name, Adapter) => {
   it("does not cache a collection table that an outer transaction rolls back", () => {
-    const adapter = new SqliteAdapter({ path: ":memory:" });
+    const adapter = new Adapter({ path: ":memory:" });
     const rollback = new Error("rollback");
     try {
       let thrown: unknown;
@@ -51,7 +55,7 @@ describe("SQLite operational inspection", () => {
 
   it("reports configuration and does not disclose the path by default", () => {
     const path = tempDb("inspect");
-    const adapter = new SqliteAdapter({ path, busyTimeoutMs: 237 });
+    const adapter = new Adapter({ path, busyTimeoutMs: 237 });
     try {
       adapter.kv.set("record", { value: 1 });
       const before = existsSync(`${path}-wal`)
@@ -78,7 +82,7 @@ describe("SQLite operational inspection", () => {
 
   it("runs explicit passive, restart, and truncate checkpoints", () => {
     const path = tempDb("checkpoint");
-    const adapter = new SqliteAdapter({ path, busyTimeoutMs: 2_000 });
+    const adapter = new Adapter({ path, busyTimeoutMs: 2_000 });
     try {
       for (let index = 0; index < 30; index += 1) {
         adapter.kv.set(`k:${index}`, "x".repeat(256));

@@ -35,3 +35,6 @@ The SQLite adapter uses `@mirk/store/coordination` for fenced admission
 serialization. Exact idempotent replays return the original result; same-key
 different-envelope attempts return `idempotency-conflict` without mutating the
 canonical revision log.
+
+The SQLite adapter accepts `better-sqlite3` 11, 12, or 13 as an optional peer.
+Development tests use version 13, whose Node-API bindings support current Node runtimes.
