@@ -155,6 +155,10 @@ or atomic, takes the next number; `delete`, `remove`, and a conflict take none. 
 write keeps its number, so no later write can reissue a token a caller already saw. Treat tokens
 as opaque.
 
+A `mutateAtomically` call sends the same number of queries whatever its size: one reads every
+condition target, one statement applies every operation and issues its tokens, and a keyed
+request adds its receipt reads and writes.
+
 Idempotency receipts are durable rows. They survive other writes to the same target and adapter
 restarts, so a retried request with the same key replays the first result. A connection failure
 while a standalone `mutateAtomically` commits leaves the outcome unknown; the call throws
