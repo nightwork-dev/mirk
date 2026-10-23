@@ -534,47 +534,118 @@ class PostgresStoreFacet implements PostgresStore {
       }
     }
 
-    for (const condition of validated.conditions) {
-      const observed = await this.getVersioned(condition.target);
-      const matches = condition.expected === "missing"
-        ? observed === null
-        : condition.expected === "present"
-          ? observed !== null
-          : observed?.version === condition.version;
-      if (!matches) {
-        return {
-          status: "conflict",
-          condition,
-          observed: observed === null ? "missing" : condition.expected === "version" ? observed.version : "present",
-        };
+    // One query reads every condition target. The transaction holds the
+    // schema's write lock, so the writes below apply to the state it reads.
+    if (validated.conditions.length > 0) {
+      const targets = validated.conditions.map(({ target }) => target);
+      const observed = await this.database.query<{ present: boolean; version: string | null }>(
+        `SELECT (k.key IS NOT NULL OR r.id IS NOT NULL) AS present, COALESCE(k.version, r.version) AS version
+         FROM unnest($1::text[], $2::text[], $3::text[]) WITH ORDINALITY AS t(kind, collection, target_key, ord)
+         LEFT JOIN ${this.kvTable} AS k ON t.kind = 'key' AND k.key = t.target_key
+         LEFT JOIN ${this.recordsTable} AS r
+           ON t.kind = 'record' AND r.collection = t.collection AND r.id = t.target_key
+         ORDER BY t.ord`,
+        [
+          targets.map((target) => target.kind),
+          targets.map((target) => (target.kind === "key" ? null : target.collection)),
+          targets.map((target) => (target.kind === "key" ? target.key : target.id)),
+        ],
+      );
+      for (const [index, condition] of validated.conditions.entries()) {
+        const row = observed.rows[index]!;
+        const matches = condition.expected === "missing"
+          ? !row.present
+          : condition.expected === "present"
+            ? row.present
+            : row.version === condition.version;
+        if (matches) continue;
+        let reported: StoreVersion | "missing" | "present" = row.present ? "present" : "missing";
+        if (row.present && condition.expected === "version") {
+          // A row written by an adapter that predates version tokens gets one now.
+          reported = (row.version ?? (await this.write(() => this.backfillVersion(condition.target))) ?? "missing") as
+            | StoreVersion
+            | "missing";
+        }
+        return { status: "conflict", condition, observed: reported };
       }
     }
 
-    const versions: { target: StoreTarget; version: StoreVersion | null }[] = [];
+    // One statement applies every operation and issues the version tokens,
+    // increasing in operation order.
+    const ops: string[] = [];
+    const collections: (string | null)[] = [];
+    const targetKeys: string[] = [];
+    const values: (string | null)[] = [];
     for (const operation of validated.operations) {
+      ops.push(operation.op);
       switch (operation.op) {
         case "set":
-          versions.push({
-            target: { kind: "key", key: operation.key },
-            version: await this.writeKey(operation.key, encodeJson(operation.value)),
-          });
+          collections.push(null);
+          targetKeys.push(operation.key);
+          values.push(encodeJson(operation.value));
           break;
         case "delete":
-          await this.deleteKey(operation.key);
-          versions.push({ target: { kind: "key", key: operation.key }, version: null });
+          collections.push(null);
+          targetKeys.push(operation.key);
+          values.push(null);
           break;
         case "put":
-          versions.push({
-            target: { kind: "record", collection: operation.collection, id: operation.item.id },
-            version: await this.writeRecord(operation.collection, operation.item.id, encodeJson(operation.item)),
-          });
+          collections.push(operation.collection);
+          targetKeys.push(operation.item.id);
+          values.push(encodeJson(operation.item));
           break;
         case "remove":
-          await this.deleteRecord(operation.collection, operation.id);
-          versions.push({ target: { kind: "record", collection: operation.collection, id: operation.id }, version: null });
+          collections.push(operation.collection);
+          targetKeys.push(operation.id);
+          values.push(null);
           break;
       }
     }
+    const issuing = validated.operations.filter((operation) => operation.op === "set" || operation.op === "put").length;
+    const written = await this.database.query<{ ord: string; version: StoreVersion }>(
+      `WITH ops AS (
+         SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
+           WITH ORDINALITY AS o(op, collection, target_key, value, ord)
+       ),
+       issuing AS (
+         SELECT ops.*, row_number() OVER (ORDER BY ord) AS rank FROM ops WHERE op IN ('set', 'put')
+       ),
+       minted AS (
+         SELECT v, row_number() OVER (ORDER BY v) AS rank
+         FROM (SELECT nextval('${this.versionSequence.replaceAll("'", "''")}') AS v FROM generate_series(1, $5::int)) AS s
+       ),
+       versioned AS (
+         SELECT i.op, i.collection, i.target_key, i.value::jsonb AS value, i.ord,
+           (SELECT identity FROM ${this.stateTable} WHERE id = 1) || '-v' || m.v AS version
+         FROM issuing AS i JOIN minted AS m USING (rank)
+       ),
+       set_keys AS (
+         INSERT INTO ${this.kvTable} (key, value, updated_at, version)
+         SELECT target_key, value, now(), version FROM versioned WHERE op = 'set' ORDER BY ord
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now(), version = excluded.version
+       ),
+       put_records AS (
+         INSERT INTO ${this.recordsTable} (collection, id, data, updated_at, version)
+         SELECT collection, target_key, value, now(), version FROM versioned WHERE op = 'put' ORDER BY ord
+         ON CONFLICT (collection, id) DO UPDATE SET data = excluded.data, updated_at = now(), version = excluded.version
+       ),
+       deleted_keys AS (
+         DELETE FROM ${this.kvTable} WHERE key IN (SELECT target_key FROM ops WHERE op = 'delete')
+       ),
+       removed_records AS (
+         DELETE FROM ${this.recordsTable} AS r USING ops
+         WHERE ops.op = 'remove' AND r.collection = ops.collection AND r.id = ops.target_key
+       )
+       SELECT ord::text AS ord, version FROM versioned ORDER BY ord`,
+      [ops, collections, targetKeys, values, issuing],
+    );
+    const issued = new Map(written.rows.map((row) => [Number(row.ord) - 1, row.version]));
+    const versions = validated.operations.map((operation, index) => ({
+      target: operation.op === "set" || operation.op === "delete"
+        ? { kind: "key" as const, key: operation.key }
+        : { kind: "record" as const, collection: operation.collection, id: operation.op === "put" ? operation.item.id : operation.id },
+      version: issued.get(index) ?? null,
+    }));
     const applied: CompletedResult = {
       status: "applied",
       requestDigest: validated.requestDigest,
