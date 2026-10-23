@@ -96,7 +96,12 @@ The corpus format and its governance are in [`conformance/README.md`](conformanc
 
 ## Release
 
-Mirk uses Changesets. Do not hand-bump package versions.
+Mirk uses Changesets. Do not hand-bump npm package versions.
+
+Mirk releases as one version set. `.changeset/config.json` fixes every `@mirk/*` package to the same
+version, so a changeset for any one package bumps them all. The Python distributions in `python/`
+carry the same version: after `pnpm version-packages`, set each `python/*/pyproject.toml` `version`
+and its `mirk-*` dependency ranges to the new version, then run `uv lock` in `python/`.
 
 ```bash
 pnpm changeset                  # describe package-impacting changes
