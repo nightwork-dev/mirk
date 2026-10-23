@@ -54,8 +54,8 @@ interface FixtureConfigModule {
 const USAGE = `Usage:
   mirk-fixtures validate [config]
   mirk-fixtures list [config] [--type <type>]
-  mirk-fixtures show [config] <type:id> [--raw|--materialized]
-  mirk-fixtures explain [config] <type:id>
+  mirk-fixtures show <config> <type:id> [--raw|--materialized]
+  mirk-fixtures explain <config> <type:id>
   mirk-fixtures graph [config] [--format json|dot]
 
 Options:
