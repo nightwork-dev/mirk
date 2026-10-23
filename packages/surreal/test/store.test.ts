@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { StoreFilterError } from "@mirk/store";
 import { Surreal, createRemoteEngines } from "surrealdb";
 import { createNodeEngines } from "@surrealdb/node";
 
@@ -247,6 +248,40 @@ describe("SurrealStoreAdapter (AsyncStore)", () => {
     expect(await ids()).toEqual(["odd", "old-a", "old-c", "new-z", "new-b"]);
     expect(await store.getById("legacy", "old-c")).toEqual({ id: "old-c", rank: 2 });
     expect(await store.count("legacy")).toBe(5);
+  });
+
+  it("decodes only the strings it encoded, leaving real bytes in the same value as bytes", async () => {
+    await store.set("mixed", { lone: "\udfff", bin: new Uint8Array([1, 2, 3]), list: [new Uint8Array([4, 5])] });
+    const read = await store.get<{ lone: unknown; bin: unknown; list: unknown[] }>("mixed");
+    expect(read?.lone).toBe("\udfff");
+    expect(read?.bin).toBeInstanceOf(ArrayBuffer);
+    expect([...new Uint8Array(read?.bin as ArrayBuffer)]).toEqual([1, 2, 3]);
+    expect(read?.list[0]).toBeInstanceOf(ArrayBuffer);
+    expect([...new Uint8Array(read?.list[0] as ArrayBuffer)]).toEqual([4, 5]);
+  });
+
+  it("leaves a marked path as stored when it does not hold even-length bytes", async () => {
+    await connection.query("UPSERT type::record('mirk_kv', 'odd') CONTENT $content", {
+      content: {
+        key: "odd",
+        value: { a: new Uint8Array([1, 2, 3]), b: "text" },
+        mirk_codec: { kind: "utf16le-lone-surrogates", paths: [["a"], ["b"], ["missing", 0]] },
+      },
+    });
+    const read = await store.get<{ a: ArrayBuffer; b: string }>("odd");
+    expect([...new Uint8Array(read!.a)]).toEqual([1, 2, 3]);
+    expect(read?.b).toBe("text");
+  });
+
+  it("checks where values before IN values, as the memory store does", async () => {
+    const failure = await store
+      .listWhereIn("items", "v", [{ x: 1 }], { where: { v: { y: 2 } } })
+      .catch((reason: unknown) => reason);
+    expect(failure).toBeInstanceOf(StoreFilterError);
+    expect(failure).toMatchObject({ code: "non-scalar-filter" });
+    expect(await store.listWhereIn("", "v", [{ x: 1 }]).catch((reason: unknown) => reason)).toMatchObject({
+      code: "non-scalar-in-value",
+    });
   });
 
   it("a plain overwrite of a record that held a lone surrogate drops the codec marker", async () => {

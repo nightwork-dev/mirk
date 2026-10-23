@@ -220,7 +220,9 @@ their relative order is the order the server allocated them.
 ### Strings and ids
 
 SurrealDB strings are UTF-8. A string value that holds a lone UTF-16 surrogate is stored as its
-UTF-16 code units and read back unchanged. Object keys, record ids, and KV keys are stored as
+UTF-16 code units and read back unchanged. The record's `mirk_codec` field lists the path of each
+string stored this way, and reads decode only those paths, so other byte values in the same record
+stay bytes. Object keys, record ids, and KV keys are stored as
 SurrealDB strings, so a lone surrogate in one of them becomes U+FFFD. SurrealDB rejects an empty
 record id, so the empty id and the empty KV key are stored under the array id `[""]`.
 
