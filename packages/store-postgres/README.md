@@ -114,13 +114,15 @@ mirk.kv(key text primary key, value jsonb not null, updated_at timestamptz not n
 mirk.records(collection text, id text, data jsonb not null,
              ordinal bigint generated always as identity, updated_at timestamptz not null,
              version text, primary key (collection, id))
-mirk.atomic_receipts(key text primary key, request_digest text not null, result jsonb not null)
+mirk.atomic_receipts(key text primary key, request_digest text not null, result jsonb not null,
+                    created_at bigint)  -- milliseconds since the epoch, indexed
 mirk.atomic_state(id integer primary key, identity text not null)
 mirk.atomic_versions  -- sequence
 ```
 
 Opening an adapter adds the `version` columns to tables created by an earlier release and gives
-existing rows a version token. Upgrade every process that writes to a schema before relying on
+existing rows a version token. It also adds `atomic_receipts.created_at`; receipts written before
+it have no creation time. Upgrade every process that writes to a schema before relying on
 atomic writes: an older adapter writes without the lock or a new version.
 
 The schema name is quoted once at construction. Keys, collection names, record IDs, filter fields,
@@ -159,6 +161,27 @@ while a standalone `mutateAtomically` commits leaves the outcome unknown; the ca
 `AtomicMutationIndeterminateError`, and retrying with the same idempotency key is safe. A failure
 before COMMIT was sent, such as a connection that could not be opened, is reported as the
 underlying error: nothing was applied.
+
+#### Receipt expiry
+
+Receipts are kept forever by default. `receiptRetentionMs` lets them expire, with the rules in the
+`@mirk/store` README's "Receipt expiry" section: a receipt is live while its age is at most the
+window, a request whose key matches only an expired receipt is applied as new, and a keyed write
+prunes at most 100 expired receipts under the schema lock. `postgres.kv.pruneExpiredReceipts()`
+deletes the rest, one short transaction per batch, and returns how many it deleted.
+
+```ts
+const postgres = await PostgresAdapter.open({ pool, receiptRetentionMs: 3 * 24 * 60 * 60 * 1000 });
+await postgres.kv.pruneExpiredReceipts();
+```
+
+The database's clock stamps and judges every receipt, so hosts with skewed clocks agree on a
+receipt's age. The `now` option replaces it with a host clock, mainly for tests. A store with a
+window stamps a receipt from an earlier release with the current time when it first prunes, so it
+expires one full window later. **The window must be longer than the longest time a caller may
+retry or reconcile a request**: a retry after it applies the mutation again. A host that
+reconciles old receipts after an expired job lease, as the Foreclose app does, should leave expiry
+off or use a window of days.
 
 ### Transactions
 

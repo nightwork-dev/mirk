@@ -161,9 +161,10 @@ const adapter = await LibsqlAdapter.open({ url: "file:./data.db", client, dimens
 | `atomicLimits` | `Partial<AtomicMutationLimits>?` | override the atomic request bounds |
 | `versionIdentity` | `string?` | the prefix of version tokens, recorded when the database is first initialized; a random UUID by default |
 | `busyTimeoutMs` | `number?` | how long a write waits for a write lock the database reports busy before failing with `busy`; default 30000 |
-| `now` | `() => number?` | the clock, in milliseconds, that stamps idempotency receipts; `Date.now` by default |
+| `receiptRetentionMs` | `number?` | how long an idempotency receipt is kept; off by default, so receipts are kept forever |
+| `now` | `() => number?` | the clock, in milliseconds since the epoch, that stamps and expires idempotency receipts; the database's clock by default |
 
-The adapter exposes `readonly kv: AsyncStore & AsyncAtomicMutationStore`,
+The adapter exposes `readonly kv: AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning`,
 `readonly vector: AsyncVectorStore`, `transaction(work)`, `afterCommit(notify)`, and
 `close(): void`. Key-values work without `dimensions`.
 
@@ -182,9 +183,23 @@ that sequence commits, the work is still not applied, and the adapter's next tra
 sequence past those numbers before it issues any. Another host that writes in between can reissue
 one of them, so discard tokens from a transaction that failed. Treat tokens as opaque.
 
-Idempotency receipts are durable rows, stamped with their creation time from the `now` clock. They
-survive other writes to the same target and adapter restarts, so a retried request with the same
-key replays the first result.
+Idempotency receipts are durable rows, stamped with their creation time. They survive other writes
+to the same target and adapter restarts, so a retried request with the same key replays the first
+result.
+
+Receipts are kept forever by default. `receiptRetentionMs` lets them expire, with the rules in the
+`@mirk/store` README's "Receipt expiry" section: a receipt is live while its age is at most the
+window, a request whose key matches only an expired receipt is applied as new, and a keyed write
+prunes at most 100 expired receipts in its own transaction and round trip.
+`adapter.kv.pruneExpiredReceipts()` deletes the rest, one short transaction per batch, and returns
+how many it deleted. The database's clock stamps and judges every receipt, so hosts with skewed
+clocks agree on a receipt's age; the `now` option replaces it, mainly for tests. A receipt written
+by `@mirk/store/sqlite` or an earlier release without a creation time is stamped with the current
+time when a store with a window first prunes, so it expires one full window later.
+**The window must be longer than the longest time a caller may retry or reconcile a
+request**: a retry after it applies the mutation again. A host that reconciles old receipts
+after an expired job lease, as the Foreclose app does, should leave expiry off or use a window
+of days.
 
 A standalone `mutateAtomically` reports a failure of the database as an `@mirk/store/atomic` error:
 
