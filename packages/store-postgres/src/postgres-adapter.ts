@@ -843,16 +843,15 @@ function buildWhere(
     clauses.push(`data ? ${fieldParameter} AND data -> ${fieldParameter} = ${valueParameter}::jsonb`);
   }
   if (inQuery) {
+    // `= ANY` over a jsonb[] parameter: jsonb equality keeps 1, "1" and true
+    // apart, a missing field (SQL NULL) never matches, and an expression index
+    // on (collection, (data -> 'field')) can serve it when the statement is planned
+    // with its parameter values, as node-postgres's unnamed statements are.
     values.push(inQuery.field);
     const fieldParameter = `$${values.length}`;
-    values.push(encodeJson(inQuery.values));
+    values.push(inQuery.values.map((value) => encodeJson(value)));
     const valuesParameter = `$${values.length}`;
-    clauses.push(
-      `data ? ${fieldParameter} AND EXISTS (
-         SELECT 1 FROM jsonb_array_elements(${valuesParameter}::jsonb) candidate
-         WHERE data -> ${fieldParameter} = candidate
-       )`,
-    );
+    clauses.push(`(data -> ${fieldParameter}) = ANY(${valuesParameter}::jsonb[])`);
   }
   return { sql: ` WHERE ${clauses.join(" AND ")}`, values };
 }

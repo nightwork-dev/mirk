@@ -373,6 +373,16 @@ Both adapters take the same options; only the type of `db` differs.
 
 Every connection the adapter opens or receives is switched to WAL mode with foreign keys on.
 
+### `listWhereIn`
+
+`kv.listWhereIn(collection, field, values, filter?)` is one statement. Strings and numbers become
+`json_extract(data, '$."field"') IN (?, …)`, with a `json_type` check that keeps a stored boolean
+from matching `1` or `0`. A boolean or `null` value adds its own term on the same expression. A
+string never matches a number. `null` matches a stored `null` and never a missing field. The path is
+written into the SQL text, not bound, so an expression index on `json_extract(data, '$."field"')`
+can serve the query. `jsonPathLiteral` in `@mirk/store/sql` returns that literal. The libSQL adapter
+uses the same SQL.
+
 ### Transactions
 
 `transaction(work, mode?)` runs synchronous facet operations atomically on the adapter's

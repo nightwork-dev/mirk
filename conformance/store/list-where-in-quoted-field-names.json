@@ -1,0 +1,79 @@
+{
+  "id": "store/list-where-in-quoted-field-names",
+  "title": "field names containing a single quote or a dot name one top-level key",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "it's": "x",
+          "a.b": "dot"
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "it's": "y",
+          "a": {
+            "b": "dot"
+          }
+        }
+      ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "it's",
+        [
+          "x"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "a.b",
+        [
+          "dot"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "x') OR 1=1 --",
+        [
+          "x"
+        ]
+      ],
+      "expect": {
+        "ids": []
+      }
+    }
+  ]
+}
