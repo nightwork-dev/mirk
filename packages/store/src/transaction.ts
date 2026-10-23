@@ -214,7 +214,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
 
 /** Wait until no nested transaction is queued on `scope`, including ones
  *  queued while waiting, then call `next` in the same tick as the final check. */
-async function settle<C, R>(scope: Scope<C>, next: () => R): Promise<Awaited<R>> {
+async function settle<C, R>(scope: Scope<C>, next: () => R | Promise<R>): Promise<R> {
   for (;;) {
     const tail = scope.tail;
     await tail;
