@@ -62,7 +62,7 @@ function harness(driver: "better-sqlite3" | "node:sqlite"): Harness {
         const value = Reflect.get(target, property, target);
         if (property !== "run" && property !== "get") return typeof value === "function" ? value.bind(target) : value;
         return (...args: unknown[]) => {
-          const result = value.apply(target, args);
+          const result = (value as (...a: unknown[]) => unknown).apply(target, args);
           hook(sql);
           return result;
         };
