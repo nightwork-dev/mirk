@@ -349,10 +349,11 @@ nobody changed it since I looked". `@mirk/store/atomic` adds versioned reads and
 declarative mutation batch for that, without changing the base `SyncStore` or `AsyncStore`
 interfaces.
 
-The in-memory reference, the `.kv` facet of both SQLite adapters, and `@mirk/store-indexeddb`
-implement it. Check for it with `supportsAtomicMutation` (or `supportsAsyncAtomicMutation` after
-`toAsync`). Stores that do not implement it, including the libSQL, PostgreSQL, and SurrealDB
-adapters today, are still valid stores; do not emulate atomicity with sequential writes.
+The in-memory reference, the `.kv` facet of both SQLite adapters, `@mirk/store-indexeddb`,
+`@mirk/store-postgres`, and `@mirk/store-libsql` implement it. Check for it with
+`supportsAtomicMutation` (or `supportsAsyncAtomicMutation` after `toAsync`). Stores that do not
+implement it, including the SurrealDB adapter today, are still valid stores; do not emulate
+atomicity with sequential writes.
 
 ```ts
 import { InMemoryKv, supportsAtomicMutation } from "@mirk/store";
@@ -434,7 +435,8 @@ A rejection names the limit and its value, for example
 ## Async transactions
 
 `AsyncStoreTransactions` is the adapter-level contract for short, database-only transactions over
-an async store. `@mirk/store-postgres` and the SQLite adapters' awaitable access implement it.
+an async store. `@mirk/store-postgres`, `@mirk/store-libsql`, and the SQLite adapters' awaitable
+access implement it.
 
 ```ts
 interface AsyncStoreTransactions {
