@@ -177,7 +177,10 @@ version and receipt tables, so the two adapters read each other's data and token
 initialized and `n` comes from one sequence per database. Every `set` and `put`, plain or atomic,
 takes the next number; `delete`, `remove`, and a conflict take none. A rolled-back write keeps its
 number: the rollback returns to a savepoint at the start of the transaction and commits only the
-sequence, so no later write reissues a token a caller already saw. Treat tokens as opaque.
+sequence, so no later write reissues a token a caller already saw. If the connection fails before
+that sequence commits, the work is still not applied, and the adapter's next transaction moves the
+sequence past those numbers before it issues any. Another host that writes in between can reissue
+one of them, so discard tokens from a transaction that failed. Treat tokens as opaque.
 
 Idempotency receipts are durable rows, stamped with their creation time from the `now` clock. They
 survive other writes to the same target and adapter restarts, so a retried request with the same
