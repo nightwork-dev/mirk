@@ -95,9 +95,10 @@ Each capability is its own import, so you load only what you use.
 
 | Import                     | What it gives you                                                                                                                                | Native deps                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch`, `namespaceStore`, graph contract types, cosine helpers                   | none                        |
+| `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch`, `namespaceStore` / `namespaceAsyncStore`, the `AsyncStoreTransactions` contract, graph contract types, cosine helpers | none |
 | `@mirk/store/kv`           | the `SyncStore` interface (key-values and collections), `InMemoryKv`, `toAsync`, `sortAndPageStoreItems`                                         | none                        |
 | `@mirk/store/atomic`       | optional versioned reads, declarative atomic mutations, idempotent receipts, canonical request digests, and capability checks                    | none                        |
+| `@mirk/store/transaction`  | `AsyncTransactionCoordinator`, the shared implementation of `AsyncStoreTransactions` for adapter authors                                       | `node:async_hooks`          |
 | `@mirk/store/vector`       | the `VectorStore` interface, `InMemoryVectorStore`, cosine helpers, `compareCodePoints`                                                          | none                        |
 | `@mirk/store/search`       | the `SearchStore` / `AsyncSearchStore` interfaces, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search                             | none                        |
 | `@mirk/store/graph`        | graph helpers over collections (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters         | none                        |
@@ -165,7 +166,8 @@ A namespace is a logical partition, not a path, file, table, or connection. Many
 one physical store. `namespaceStore()` wraps a `SyncStore` (and so the collection-backed graph
 edges in it): keys, collection names, `keys()` prefix scans, and atomic targets, versions, and
 idempotency receipts cannot see or reach another namespace. The name must be non-empty and must
-not contain U+001F. Vector and search facets are not wrapped by `namespaceStore()`; partition them
+not contain U+001F. `namespaceAsyncStore()` is the same binding over an `AsyncStore`, with the same
+physical keys and version tokens. Vector and search facets are not wrapped by `namespaceStore()`; partition them
 by collection name. Use separate physical databases when the data has different trust, retention,
 backup, or lifecycle needs.
 
@@ -269,6 +271,29 @@ connection. Modes are `deferred` (the default), `immediate`, and `exclusive`. Th
 do asynchronous or external work. A callback that returns a Promise or other thenable is rejected,
 and its synchronous writes are rolled back. This helper is SQLite-only; the portable contract is
 [`mutateAtomically`](#atomic-mutations).
+
+### Awaitable access
+
+`asyncKv` is the same store as `.kv`, awaitable, with versioned reads and atomic mutations.
+`asyncTransaction(work)` and `afterCommit(notify)` implement the portable
+[async transaction contract](#async-transactions) over this connection with `BEGIN IMMEDIATE`.
+
+```ts
+await sqlite.asyncTransaction(async () => {
+  await sqlite.asyncKv.put("jobs", { id: "job-1", state: "leased" });
+  await sqlite.asyncKv.set("workspace", nextState);
+  sqlite.afterCommit(() => wakeWorkers());
+});
+```
+
+SQLite has one writer, so awaitable work is serialized per database file across every adapter in
+the process: `asyncKv` calls and transactions queue behind an open transaction. While asynchronous
+work owns the file, the synchronous facets and `transaction()` throw `SqliteAdapterError` with code
+`async-operation-active` unless they are called from inside that transaction, and opening another
+adapter on the file throws the same error. Open adapters before starting asynchronous work, and
+do not await a second handle on the same file inside a transaction: it waits for the transaction
+that is waiting for it. Across processes, use a single writer process, or
+[`@mirk/store-postgres`](../store-postgres).
 
 ### Several processes, one file
 
@@ -406,6 +431,48 @@ A rejection names the limit and its value, for example
 **The idempotency outcome cap is not configurable.** An outcome is kept under its key forever, so
 `MAX_ATOMIC_OUTCOME_BYTES` (64 KiB) is a hard cap in every backend, whatever the limits above.
 
+## Async transactions
+
+`AsyncStoreTransactions` is the adapter-level contract for short, database-only transactions over
+an async store. `@mirk/store-postgres` and the SQLite adapters' awaitable access implement it.
+
+```ts
+interface AsyncStoreTransactions {
+  transaction<T>(work: () => T | Promise<T>): Promise<T>;
+  afterCommit(notify: () => void): void;
+}
+```
+
+- Every store call the adapter receives inside `work` joins the transaction. Reads, `getVersioned`,
+  and `mutateAtomically` conditions see the transaction's own uncommitted writes.
+- A nested `transaction()` joins the outer one as a savepoint. If the nested work throws, only its
+  writes roll back, and the outer transaction can still commit. If the outer work throws,
+  everything rolls back, nested work included.
+- Another adapter instance on the same database is serialized against an open transaction. Its
+  compare-and-set waits for the transaction to end and then decides against the committed state,
+  so it never succeeds against a version the transaction replaced.
+- `afterCommit` callbacks run once each, in registration order, after the outermost commit and
+  before `transaction()` resolves. They run outside the transaction, so they can read the store or
+  start a new transaction. A rollback discards them, including the callbacks of a nested
+  transaction that rolled back. A callback that throws, or returns a rejected promise, does not
+  stop the others or fail the commit. Outside a transaction, `afterCommit` runs the callback at
+  once.
+- **`afterCommit` is best effort.** If the process dies between the commit and the callback, the
+  notification is lost. Use it to wake workers early, and keep the durable state that lets them
+  find the work without it.
+
+Await every store call inside `work`. A call that outlives its transaction throws
+`TransactionScopeError` (`transaction-ended`). A call from the parent while a nested transaction is
+still running throws `nested-transaction-active`; sibling nested transactions queue. Do network
+and object-storage work before or after a transaction, never inside it: the transaction holds the
+database's write lock until it ends.
+
+The contract is checked by a shared test suite that every implementing adapter runs, with two
+adapter instances on one database. The JSON conformance corpus does not express it: its rules need
+interleaved awaits, callbacks, and a second connection. Adapter authors implement it with
+`AsyncTransactionCoordinator` from `@mirk/store/transaction`, which owns nesting, scoping across
+awaits, and callback delivery over the adapter's begin, commit, rollback, and savepoint statements.
+
 ## Encrypted records
 
 `@mirk/store/encrypted` seals record bytes for vaults that your product owns, so a storage operator,
@@ -524,7 +591,8 @@ async only where a remote backend needs it.
   provide. Unsupported behaviour fails explicitly.
 - Run more than one SQLite write transaction at a time, or hide overload behind unbounded retries.
 - Provide a writer daemon, job queue, message bus, or append-only log interface.
-- Offer callback transactions as a portable contract, or atomic batches across namespaces.
+- Offer synchronous callback transactions as a portable contract, or atomic batches across
+  namespaces.
 - Manage encryption keys, encrypt artifacts, or sync devices.
 
 ## License

@@ -24,8 +24,11 @@ export type {
 export { toAsync } from "./to-async.js";
 export { InMemoryStore as InMemoryKv } from "./backends/memory.js";
 export type { InMemoryStoreOptions as InMemoryKvOptions } from "./backends/memory.js";
-export { namespaceStore, NamespaceError } from "./namespace.js";
+export { namespaceStore, namespaceAsyncStore, NamespaceError } from "./namespace.js";
 export type { NamespaceErrorCode } from "./namespace.js";
+// The adapter-level transaction contract. The coordinator that implements it
+// uses node:async_hooks, so it lives at @mirk/store/transaction instead.
+export type { AsyncStoreTransactions, AfterCommitNotify } from "./transaction-types.js";
 export { StoreFilterError } from "./sql.js";
 export type { StoreFilterErrorCode } from "./sql.js";
 // The ordering primitive every port's tie-break is defined in terms of. It was
