@@ -1,0 +1,67 @@
+{
+  "id": "log/rolled-back-first-append",
+  "title": "a rolled-back first append leaves the stream empty, and the next append gets 1",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "appendRolledBack",
+      "args": [
+        "fresh",
+        {
+          "n": 1
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "fresh"
+      ],
+      "expect": {
+        "value": 0
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "fresh"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "fresh",
+        {
+          "n": 2
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "fresh",
+        1
+      ],
+      "expect": {
+        "value": {
+          "sequence": 1,
+          "record": {
+            "n": 2
+          }
+        }
+      }
+    }
+  ]
+}

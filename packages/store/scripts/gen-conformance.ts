@@ -57,7 +57,7 @@ const SCENARIOS_DIR = join(SCRIPT_DIR, "scenarios");
 
 /** Only these subdirectories are cleared. README.md lives at the corpus root
  *  and is not generated, so it survives. */
-const GENERATED_DIRS = ["store", "vector", "search", "graph", "artifact", "fixtures", "markdown"] as const;
+const GENERATED_DIRS = ["store", "vector", "search", "log", "graph", "artifact", "fixtures", "markdown"] as const;
 
 export interface GenerationSummary {
   outDir: string;

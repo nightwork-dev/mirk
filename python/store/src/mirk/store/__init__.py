@@ -27,6 +27,7 @@ from .filter import (
     json_equal,
     matches_where,
 )
+from .log import LogInputError, LogInputErrorCode
 from .memory import InMemoryStore
 from .namespace import NamespacedStore, NamespaceError, NamespaceErrorCode, namespace_store
 from .search import SearchInputError, SearchInputErrorCode
@@ -48,6 +49,8 @@ __all__ = [
     "InMemoryStore",
     "Json",
     "JsonObject",
+    "LogInputError",
+    "LogInputErrorCode",
     "NamespaceError",
     "NamespaceErrorCode",
     "NamespacedStore",

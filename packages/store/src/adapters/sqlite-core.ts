@@ -115,6 +115,20 @@ import {
   tableResolution,
   type TableRegistryAnswer,
 } from "../sql.js";
+import type { JsonCompatible, JsonValue } from "../atomic.js";
+import type {
+  AsyncLogStore,
+  LogEntry,
+  LogListOptions,
+  LogStore,
+} from "../log/types.js";
+import { toAsyncLog } from "../log/to-async-log.js";
+import {
+  assertSequence,
+  assertStream,
+  encodeRecord,
+  listBounds,
+} from "../log/validate.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -462,6 +476,10 @@ export class SqliteAdapterCore {
     AsyncReceiptPruning;
   readonly vector!: VectorStore;
   readonly search!: SearchStore;
+  readonly log!: LogStore;
+  /** The same log as `.log`, awaitable and serialized with
+   *  {@link asyncTransaction} on this database file. */
+  readonly asyncLog!: AsyncLogStore;
 
   constructor(opts: SqliteAdapterCoreOptions) {
     const ownsDb = opts.ownsDb;
@@ -518,6 +536,7 @@ export class SqliteAdapterCore {
       let kv: SqliteKvFacet | undefined;
       let vector: SqliteVectorFacet | undefined;
       let search: SqliteSearchFacet | undefined;
+      let log: SqliteLogFacet | undefined;
       runSqliteBusyRetry(
         () => {
           this.db.pragma("journal_mode = WAL");
@@ -531,6 +550,7 @@ export class SqliteAdapterCore {
           );
           vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
           search = new SqliteSearchFacet(this.db);
+          log = new SqliteLogFacet(this.db);
         },
         busyTimeoutMs,
         1,
@@ -539,7 +559,9 @@ export class SqliteAdapterCore {
       this.kv = kv!;
       this.vector = vector!;
       this.search = search!;
+      this.log = log!;
       this.asyncKv = this.serializedAsyncStore(toAsync(kv!), kv!);
+      this.asyncLog = this.serializedAsyncLog(toAsyncLog(log!));
     } catch (err) {
       // A facet constructor can throw (e.g. dimension mismatch). Don't leak the
       // connection we opened — but never close a db handle the caller passed in.
@@ -686,6 +708,17 @@ export class SqliteAdapterCore {
       count: (collection, filter) => run(() => lifted.count(collection, filter)),
       getVersioned: (target) => run(() => lifted.getVersioned(target)),
       mutateAtomically: (request) => run(() => lifted.mutateAtomically(request)),
+    };
+  }
+
+  private serializedAsyncLog(lifted: AsyncLogStore): AsyncLogStore {
+    const run = <T>(op: () => Promise<T>): Promise<T> => this.runSerialized(op);
+    return {
+      append: ((stream: string, record: JsonValue) =>
+        run(() => lifted.append(stream, record))) as AsyncLogStore["append"],
+      get: (stream, sequence) => run(() => lifted.get(stream, sequence)),
+      list: (stream, options) => run(() => lifted.list(stream, options)),
+      lastSequence: (stream) => run(() => lifted.lastSequence(stream)),
     };
   }
 
@@ -1868,6 +1901,70 @@ class SqliteSearchFacet implements SearchStore {
       out.push({ id: r.id, score: -r.bm, meta });
     }
     return out.slice(0, limit);
+  }
+}
+
+// ─── Log facet (LogStore) ────────────────────────────────────────────────────
+
+class SqliteLogFacet implements LogStore {
+  constructor(private readonly db: SqliteDb) {
+    this.db.exec(
+      `CREATE TABLE IF NOT EXISTS _mirk_log (
+         stream TEXT NOT NULL,
+         sequence INTEGER NOT NULL CHECK (sequence >= 1),
+         record TEXT NOT NULL,
+         PRIMARY KEY (stream, sequence)
+       ) WITHOUT ROWID`
+    );
+  }
+
+  /** One statement: the sequence is derived from the stream's own rows inside
+   *  the INSERT, so there is no separate counter that could commit without its
+   *  record, and a rolled-back append's number is free again. */
+  append(stream: string, record: JsonValue): number;
+  append<T>(stream: string, record: T & JsonCompatible<T>): number;
+  append(stream: string, record: unknown): number {
+    assertStream(stream);
+    const text = encodeRecord(record);
+    const row = this.db
+      .prepare(
+        `INSERT INTO _mirk_log (stream, sequence, record)
+         SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM _mirk_log WHERE stream = ?
+         RETURNING sequence`
+      )
+      .get(stream, text, stream) as { sequence: number | bigint };
+    return Number(row.sequence);
+  }
+
+  get<T = JsonValue>(stream: string, sequence: number): LogEntry<T> | null {
+    assertStream(stream);
+    assertSequence(sequence);
+    const row = this.db
+      .prepare("SELECT record FROM _mirk_log WHERE stream = ? AND sequence = ?")
+      .get(stream, sequence) as { record: string } | undefined;
+    return row === undefined ? null : { sequence, record: JSON.parse(row.record) as T };
+  }
+
+  list<T = JsonValue>(stream: string, options?: LogListOptions): LogEntry<T>[] {
+    assertStream(stream);
+    const { after, limit } = listBounds(options);
+    const rows = this.db
+      .prepare(
+        "SELECT sequence, record FROM _mirk_log WHERE stream = ? AND sequence > ? ORDER BY sequence LIMIT ?"
+      )
+      .all(stream, after, limit ?? -1) as { sequence: number; record: string }[];
+    return rows.map((row) => ({
+      sequence: Number(row.sequence),
+      record: JSON.parse(row.record) as T,
+    }));
+  }
+
+  lastSequence(stream: string): number {
+    assertStream(stream);
+    const row = this.db
+      .prepare("SELECT COALESCE(MAX(sequence), 0) AS last FROM _mirk_log WHERE stream = ?")
+      .get(stream) as { last: number };
+    return Number(row.last);
   }
 }
 

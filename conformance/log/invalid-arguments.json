@@ -1,0 +1,161 @@
+{
+  "id": "log/invalid-arguments",
+  "title": "unusable streams, sequences and bounds are refused and consume no sequence",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "",
+        1
+      ],
+      "expect": {
+        "throws": "log stream must be a non-empty string"
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "throws": "log stream must be a non-empty string"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        0
+      ],
+      "expect": {
+        "throws": "log sequence must be a positive safe integer"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        -1
+      ],
+      "expect": {
+        "throws": "log sequence must be a positive safe integer"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        1.5
+      ],
+      "expect": {
+        "throws": "log sequence must be a positive safe integer"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        "1"
+      ],
+      "expect": {
+        "throws": "log sequence must be a positive safe integer"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        9007199254740992
+      ],
+      "expect": {
+        "throws": "log sequence must be a positive safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": -1
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": 0.5
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": null
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "limit": -1
+        }
+      ],
+      "expect": {
+        "throws": "log limit must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "limit": 2.5
+        }
+      ],
+      "expect": {
+        "throws": "log limit must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "limit": null
+        }
+      ],
+      "expect": {
+        "throws": "log limit must be a non-negative safe integer"
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        1
+      ],
+      "expect": {
+        "value": 1
+      }
+    }
+  ]
+}

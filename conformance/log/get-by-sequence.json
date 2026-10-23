@@ -1,0 +1,107 @@
+{
+  "id": "log/get-by-sequence",
+  "title": "get returns the entry at a sequence, and null past the end or on an empty stream",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "get",
+      "args": [
+        "s",
+        1
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "a"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "b"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "c"
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        1
+      ],
+      "expect": {
+        "value": {
+          "sequence": 1,
+          "record": {
+            "step": "a"
+          }
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        3
+      ],
+      "expect": {
+        "value": {
+          "sequence": 3,
+          "record": {
+            "step": "c"
+          }
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        4
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        9007199254740991
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "other",
+        1
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

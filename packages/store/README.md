@@ -95,22 +95,23 @@ Each capability is its own import, so you load only what you use.
 
 | Import                     | What it gives you                                                                                                                                | Native deps                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
-| `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch`, `namespaceStore` / `namespaceAsyncStore`, the `AsyncStoreTransactions` contract, graph contract types, cosine helpers | none |
+| `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch` / `toAsyncLog`, `namespaceStore` / `namespaceAsyncStore`, the `AsyncStoreTransactions` contract, graph contract types, cosine helpers | none |
 | `@mirk/store/kv`           | the `SyncStore` interface (key-values and collections), `InMemoryKv`, `toAsync`, `sortAndPageStoreItems`                                         | none                        |
 | `@mirk/store/atomic`       | optional versioned reads, declarative atomic mutations, idempotent receipts, canonical request digests, and capability checks                    | none                        |
 | `@mirk/store/transaction`  | `AsyncTransactionCoordinator`, the shared implementation of `AsyncStoreTransactions` for adapter authors                                       | `node:async_hooks`          |
 | `@mirk/store/vector`       | the `VectorStore` interface, `InMemoryVectorStore`, cosine helpers, `compareCodePoints`                                                          | none                        |
 | `@mirk/store/search`       | the `SearchStore` / `AsyncSearchStore` interfaces, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search                             | none                        |
+| `@mirk/store/log`          | the `LogStore` / `AsyncLogStore` interfaces, `InMemoryLogStore`, `toAsyncLog`: an append-only log of JSON records in per-stream sequence  | none                        |
 | `@mirk/store/graph`        | graph helpers over collections (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters         | none                        |
 | `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                        |
 | `@mirk/store/encrypted`    | WebCrypto AES-256-GCM encrypted record envelopes for caller-owned vault keys                                                                     | none                        |
 | `@mirk/store/coordination` | a SQLite-backed async lock for cooperating writers, with leases, renewal, fencing generations, and ownership-loss checks                         | `better-sqlite3` (peer)     |
-| `@mirk/store/sqlite`       | `SqliteAdapter`, the SQLite source adapter on better-sqlite3: one connection with `.kv`, `.vector`, and `.search`                                | `better-sqlite3` (peer)     |
+| `@mirk/store/sqlite`       | `SqliteAdapter`, the SQLite source adapter on better-sqlite3: one connection with `.kv`, `.vector`, `.search`, and `.log`                        | `better-sqlite3` (peer)     |
 | `@mirk/store/node-sqlite`  | `NodeSqliteAdapter`, the same facets and file schema on Node's built-in `node:sqlite` `DatabaseSync`                                             | Node.js 24+ (`node:sqlite`) |
 
 Source adapters are reached **only** through their own subpath (`/sqlite` or `/node-sqlite`). The
 root and the interface subpaths never re-export them, so importing `@mirk/store`, `/kv`,
-`/vector`, `/search`, or `/graph` never pulls a native binding into a bundle.
+`/vector`, `/search`, `/log`, or `/graph` never pulls a native binding into a bundle.
 
 ## How stores behave
 
@@ -193,6 +194,81 @@ same ones. `text` and `fields: { text }` are the same single-field schema, kept 
 compatibility. Remote search backends implement `AsyncSearchStore` directly; local sync backends
 are lifted with `toAsyncSearch`.
 
+## Append-only log
+
+`LogStore` keeps an ordered history of JSON records in named streams: an event ledger to replay on
+restart, an outbox to tail, or a job history. Each append returns the record's sequence number in
+its stream.
+
+```ts
+import { InMemoryLogStore, toAsyncLog } from "@mirk/store/log";
+
+const log = new InMemoryLogStore();
+log.append("deliveries", { kind: "submitted", id: "d1" }); // 1
+log.append("deliveries", { kind: "settled", id: "d1" }); // 2
+log.append("audit", { kind: "login" }); // 1: each stream counts on its own
+
+log.get("deliveries", 2); // { sequence: 2, record: { kind: "settled", id: "d1" } }
+log.list("deliveries", { after: 1, limit: 100 }); // entries 2 onward, in order
+log.lastSequence("deliveries"); // 2; an empty stream returns 0
+
+const asyncLog = toAsyncLog(log);
+await asyncLog.append("deliveries", { kind: "submitted", id: "d2" }); // 3
+```
+
+To replay, call `list(stream)`. To tail, remember the last sequence you handled and call
+`list(stream, { after, limit })`.
+
+Guarantees, in the in-memory reference, both SQLite adapters, and the Python port:
+
+- Sequences are per stream. The first append gets 1, and each committed append gets the next
+  integer. There are no gaps among committed appends, so `list()` returns 1, 2, 3, … up to
+  `lastSequence()`.
+- The sequence and the record are written together. A crash, or a failed write, cannot leave a used
+  number without its record, or a record without its number.
+- An append that does not commit leaves no trace, and **its sequence goes to the next append**.
+  Inside `transaction()` or `asyncTransaction()` an append joins the transaction and rolls back
+  with it, so a sequence returned inside a transaction is final only after the commit. This is the
+  opposite of [version tokens](#atomic-mutations), which are never reissued: a rolled-back append
+  is gone, and reusing its number is what keeps the committed sequence without gaps.
+  `InMemoryLogStore.transaction(work)` gives the same rollback in memory.
+- Records follow the strict JSON rules of atomic writes: `NaN`, infinities, `undefined`, functions,
+  class instances such as `Date`, sparse arrays, and cycles throw `LogInputError` with code
+  `invalid-record`, and consume no sequence. `null` is a record, which is why `get` returns the
+  entry, not just the record. Reads return a fresh copy.
+- A stream is any non-empty string, compared exactly. Sequences, `after`, and `limit` must be safe
+  integers: `get` needs 1 or more, and `after` and `limit` need 0 or more. `limit: 0` returns
+  nothing; leaving `limit` out returns every entry after `after`.
+
+Limits:
+
+- The log is append-only. Nothing in the port changes or removes an entry, and there is no
+  trimming: a stream grows until you delete the database. Trimming would need a kept high-water
+  mark, so that a stream emptied by a trim does not restart its numbering at 1.
+- It is storage, not messaging. There is no consumer cursor, acknowledgement, delivery status, or
+  wake-up. Keep a consumer's position yourself, for example as a `kv` value written in the same
+  transaction as the work it records.
+- Appends to one database are serialized by SQLite's single writer. Two connections, or two
+  processes, appending to one stream take turns and get consecutive numbers.
+
+The in-memory reference (`InMemoryLogStore`) and both SQLite adapters (`.log` and `.asyncLog`)
+implement the port, and so does the Python port (`mirk.store.log`, `mirk.store.sqlite_log`).
+`@mirk/store-postgres`, `@mirk/store-libsql`, and `@mirk/store-indexeddb` do not implement it yet.
+
+In SQLite the log is one table, shared by every stream:
+
+```sql
+CREATE TABLE _mirk_log (
+  stream TEXT NOT NULL,
+  sequence INTEGER NOT NULL CHECK (sequence >= 1),
+  record TEXT NOT NULL,          -- JSON.stringify text
+  PRIMARY KEY (stream, sequence)
+) WITHOUT ROWID
+```
+
+An append is one `INSERT … SELECT COALESCE(MAX(sequence), 0) + 1 … RETURNING sequence` statement.
+There is no separate counter to fall out of step with the rows.
+
 ## Graph helpers
 
 `@mirk/store/graph` stores links (edges) as ordinary collection records with `id`, `from`, `to`,
@@ -220,8 +296,8 @@ hits.nodes; // ["node:b", "node:c"]: the nodes reached, not including the start 
 
 `SqliteAdapter` (`@mirk/store/sqlite`, on better-sqlite3) and `NodeSqliteAdapter`
 (`@mirk/store/node-sqlite`, on `node:sqlite`) are the same adapter on two drivers. Each opens one
-database and exposes `.kv` (`SyncStore`), `.vector` (`VectorStore`), and `.search` (`SearchStore`)
-over that one connection. They have the same facets, transaction modes, and schema, and each can
+database and exposes `.kv` (`SyncStore`), `.vector` (`VectorStore`), `.search` (`SearchStore`), and
+`.log` (`LogStore`) over that one connection. They have the same facets, transaction modes, and schema, and each can
 reopen files the other wrote.
 
 ```ts
@@ -277,6 +353,7 @@ and its synchronous writes are rolled back. This helper is SQLite-only; the port
 ### Awaitable access
 
 `asyncKv` is the same store as `.kv`, awaitable, with versioned reads and atomic mutations.
+`asyncLog` is the same log as `.log`, awaitable.
 `asyncTransaction(work)` and `afterCommit(notify)` implement the portable
 [async transaction contract](#async-transactions) over this connection with `BEGIN IMMEDIATE`.
 
@@ -289,7 +366,7 @@ await sqlite.asyncTransaction(async () => {
 ```
 
 SQLite has one writer, so awaitable work is serialized per database file across every adapter in
-the process: `asyncKv` calls and transactions queue behind an open transaction. While asynchronous
+the process: `asyncKv` and `asyncLog` calls and transactions queue behind an open transaction. While asynchronous
 work owns the file, the synchronous facets and `transaction()` throw `SqliteAdapterError` with code
 `async-operation-active` unless they are called from inside that transaction, and opening another
 adapter on the file throws the same error. Open adapters before starting asynchronous work, and
@@ -652,8 +729,8 @@ authored or versioned content, at a path the host chooses.
 
 Embedded backends are **synchronous**. A local SQLite call finishes in microseconds, and an
 async-everywhere interface would wrap every local call in a Promise it does not need. A `SyncStore`
-lifts to the async interface with `toAsync(store)`, and a `SearchStore` with
-`toAsyncSearch(search)`; the reverse is impossible. Use sync for embedded and local stores, and
+lifts to the async interface with `toAsync(store)`, a `SearchStore` with
+`toAsyncSearch(search)`, and a `LogStore` with `toAsyncLog(log)`; the reverse is impossible. Use sync for embedded and local stores, and
 async only where a remote backend needs it.
 
 ## What this package does not do
@@ -661,7 +738,8 @@ async only where a remote backend needs it.
 - Present async behaviour as synchronous, or emulate a capability an adapter cannot honestly
   provide. Unsupported behaviour fails explicitly.
 - Run more than one SQLite write transaction at a time, or hide overload behind unbounded retries.
-- Provide a writer daemon, job queue, message bus, or append-only log interface.
+- Provide a writer daemon, job queue, or message bus. The [append-only log](#append-only-log) stores
+  records; it does not deliver them.
 - Offer synchronous callback transactions as a portable contract, or atomic batches across
   namespaces.
 - Manage encryption keys, encrypt artifacts, or sync devices.
