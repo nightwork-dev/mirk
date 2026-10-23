@@ -134,6 +134,9 @@ and `close(): void`.
   `topK` is the true nearest **within the filtered set** — the same semantics as
   `@mirk/store`'s in-memory and sqlite backends.
 
+Native search errors propagate to the caller. They do not trigger a full collection
+scan. Use `forceJsCosine` to select JavaScript scoring explicitly.
+
 Dimensionality is persisted in a `_vec_meta` row and enforced on reopen; opening a
 store at a different dimension than it was created with throws.
 
