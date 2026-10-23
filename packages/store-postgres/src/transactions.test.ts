@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
+import { AtomicMutationIndeterminateError } from "@mirk/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { asyncTransactionContract } from "../../store/src/conformance/transaction-contract.js";
@@ -120,23 +121,39 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
 
   it("releases the schema lock held by a stalled transaction", async () => {
     const stalled = await PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: 200 });
+    let wake!: () => void;
+    const frozen = new Promise<void>((resolve) => (wake = resolve));
+    let outcome!: Promise<unknown>;
     try {
-      const entered = new Promise<void>((resolve) => {
-        void stalled
+      await new Promise<void>((entered) => {
+        outcome = stalled
           .transaction(async () => {
             await stalled.kv.set("stalled", 1);
-            resolve();
-            await new Promise((done) => setTimeout(done, 1500));
+            entered();
+            // A frozen host: it never returns to commit on its own.
+            await frozen;
             await stalled.kv.set("stalled", 2);
           })
-          .catch(() => undefined);
+          .then(
+            () => "committed",
+            () => "failed",
+          );
       });
-      await entered;
-      const started = Date.now();
+      // Without the idle timeout this write waits for the lock forever, and
+      // the test times out.
       await b.kv.set("after-stall", true);
-      expect(Date.now() - started).toBeLessThan(1200);
+      const pool = new Pool({ connectionString });
+      try {
+        const held = await pool.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted`);
+        expect(held.rows[0].n).toBe(0);
+      } finally {
+        await pool.end();
+      }
       expect(await b.kv.get("stalled")).toBeNull();
+      wake();
+      expect(await outcome).toBe("failed");
     } finally {
+      wake();
       await stalled.close();
     }
   });
@@ -161,6 +178,53 @@ describePostgres("PostgresAdapter atomic writes across hosts", () => {
     await expect(PostgresAdapter.open({ connectionString, schema, transactionIdleTimeoutMs: -1 })).rejects.toMatchObject({
       code: "invalid-timeout",
     });
+  });
+
+  it("reports a failure before the transaction began as definite", async () => {
+    const pool = new Pool({ connectionString });
+    const adapter = await PostgresAdapter.open({ pool, schema });
+    try {
+      pool.connect = (async () => {
+        throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+      }) as unknown as Pool["connect"];
+      const failure = await adapter.kv
+        .mutateAtomically({ operations: [{ op: "set", key: "never-sent", value: 1 }], idempotency: { key: "never-sent" } })
+        .catch((error: unknown) => error);
+      expect(failure).toMatchObject({ code: "ECONNRESET" });
+      expect(failure).not.toBeInstanceOf(AtomicMutationIndeterminateError);
+    } finally {
+      await adapter.close();
+      await pool.end();
+    }
+  });
+
+  it("reports a connection lost during COMMIT as indeterminate", async () => {
+    const pool = new Pool({ connectionString });
+    const adapter = await PostgresAdapter.open({ pool, schema });
+    const connect = pool.connect.bind(pool) as () => Promise<PoolClient>;
+    try {
+      pool.connect = (async () => {
+        const client = await connect();
+        const query = client.query.bind(client) as (...args: unknown[]) => Promise<unknown>;
+        client.query = (async (...args: unknown[]) => {
+          if (args[0] === "COMMIT") {
+            await query("ROLLBACK");
+            throw Object.assign(new Error("Connection terminated unexpectedly"), { code: "ECONNRESET" });
+          }
+          return query(...args);
+        }) as unknown as PoolClient["query"];
+        return client;
+      }) as unknown as Pool["connect"];
+      const failure = await adapter.kv
+        .mutateAtomically({ operations: [{ op: "set", key: "lost-commit", value: 1 }], idempotency: { key: "lost-commit" } })
+        .catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(AtomicMutationIndeterminateError);
+      expect(failure).toMatchObject({ recovery: "retry-with-same-key", idempotencyKey: "lost-commit" });
+    } finally {
+      pool.connect = connect as unknown as Pool["connect"];
+      await adapter.close();
+      await pool.end();
+    }
   });
 
   it("refuses new transactions after close", async () => {

@@ -101,14 +101,18 @@ export interface PostgresAdapterOptions {
   /** Override the atomic request bounds `.kv` enforces. Defaults to the
    *  portable remote limits. */
   atomicLimits?: Partial<AtomicMutationLimits>;
-  /** The prefix version tokens carry when this schema is first provisioned.
-   *  A schema that already has one keeps it. Defaults to a fresh UUID. */
-  versionIdentity?: string;
   /** How long, in milliseconds, a transaction may sit idle between
    *  statements before PostgreSQL ends its session and releases its locks.
    *  This bounds how long a frozen or killed host can block other writers.
    *  Defaults to 60000; 0 disables the limit. */
   transactionIdleTimeoutMs?: number;
+}
+
+/** Not part of the public options: the conformance replay pins the prefix of
+ *  version tokens so their exact values can be compared. Not exported from the
+ *  package entry. */
+export interface PostgresAdapterTestOptions extends PostgresAdapterOptions {
+  versionIdentity?: string;
 }
 
 interface Queryable {
@@ -127,6 +131,11 @@ const INDETERMINATE_CODES = new Set(["ECONNRESET", "EPIPE", "ETIMEDOUT", "57P01"
  *  timeout) makes node-postgres emit `error` on the client. Without a listener
  *  that event would crash the process; the failed query already reports it. */
 const ignoreConnectionError = (): void => undefined;
+
+/** Errors raised while COMMIT was in flight. Only these can leave a
+ *  transaction's outcome unknown; a failure before COMMIT was sent never
+ *  applied anything. */
+const commitFailures = new WeakSet<object>();
 
 function isIndeterminateFailure(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -174,7 +183,13 @@ export class PostgresAdapter implements AsyncStoreTransactions {
         return client;
       },
       commit: async (client) => {
-        const result = await client.query("COMMIT");
+        let result: QueryResult;
+        try {
+          result = await client.query("COMMIT");
+        } catch (error) {
+          if (typeof error === "object" && error !== null) commitFailures.add(error);
+          throw error;
+        }
         if (result.command !== "COMMIT") {
           throw new Error("PostgreSQL rolled the transaction back instead of committing it.");
         }
@@ -224,7 +239,10 @@ export class PostgresAdapter implements AsyncStoreTransactions {
     const adapter = new PostgresAdapter(pool, ownsPool, schema, options);
     try {
       await adapter.transaction(() =>
-        (adapter.kv as PostgresStoreFacet).init(schema, options.versionIdentity ?? randomUUID()),
+        (adapter.kv as PostgresStoreFacet).init(
+          schema,
+          (options as PostgresAdapterTestOptions).versionIdentity ?? randomUUID(),
+        ),
       );
       return adapter;
     } catch (error) {
@@ -450,9 +468,9 @@ class PostgresStoreFacet implements PostgresStore {
     try {
       return await this.write(() => this.decideAtomic(validated));
     } catch (error) {
-      // Only the outermost commit can be lost in flight. Inside a caller's
-      // transaction nothing has committed yet, so the failure is definite.
-      if (outermost && isIndeterminateFailure(error)) {
+      // Only the outermost COMMIT can be lost in flight. A failure before it
+      // was sent, or inside a caller's transaction, is definite.
+      if (outermost && typeof error === "object" && error !== null && commitFailures.has(error) && isIndeterminateFailure(error)) {
         const key = validated.idempotency?.key;
         throw new AtomicMutationIndeterminateError(
           validated.requestDigest,

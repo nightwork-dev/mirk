@@ -31,6 +31,28 @@ function handle(adapter: SqliteAdapterCore): TransactionContractHandle {
   };
 }
 
+// node:sqlite opens `file:` URIs; better-sqlite3 13 treats them as paths.
+asyncTransactionContract("SQLite (node:sqlite, a plain path and a file: URI to one file)", {
+  async open() {
+    const root = mkdtempSync(join(tmpdir(), "mirk-async-uri-"));
+    const path = join(root, "store.sqlite");
+    const first = new NodeSqliteAdapter({ path, busyTimeoutMs: 1000 });
+    const second = new NodeSqliteAdapter({
+      path: `file:${encodeURI(path)}?mode=rw`,
+      busyTimeoutMs: 1000,
+    });
+    return {
+      first: handle(first),
+      second: handle(second),
+      async close() {
+        first.close();
+        second.close();
+        rmSync(root, { recursive: true, force: true });
+      },
+    };
+  },
+});
+
 for (const [driver, open] of drivers) {
   asyncTransactionContract(`SQLite (${driver}, two adapters on one file)`, {
     async open() {
@@ -71,6 +93,41 @@ for (const [driver, open] of drivers) {
         await expect(transaction).rejects.toThrow("cancelled");
         expect(await queued).toBeNull();
         expect(adapter.kv.get("state")).toBeNull();
+      } finally {
+        adapter.close();
+      }
+    });
+
+    it("never runs a write started without await after the commit", async () => {
+      const adapter = open(":memory:");
+      try {
+        const leaks: Promise<string>[] = [];
+        await adapter.asyncTransaction(() => {
+          for (let depth = 0; depth < 12; depth += 1) {
+            let chain: Promise<void> = Promise.resolve();
+            for (let step = 0; step < depth; step += 1) chain = chain.then(() => undefined);
+            leaks.push(
+              chain.then(() => {
+                const write = adapter.asyncKv.set(`k${depth}`, depth);
+                let state: string;
+                try {
+                  state = adapter.inspect().transactionState;
+                } catch {
+                  state = "refused";
+                }
+                return write.then(
+                  () => state,
+                  (error: Error) => error.message
+                );
+              })
+            );
+          }
+        });
+        for (const state of await Promise.all(leaks)) {
+          expect(["write", "refused"]).toContain(
+            state.includes("transaction has ended") ? "refused" : state
+          );
+        }
       } finally {
         adapter.close();
       }

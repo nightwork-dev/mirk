@@ -139,17 +139,18 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
     };
     let value: T;
     try {
-      value = await this.#scopes.run(scope, async () => {
-        const result = await work();
-        await scope.tail;
-        return result;
+      value = await this.#scopes.run(scope, work);
+      // COMMIT is queued in the same tick as the last check of the tail, so
+      // a call that arrives later is refused rather than run outside.
+      await settle(scope, () => {
+        scope.active = false;
+        return this.backend.commit(connection);
       });
-      await this.backend.commit(connection);
     } catch (error) {
       scope.active = false;
       // A nested transaction the work did not await may still be issuing
       // statements; let it finish before the connection is rolled back.
-      await scope.tail;
+      await settle(scope, () => undefined);
       let cleanupError: unknown;
       try {
         await this.backend.rollback(connection);
@@ -159,7 +160,6 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
       await this.backend.end(connection, cleanupError);
       throw error;
     }
-    scope.active = false;
     await this.backend.end(connection);
     deliver(
       scope.callbacks
@@ -187,14 +187,15 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
       try {
         await this.backend.savepoint(parent.connection, name);
         created = true;
-        const value = await this.#scopes.run(child, async () => {
-          const result = await work();
-          await child.tail;
-          return result;
+        const value = await this.#scopes.run(child, work);
+        await settle(child, () => {
+          child.active = false;
+          return this.backend.releaseSavepoint(parent.connection, name);
         });
-        await this.backend.releaseSavepoint(parent.connection, name);
         return value;
       } catch (error) {
+        child.active = false;
+        await settle(child, () => undefined);
         child.rolledBack = true;
         if (created) {
           await this.backend.rollbackToSavepoint(parent.connection, name);
@@ -211,6 +212,16 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
   }
 }
 
+/** Wait until no nested transaction is queued on `scope`, including ones
+ *  queued while waiting, then call `next` in the same tick as the final check. */
+async function settle<C, R>(scope: Scope<C>, next: () => R): Promise<Awaited<R>> {
+  for (;;) {
+    const tail = scope.tail;
+    await tail;
+    if (tail === scope.tail) return next();
+  }
+}
+
 function rolledBackChain<C>(scope: Scope<C> | undefined): boolean {
   for (let current = scope; current; current = current.parent) {
     if (current.rolledBack) return true;
@@ -221,14 +232,7 @@ function rolledBackChain<C>(scope: Scope<C> | undefined): boolean {
 function deliver(callbacks: readonly AfterCommitNotify[]): void {
   for (const notify of callbacks) {
     try {
-      const result: unknown = notify();
-      if (
-        result !== null &&
-        typeof result === "object" &&
-        typeof (result as { then?: unknown }).then === "function"
-      ) {
-        (result as PromiseLike<unknown>).then(undefined, () => undefined);
-      }
+      Promise.resolve(notify() as unknown).catch(() => undefined);
     } catch {
       // One listener's failure must not stop the others or undo the commit.
     }
