@@ -470,6 +470,9 @@ export function asyncTransactionContract(
             leaked = new Promise((resolve) => setTimeout(resolve, 10)).then(() =>
               first.kv.set("late", 1)
             );
+            // On a remote backend the commit can outlast the timer, so the
+            // rejection may come before the assertion below observes it.
+            leaked.catch(() => undefined);
           });
           await expect(leaked).rejects.toThrow("transaction has ended");
           expect(await second.kv.get("late")).toBeNull();

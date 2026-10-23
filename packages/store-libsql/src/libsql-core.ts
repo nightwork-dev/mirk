@@ -53,7 +53,7 @@ import {
   resolveAtomicLimits,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
-import { AsyncTransactionCoordinator, TransactionScopeError } from "@mirk/store/transaction";
+import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 // Pure SQL-string builders shared with @mirk/store/sqlite — one definition so the
 // two SQLite-dialect adapters can't drift in filter semantics.
 import {
@@ -316,29 +316,6 @@ interface OpenTransaction {
   readonly stream: Transaction | undefined;
   /** Local: releases the adapter's connection. */
   readonly release: (() => void) | undefined;
-  /** Set once COMMIT or ROLLBACK starts; later calls wait for `finished`. */
-  ending: boolean;
-  readonly finished: Promise<void>;
-  readonly finish: () => void;
-}
-
-function openTransaction(
-  fields: Pick<OpenTransaction, "execute" | "batch" | "minted" | "stream" | "release">,
-): OpenTransaction {
-  let finish!: () => void;
-  const finished = new Promise<void>((resolve) => (finish = resolve));
-  return { ...fields, ending: false, finished, finish };
-}
-
-/** A store call that reaches a transaction after its work returned waits for
- *  the transaction to end, then fails the way a call after the end does. */
-async function usable(open: OpenTransaction): Promise<void> {
-  if (!open.ending) return;
-  await open.finished;
-  throw new TransactionScopeError(
-    "transaction-ended",
-    "The transaction has ended; await every store call inside transaction().",
-  );
 }
 
 const OUTER_SAVEPOINT = "mirk_outer";
@@ -423,7 +400,6 @@ class LibsqlDatabase {
       },
       rollback: (open) => this.rollbackOpen(open),
       savepoint: async (open, name) => {
-        await usable(open);
         await guard(open.execute(`SAVEPOINT ${name}`));
       },
       releaseSavepoint: async (open, name) => {
@@ -434,18 +410,14 @@ class LibsqlDatabase {
       },
       end: async (open, cleanupError) => {
         if (cleanupError !== undefined) this.floor = Math.max(this.floor, open.minted);
-        try {
-          if (open.stream) {
-            open.stream.close();
-          } else {
-            if (cleanupError !== undefined) {
-              await this.client.execute("ROLLBACK").catch(() => undefined);
-              this.stale = true;
-            }
-            open.release!();
+        if (open.stream) {
+          open.stream.close();
+        } else {
+          if (cleanupError !== undefined) {
+            await this.client.execute("ROLLBACK").catch(() => undefined);
+            this.stale = true;
           }
-        } finally {
-          open.finish();
+          open.release!();
         }
       },
     });
@@ -453,18 +425,15 @@ class LibsqlDatabase {
 
   /** Run a statement in the calling context's transaction, or on its own. */
   execute(stmt: InStatement): Promise<ResultSet> {
-    return this.transactions.withConnection(async (open) => {
-      if (!open) return this.alone(() => this.client.execute(stmt));
-      await usable(open);
-      return guard(open.execute(stmt));
-    });
+    return this.transactions.withConnection((open) =>
+      open ? guard(open.execute(stmt)) : this.alone(() => this.client.execute(stmt)),
+    );
   }
 
   /** Run `op` with the open transaction. The caller must be inside one. */
   inTransaction<T>(op: (open: OpenTransaction) => Promise<T>): Promise<T> {
-    return this.transactions.withConnection(async (open) => {
+    return this.transactions.withConnection((open) => {
       if (!open) throw new Error("internal: a libSQL write ran outside its transaction");
-      await usable(open);
       return op(open);
     });
   }
@@ -532,7 +501,7 @@ class LibsqlDatabase {
             throw error;
           }
         });
-        const open = openTransaction({
+        const open: OpenTransaction = {
           execute: (stmt) => this.client.execute(stmt),
           batch: async (stmts) => {
             const results: ResultSet[] = [];
@@ -542,7 +511,7 @@ class LibsqlDatabase {
           minted,
           stream: undefined,
           release,
-        });
+        };
         try {
           await guard(open.batch(opening));
         } catch (error) {
@@ -565,18 +534,17 @@ class LibsqlDatabase {
         stream.close();
         throw error;
       }
-      return openTransaction({
+      return {
         execute: (stmt) => stream.execute(stmt),
         batch: (stmts) => stream.batch(stmts),
         minted,
         stream,
         release: undefined,
-      });
+      };
     });
   }
 
   private async commitOpen(open: OpenTransaction): Promise<void> {
-    open.ending = true;
     try {
       if (open.stream) await open.stream.commit();
       else await this.whileBusy(() => this.client.execute("COMMIT"));
@@ -589,7 +557,6 @@ class LibsqlDatabase {
   }
 
   private async rollbackOpen(open: OpenTransaction): Promise<void> {
-    open.ending = true;
     if (open.minted === 0) {
       if (open.stream) await guard(open.stream.rollback());
       else await guard(this.client.execute("ROLLBACK"));
