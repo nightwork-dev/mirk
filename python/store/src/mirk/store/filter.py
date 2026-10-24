@@ -167,6 +167,24 @@ def json_equal(a: Any, b: Any) -> bool:
     return False
 
 
+def _is_finite_number(value: int | float) -> bool:
+    """True when JavaScript would read the number as finite: an int beyond the
+    double range becomes Infinity there, and raises OverflowError in ``isfinite``."""
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _is_non_finite_number(value: Any) -> bool:
+    """True for a number (not a bool) that JavaScript would read as NaN or Infinity."""
+    return _is_number(value) and not _is_finite_number(value)
+
+
 def where_range(value: Any) -> RangeBounds | None:
     """Classify a `where` value: None for a scalar, the bounds for a range.
 
@@ -175,7 +193,7 @@ def where_range(value: Any) -> RangeBounds | None:
     string raises ``invalid-range-bound``.
     """
     if is_scalar(value):
-        if isinstance(value, float) and not math.isfinite(value):
+        if _is_non_finite_number(value):
             raise StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE)
         return None
     if not isinstance(value, dict):
@@ -185,9 +203,7 @@ def where_range(value: Any) -> RangeBounds | None:
         raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
     bounds: RangeBounds = []
     for operator, bound in entries.items():
-        if isinstance(bound, str) or (
-            isinstance(bound, int | float) and not isinstance(bound, bool) and math.isfinite(bound)
-        ):
+        if isinstance(bound, str) or (_is_number(bound) and _is_finite_number(bound)):
             bounds.append((operator, normalize_json_numbers(bound)))
         else:
             raise StoreFilterError("invalid-range-bound", INVALID_RANGE_BOUND_MESSAGE)
@@ -229,7 +245,7 @@ def validate_in_values(values: list[Any]) -> None:
     for value in values:
         if not is_scalar(value):
             raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
-        if isinstance(value, float) and not math.isfinite(value):
+        if _is_non_finite_number(value):
             raise StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE)
 
 

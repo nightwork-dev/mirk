@@ -125,8 +125,26 @@ def json_path(field: str) -> str:
     a ``"`` written ``\\u0022`` because SQLite 3.45, libSQL's engine, ends the
     label at ``\\"``.
     """
-    label = json.dumps(field, ensure_ascii=False)[1:-1].replace('\\"', "\\u0022")
-    return f'$."{label}"'
+    return f'$."{_path_label(field)}"'
+
+
+_SURROGATE_PAIR = re.compile("[\ud800-\udbff][\udc00-\udfff]")
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _path_label(field: str) -> str:
+    """The label ``JSON.stringify`` writes for ``field`` in TypeScript.
+
+    A Python str can hold a surrogate pair as two code points, where JavaScript
+    sees one character, so pairs are joined first. A lone surrogate is escaped
+    as ``\\udxxx``, as ES2019 ``JSON.stringify`` does.
+    """
+    joined = _SURROGATE_PAIR.sub(
+        lambda m: chr(0x10000 + ((ord(m[0][0]) - 0xD800) << 10) + ord(m[0][1]) - 0xDC00), field
+    )
+    label = json.dumps(joined, ensure_ascii=False)[1:-1]
+    label = _LONE_SURROGATE.sub(lambda m: f"\\u{ord(m[0]):04x}", label)
+    return label.replace('\\"', "\\u0022")
 
 
 def _bind(value: Any) -> SqlParam:
@@ -196,8 +214,8 @@ def build_order_by(filter: StoreFilter | None = None) -> tuple[str, list[SqlPara
 
 
 def index_name_for(table: str, field: str) -> str:
-    """``ix_<table>_<hex of the field's UTF-8>``, the name TypeScript derives too."""
-    return f"ix_{table}_{field.encode('utf-8').hex()}"
+    """``ix_<table>_<hex of the path label's UTF-8>``, the name TypeScript derives too."""
+    return f"ix_{table}_{_path_label(field).encode('utf-8').hex()}"
 
 
 def build_ensure_index_sql(table: str, field: str) -> str:
