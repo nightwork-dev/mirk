@@ -28,6 +28,7 @@ from mirk.store import SqliteStore, hash_name
 from mirk.store.atomic import validate_atomic_request
 from mirk.store.conformance import repo_root
 from mirk.store.search import InMemorySearchStore, SearchInputError
+from mirk.store.sqlite import index_name_for, json_path_literal
 from mirk.store.sqlite_log import SqliteLogFacet
 from mirk.store.sqlite_search import SqliteSearchFacet
 from mirk.store.sqlite_vector import SqliteVectorFacet
@@ -1186,7 +1187,7 @@ def _index_names(path: Path) -> list[str]:
 
 
 def test_each_language_finds_the_index_the_other_declared(tmp_path: Path) -> None:
-    fields = ["seenAt", 'q"uote', "it's"]
+    fields = ["seenAt", 'q"uote', "it's", "lone\ud800", "pair\U0001f600"]
     from_typescript = tmp_path / "ts.sqlite"
     run_node_script(INDEX_SCRIPT, tmp_path, str(from_typescript), json.dumps(fields))
     declared = _index_names(from_typescript)
@@ -1217,3 +1218,29 @@ def test_each_language_finds_the_index_the_other_declared(tmp_path: Path) -> Non
     store.close()
     run_node_script(INDEX_SCRIPT, tmp_path, str(from_python), json.dumps(fields))
     assert _index_names(from_python) == declared
+
+
+PATH_SCRIPT = f"""
+import {{ indexNameFor, jsonPathLiteral }} from {json.dumps(str(DIST_SQL))};
+
+const fields = JSON.parse(process.argv[2]);
+const pairs = fields.map((field) => [jsonPathLiteral(field), indexNameFor("c_t", field)]);
+console.log(JSON.stringify(pairs));
+"""
+
+
+def test_path_literals_and_index_names_match_typescript(tmp_path: Path) -> None:
+    fields = [
+        "plain",
+        'q"uote',
+        "back\\slash",
+        "new\nline",
+        "a\u0000b",
+        "lone\ud800",
+        "low\udc00first",
+        "\ud83d\ude00",
+        "pair\U0001f600",
+        "accent\u00e9",
+    ]
+    expected = run_node_script(PATH_SCRIPT, tmp_path, json.dumps(fields))
+    assert [[json_path_literal(f), index_name_for("c_t", f)] for f in fields] == expected

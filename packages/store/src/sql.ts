@@ -183,13 +183,15 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
 }
 
 /** The name of the expression index `ensureIndex` declares on one collection
- *  table: `ix_<table>_<hex of the field's UTF-8>`. The hex holds no `_`, so the
- *  last `_` splits the name back into table and field: two declarations never
- *  share a name. The Python port derives the same name, so each language sees
- *  the other's index as already present. */
+ *  table: `ix_<table>_<hex of the UTF-8 of the field's path label>`. For most
+ *  fields the label is the field itself. The label escapes lone surrogates,
+ *  which UTF-8 cannot carry, so distinct fields keep distinct names. The hex
+ *  holds no `_`, so the last `_` splits the name back into table and label:
+ *  two declarations never share a name. The Python port derives the same name,
+ *  so each language sees the other's index as already present. */
 export function indexNameFor(table: string, field: string): string {
   let hex = "";
-  for (const byte of new TextEncoder().encode(field)) hex += byte.toString(16).padStart(2, "0");
+  for (const byte of new TextEncoder().encode(jsonPath(field).slice(3, -1))) hex += byte.toString(16).padStart(2, "0");
   return `ix_${table}_${hex}`;
 }
 
