@@ -410,8 +410,9 @@ call stays one statement.
 
 `ensureIndex(collection, field)` runs
 `CREATE INDEX IF NOT EXISTS ix_<table>_<hex of field> ON <table> (json_extract(data, '$."field"'))`
-on the collection's table. The Python adapter derives the same name, so either language sees the
-other's index as present. Every `where` term, `listWhereIn` and `sortBy` write the JSON path into
+on the collection's table. The hex is of the UTF-8 of the path label, which is the field itself
+unless the field needs JSON escapes. The Python adapter derives the same name and the same path,
+so either language sees and uses the other's index. Every `where` term, `listWhereIn` and `sortBy` write the JSON path into
 the SQL text, not as a bound parameter, so the index matches. `jsonPathLiteral` in
 `@mirk/store/sql` returns that literal. With the index, `EXPLAIN QUERY PLAN` shows `SEARCH … USING
 INDEX` for equality, `listWhereIn` and ranges, and `SCAN … USING INDEX` for `sortBy`. Sorting puts

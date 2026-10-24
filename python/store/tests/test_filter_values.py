@@ -45,3 +45,17 @@ def test_more_values_than_one_statement_binds_is_a_typed_error(store: Any) -> No
     with pytest.raises(StoreFilterError) as raised:
         store.listWhereIn("items", "f", list(range(32_767)))
     assert raised.value.code == "too-many-in-values"
+
+
+@pytest.mark.parametrize("value", [10**400, -(10**400)])
+def test_an_integer_no_double_can_hold_is_a_typed_error(store: Any, value: int) -> None:
+    store.put("items", {"id": "a", "f": 1})
+    cases: list[tuple[str, Callable[[], Any]]] = [
+        ("invalid-range-bound", lambda: store.list("items", {"where": {"f": {"gte": value}}})),
+        ("non-finite-number", lambda: store.list("items", {"where": {"f": value}})),
+        ("non-finite-number", lambda: store.listWhereIn("items", "f", [value])),
+    ]
+    for code, call in cases:
+        with pytest.raises(StoreFilterError) as raised:
+            call()
+        assert raised.value.code == code
