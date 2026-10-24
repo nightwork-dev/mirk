@@ -133,6 +133,8 @@ describe any behaviour outside these rules.
   of both kinds match nothing. A bound that is not a finite number or a string throws
   `StoreFilterError` with code `invalid-range-bound`; any other object or array value throws code
   `non-scalar-filter`.
+- A `NaN` or infinite number in `where` or `listWhereIn` throws `StoreFilterError` with code
+  `non-finite-number`. A field name may hold any character, including `"`, `\` and NUL.
 - Sorted results put `null` and missing values last, in both ascending and descending order. `0` is
   a value and sorts before `null`. Strings sort by Unicode code point, and equal values keep their
   input order.
@@ -400,7 +402,9 @@ Every connection the adapter opens or receives is switched to WAL mode with fore
 `json_extract(data, '$."field"') IN (?, …)`, with a `json_type` check that keeps a stored boolean
 from matching `1` or `0`. A boolean or `null` value adds its own term on the same expression. A
 string never matches a number. `null` matches a stored `null` and never a missing field. The libSQL
-adapter uses the same SQL.
+adapter uses the same SQL. One call takes at most `MAX_IN_VALUES` (10,000) values on every backend;
+more throw `StoreFilterError` with code `too-many-in-values`. Split a longer list yourself: each
+call stays one statement.
 
 ### Indexes and query plans
 

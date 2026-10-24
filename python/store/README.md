@@ -46,7 +46,10 @@ language sees the other's index as present. `InMemoryStore` accepts it and does
 nothing. A `where` value made only of `gt`, `gte`, `lt` and `lte` bounds is a
 range, with the TypeScript semantics: a number bound matches only numbers, a
 string bound only strings by code point, and `None` or a missing field never
-matches.
+matches. A NaN or infinite number in a filter raises `StoreFilterError`
+(`non-finite-number`), and `listWhereIn` takes at most `MAX_IN_VALUES`
+(10,000) values. An integer above 2^53 in a filter is normalized the way a
+stored one is, so it matches the record it was written as.
 
 Method names keep the TypeScript camelCase spelling (`getById`, `listWhereIn`)
 so a corpus `op` string dispatches identically in both languages.

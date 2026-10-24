@@ -32,11 +32,24 @@ export function jsonPath(field: string): string {
 export const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
 
 export const INVALID_RANGE_BOUND_MESSAGE = "Store range bounds must be finite numbers or strings.";
+export const NON_FINITE_NUMBER_MESSAGE = "Store filters only support finite numbers.";
 
-export type StoreFilterErrorCode = "non-scalar-filter" | "non-scalar-in-value" | "invalid-range-bound";
+/** The most values one `listWhereIn` call takes. Each is one bound parameter on
+ *  SQLite and libSQL, whose limit is 32,766 per statement; PostgreSQL binds one
+ *  array. One limit for every backend keeps a call portable. */
+export const MAX_IN_VALUES = 10_000;
+export const TOO_MANY_IN_VALUES_MESSAGE = `Store IN queries accept at most ${MAX_IN_VALUES} values.`;
 
-/** Thrown for a `where` or IN value that is not a JSON scalar or a range, and
- *  for a range bound that is not a finite number or a string. */
+export type StoreFilterErrorCode =
+  | "non-scalar-filter"
+  | "non-scalar-in-value"
+  | "invalid-range-bound"
+  | "non-finite-number"
+  | "too-many-in-values";
+
+/** Thrown for a `where` or IN value that is not a JSON scalar or a range, a
+ *  number that is not finite, a range bound that is not a finite number or a
+ *  string, and an IN list longer than `MAX_IN_VALUES`. */
 export class StoreFilterError extends Error {
   declare readonly name: "StoreFilterError";
   constructor(readonly code: StoreFilterErrorCode, message: string) {
@@ -76,6 +89,9 @@ export function whereCondition(value: unknown): WhereCondition {
     typeof value === "bigint" ||
     typeof value === "boolean"
   ) {
+    if (typeof value === "number" && !Number.isFinite(value)) {
+      throw new StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE);
+    }
     return { kind: "equals", value };
   }
   if (typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
@@ -195,6 +211,21 @@ export function jsonPathLiteral(field: string): string {
 
 export const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
 
+/** Validate a `listWhereIn` value list: at most `MAX_IN_VALUES` values, each a
+ *  JSON scalar, each number finite. */
+export function assertInValues(values: readonly unknown[]): void {
+  if (values.length > MAX_IN_VALUES) {
+    throw new StoreFilterError("too-many-in-values", TOO_MANY_IN_VALUES_MESSAGE);
+  }
+  for (const value of values) {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) throw new StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE);
+    } else if (value !== null && typeof value !== "string" && typeof value !== "bigint" && typeof value !== "boolean") {
+      throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
+    }
+  }
+}
+
 /** The `listWhereIn` condition as one index-friendly expression.
  *
  *  Strings and numbers go into a single `json_extract(data, path) IN (...)`.
@@ -213,14 +244,14 @@ export function buildInClause(
   values: readonly unknown[],
   hasPriorWhere: boolean,
 ): { clause: string; params: SqlParam[] } {
+  assertInValues(values);
   const path = jsonPathLiteral(field);
   const scalars: SqlParam[] = [];
   const kinds = new Set<"true" | "false" | "null">();
   for (const value of values) {
     if (value === null) kinds.add("null");
     else if (typeof value === "boolean") kinds.add(value ? "true" : "false");
-    else if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") scalars.push(value);
-    else throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
+    else scalars.push(value as string | number | bigint);
   }
 
   const extract = `json_extract(data, ${path})`;

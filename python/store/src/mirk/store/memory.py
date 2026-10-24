@@ -23,12 +23,12 @@ from .atomic import (
 )
 from .atomic import wall_clock_ms as _wall_clock_ms
 from .filter import (
-    IN_SCALAR_MESSAGE,
-    StoreFilterError,
     apply_filter,
     dumps_json,
-    is_scalar,
     json_equal,
+    normalize_json_numbers,
+    validate_in_values,
+    validate_where,
 )
 from .types import JsonObject, StoreFilter, StoreMeta
 
@@ -355,11 +355,13 @@ class InMemoryStore:
     ) -> list[Any]:
         if len(values) == 0:
             return []
-        for value in values:
-            if not is_scalar(value):
-                raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
+        where = filter.get("where") if filter else None
+        if where:
+            validate_where(where)
+        validate_in_values(values)
+        wanted = [normalize_json_numbers(value) for value in values]
         items = list(self._collection(collection).values())
-        matched = [item for item in items if _field_in(item, field, values)]
+        matched = [item for item in items if _field_in(item, field, wanted)]
         return [copy_json(item) for item in apply_filter(matched, filter)]
 
 

@@ -38,15 +38,15 @@ const METHODS = [
 // scenario that neither runs green nor matches an entry fails.
 const JSONB_TEXT = "jsonb rejects lone surrogates";
 const STRICT_PAGINATION = "negative or fractional limit and offset are rejected";
-const UNVALIDATED_FILTERS = "filter and collection-name input is not validated like the reference";
+const UNVALIDATED_FILTERS = "collection-name input is not validated like the reference";
 const SKIPS = new Map<string, string>([
   ["store/lone-surrogate-values-are-storable", JSONB_TEXT],
   ["store/atomic/lone-surrogate-values", JSONB_TEXT],
+  ["store/field-name-with-nul", "jsonb rejects \\u0000, so the record cannot be stored"],
   ["store/limit-fractional-truncates", STRICT_PAGINATION],
   ["store/limit-negative-returns-nothing", STRICT_PAGINATION],
   ["store/offset-negative-is-zero", STRICT_PAGINATION],
   ["store/collection-empty-name-throws", UNVALIDATED_FILTERS],
-  ["store/list-where-in-non-scalar-value-throws", UNVALIDATED_FILTERS],
   ["store/atomic/reject-operation-limit-exceeded", "the remote default maxOperations is 128, not the in-process 4096"],
 ]);
 
