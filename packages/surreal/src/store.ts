@@ -1,7 +1,7 @@
-import { StoreFilterError, compareCodePoints } from "@mirk/store";
+import { compareCodePoints } from "@mirk/store";
 import { sortAndPageStoreItems } from "@mirk/store/kv";
 import type { AsyncStore, AsyncStoreInQuery, AsyncStoreIndexes, StoreFilter, StoreMeta } from "@mirk/store/kv";
-import { inRange, whereCondition, type WhereCondition } from "@mirk/store/sql";
+import { assertInValues, inRange, whereCondition, type WhereCondition } from "@mirk/store/sql";
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
 import { cloneJson } from "./internal/clone-json.js";
@@ -33,7 +33,6 @@ interface CollectionRow {
 }
 
 const ORDER_SEQUENCE = "mirk_collection_order";
-const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
 const COLLECTION_FIELDS = "mirk_id, mirk_ordinal, mirk_codec, data";
 
 export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery, AsyncStoreIndexes {
@@ -125,9 +124,7 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery, Async
   ): Promise<T[]> {
     if (values.length === 0) return [];
     const query = buildSelectQuery(filter, "$inField INSIDE object::keys(data) AND data[$inField] INSIDE $inValues");
-    for (const value of values) {
-      if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
-    }
+    assertInValues(values);
     const table = await this.ensureCollection(collection);
     const rows = firstStatement<CollectionRow[]>(
       await this.connection.query(query.sql, {
@@ -255,16 +252,6 @@ function ordinalOf(value: unknown): number | undefined {
 
 function idOf(row: CollectionRow): string {
   return typeof row.mirk_id === "string" ? row.mirk_id : "";
-}
-
-function isJsonScalar(value: unknown): boolean {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  );
 }
 
 type Range = readonly [field: string, condition: WhereCondition & { kind: "range" }];

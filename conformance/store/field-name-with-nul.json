@@ -1,0 +1,81 @@
+{
+  "id": "store/field-name-with-nul",
+  "title": "a field name holding NUL is one top-level key in where, sortBy and listWhereIn",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "a",
+          "a\u0000b": 2
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "b",
+          "a\u0000b": 1,
+          "a": 1
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "a\u0000b": 2
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "sortBy": "a\u0000b"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "a\u0000b",
+        [
+          1,
+          2
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

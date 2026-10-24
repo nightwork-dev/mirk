@@ -39,6 +39,8 @@ from .filter import (
     StoreFilterError,
     dumps_json,
     is_scalar,
+    normalize_json_numbers,
+    validate_in_values,
     where_range,
 )
 from .types import JsonObject, StoreFilter, StoreMeta
@@ -128,8 +130,9 @@ def json_path(field: str) -> str:
 
 
 def _bind(value: Any) -> SqlParam:
+    """A query value, normalized the way ``dumps_json`` normalizes a stored one."""
     if isinstance(value, int | float | str) and not isinstance(value, bool):
-        return value
+        return normalize_json_numbers(value)
     raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
 
 
@@ -156,7 +159,7 @@ def build_where_clause(filter: StoreFilter | None = None) -> tuple[str, list[Sql
         if bounds is not None:
             for operator, bound in bounds:
                 conditions.append(f"unlikely({extract} {_RANGE_SQL[operator]} ?)")
-                params.append(bound)
+                params.append(_bind(bound))
             kinds = {isinstance(bound, str) for _, bound in bounds}
             if len(kinds) > 1:
                 conditions.append("0")
@@ -240,6 +243,7 @@ def _build_in_clause(
     equates TEXT with a number, and the json_type guard keeps a stored boolean
     (extracted as 1/0) out. Booleans and null are their own guarded terms.
     """
+    validate_in_values(values)
     path = json_path_literal(field)
     scalars: list[SqlParam] = []
     kinds: dict[str, None] = {}

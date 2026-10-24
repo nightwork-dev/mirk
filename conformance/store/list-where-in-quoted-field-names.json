@@ -1,6 +1,6 @@
 {
   "id": "store/list-where-in-quoted-field-names",
-  "title": "field names containing a single quote or a dot name one top-level key",
+  "title": "field names containing a single quote, a dot or a backslash name one top-level key",
   "ports": [
     "collection"
   ],
@@ -15,7 +15,8 @@
         {
           "id": "a",
           "it's": "x",
-          "a.b": "dot"
+          "a.b": "dot",
+          "back\\slash'quote": "v"
         }
       ]
     },
@@ -28,9 +29,25 @@
           "it's": "y",
           "a": {
             "b": "dot"
-          }
+          },
+          "back\\slash'quote": "w"
         }
       ]
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "back\\slash'quote",
+        [
+          "v"
+        ]
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
     },
     {
       "op": "listWhereIn",
