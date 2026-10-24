@@ -18,7 +18,10 @@ __all__ = [
     "FILTER_SCALAR_MESSAGE",
     "INVALID_RANGE_BOUND_MESSAGE",
     "IN_SCALAR_MESSAGE",
+    "MAX_IN_VALUES",
+    "NON_FINITE_NUMBER_MESSAGE",
     "RANGE_OPERATORS",
+    "TOO_MANY_IN_VALUES_MESSAGE",
     "RangeBounds",
     "StoreFilterError",
     "StoreFilterErrorCode",
@@ -29,6 +32,7 @@ __all__ = [
     "matches_where",
     "normalize_json_numbers",
     "sort_key",
+    "validate_in_values",
     "validate_where",
     "where_range",
 ]
@@ -36,8 +40,19 @@ __all__ = [
 FILTER_SCALAR_MESSAGE = "Store filters only support JSON scalar values."
 IN_SCALAR_MESSAGE = "Store IN queries only support JSON scalar values."
 INVALID_RANGE_BOUND_MESSAGE = "Store range bounds must be finite numbers or strings."
+NON_FINITE_NUMBER_MESSAGE = "Store filters only support finite numbers."
 
-StoreFilterErrorCode = Literal["non-scalar-filter", "non-scalar-in-value", "invalid-range-bound"]
+MAX_IN_VALUES = 10_000
+"""The most values one ``listWhereIn`` call takes, the same on every backend."""
+TOO_MANY_IN_VALUES_MESSAGE = f"Store IN queries accept at most {MAX_IN_VALUES} values."
+
+StoreFilterErrorCode = Literal[
+    "non-scalar-filter",
+    "non-scalar-in-value",
+    "invalid-range-bound",
+    "non-finite-number",
+    "too-many-in-values",
+]
 
 RANGE_OPERATORS = ("gt", "gte", "lt", "lte")
 
@@ -160,6 +175,8 @@ def where_range(value: Any) -> RangeBounds | None:
     string raises ``invalid-range-bound``.
     """
     if is_scalar(value):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE)
         return None
     if not isinstance(value, dict):
         raise StoreFilterError("non-scalar-filter", FILTER_SCALAR_MESSAGE)
@@ -171,7 +188,7 @@ def where_range(value: Any) -> RangeBounds | None:
         if isinstance(bound, str) or (
             isinstance(bound, int | float) and not isinstance(bound, bool) and math.isfinite(bound)
         ):
-            bounds.append((operator, bound))
+            bounds.append((operator, normalize_json_numbers(bound)))
         else:
             raise StoreFilterError("invalid-range-bound", INVALID_RANGE_BOUND_MESSAGE)
     return bounds
@@ -205,6 +222,17 @@ def in_range(stored: Any, bounds: RangeBounds) -> bool:
     return True
 
 
+def validate_in_values(values: list[Any]) -> None:
+    """At most ``MAX_IN_VALUES`` values, each a JSON scalar, each number finite."""
+    if len(values) > MAX_IN_VALUES:
+        raise StoreFilterError("too-many-in-values", TOO_MANY_IN_VALUES_MESSAGE)
+    for value in values:
+        if not is_scalar(value):
+            raise StoreFilterError("non-scalar-in-value", IN_SCALAR_MESSAGE)
+        if isinstance(value, float) and not math.isfinite(value):
+            raise StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE)
+
+
 def validate_where(where: dict[str, Any]) -> None:
     """Reject invalid `where` values before any row is examined."""
     for value in where.values():
@@ -223,7 +251,7 @@ def matches_where(item: Any, where: dict[str, Any]) -> bool:
         if bounds is not None:
             if not in_range(record[key], bounds):
                 return False
-        elif not json_equal(record[key], value):
+        elif not json_equal(record[key], normalize_json_numbers(value)):
             return False
     return True
 

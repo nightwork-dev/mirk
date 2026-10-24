@@ -27,7 +27,7 @@ import {
   resolveReceiptRetention,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
-import { whereCondition, type StoreRangeOperator } from "@mirk/store/sql";
+import { assertInValues, whereCondition, type StoreRangeOperator } from "@mirk/store/sql";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 
 export type PostgresAdapterErrorCode =
@@ -452,6 +452,7 @@ class PostgresStoreFacet implements PostgresStore {
    *  equality, listWhereIn and number ranges; `(data ->> field) COLLATE "C"`
    *  serves string ranges in code point order on any server locale. */
   async ensureIndex(collection: string, field: string): Promise<void> {
+    if (field.includes("\u0000")) return;
     const name = createHash("sha256").update(`${collection}\u0000${field}`).digest("hex").slice(0, 32);
     const key = `E'${field.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
     await this.write(() =>
@@ -814,7 +815,9 @@ function buildListQuery(
   const where = buildWhere(collection, filter?.where, inQuery);
   let sql = `SELECT data FROM ${table}${where.sql}`;
   const values = where.values;
-  if (filter?.sortBy) {
+  // jsonb cannot hold "\u0000", so no record has such a field: it filters to
+  // nothing and sorts like a missing field.
+  if (filter?.sortBy && !filter.sortBy.includes("\u0000")) {
     values.push(filter.sortBy);
     const field = `$${values.length}`;
     const direction = filter.sortDir === "desc" ? "DESC" : "ASC";
@@ -856,7 +859,7 @@ function buildWhere(
     // A number bound compares jsonb numbers; a string bound compares the text in
     // "C" collation, which is code point order. Bounds of both kinds match nothing.
     const kinds = condition.kind === "range" ? new Set(condition.bounds.map(([, bound]) => typeof bound)) : undefined;
-    if (kinds !== undefined && kinds.size > 1) {
+    if ((kinds !== undefined && kinds.size > 1) || field.includes("\u0000")) {
       clauses.push("FALSE");
       continue;
     }
@@ -879,6 +882,8 @@ function buildWhere(
     }
   }
   if (inQuery) {
+    assertInValues(inQuery.values);
+    if (inQuery.field.includes("\u0000")) return { sql: ` WHERE ${[...clauses, "FALSE"].join(" AND ")}`, values };
     // `= ANY` over a jsonb[] parameter: jsonb equality keeps 1, "1" and true
     // apart, a missing field (SQL NULL) never matches, and an expression index
     // on (collection, (data -> 'field')) can serve it when the statement is planned

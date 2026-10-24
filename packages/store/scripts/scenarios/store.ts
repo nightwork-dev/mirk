@@ -962,12 +962,13 @@ export const scenarios = [
 
   defineScenario({
     id: "store/list-where-in-quoted-field-names",
-    title: "field names containing a single quote or a dot name one top-level key",
+    title: "field names containing a single quote, a dot or a backslash name one top-level key",
     ports: ["collection"],
     capabilities: ["listWhereIn"],
     steps: [
-      { op: "put", args: ["items", { id: "a", "it's": "x", "a.b": "dot" }] },
-      { op: "put", args: ["items", { id: "b", "it's": "y", a: { b: "dot" } }] },
+      { op: "put", args: ["items", { id: "a", "it's": "x", "a.b": "dot", "back\\slash'quote": "v" }] },
+      { op: "put", args: ["items", { id: "b", "it's": "y", a: { b: "dot" }, "back\\slash'quote": "w" }] },
+      { op: "listWhereIn", args: ["items", "back\\slash'quote", ["v"]], expect: { ids: true } },
       { op: "listWhereIn", args: ["items", "it's", ["x"]], expect: { ids: true } },
       { op: "listWhereIn", args: ["items", "a.b", ["dot"]], expect: { ids: true } },
       { op: "listWhereIn", args: ["items", "x') OR 1=1 --", ["x"]], expect: { ids: true } },
@@ -996,6 +997,32 @@ export const scenarios = [
         args: ["items", "f", ["a", "b", "c"], { where: { kind: "keep" }, sortBy: "rank", limit: 2, offset: 1 }],
         expect: { ids: true },
       },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/field-name-with-nul",
+    title: "a field name holding NUL is one top-level key in where, sortBy and listWhereIn",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "a", "a\u0000b": 2 }] },
+      { op: "put", args: ["items", { id: "b", "a\u0000b": 1, a: 1 }] },
+      { op: "list", args: ["items", { where: { "a\u0000b": 2 } }], expect: { ids: true } },
+      { op: "list", args: ["items", { sortBy: "a\u0000b" }], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "a\u0000b", [1, 2]], expect: { ids: true } },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/list-where-in-value-limit",
+    title: "listWhereIn takes up to 10,000 values in one statement and rejects more",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "put", args: ["items", { id: "a", f: 9999 }] },
+      { op: "listWhereIn", args: ["items", "f", Array.from({ length: 10_000 }, (_, i) => i)], expect: { ids: true } },
+      { op: "listWhereIn", args: ["items", "f", Array.from({ length: 10_001 }, (_, i) => i)], expect: { throws: true } },
     ],
   }),
 
