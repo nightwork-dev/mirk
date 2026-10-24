@@ -147,6 +147,10 @@ capabilities, and `AsyncAtomicMutationStore`.
   compares `jsonb` numbers, and a string bound compares the text with `COLLATE "C"`, so string
   ranges are in code point order on any server locale. A bound that is not a finite number or a
   string throws `StoreFilterError`.
+- `where` and `listWhereIn` values are validated like the reference: an object, array or
+  non-finite number throws `StoreFilterError`, and `listWhereIn` takes at most 10,000 values.
+- `jsonb` cannot store `\u0000`, so no record has a field whose name holds NUL. Filtering on such a
+  field matches nothing, and sorting by it keeps insertion order.
 - Unsorted reads return insertion order; updating a record does not move it. Sorted reads put
   missing and `null` values last and break ties by insertion order.
 - `count` applies `where` and ignores pagination and sorting. Negative or fractional `limit` and

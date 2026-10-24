@@ -32,27 +32,7 @@ import {
   validateAtomicRequest,
 } from "../atomic.js";
 import { compareCodePoints, sortAndPageStoreItems } from "../order.js";
-import { StoreFilterError, assertWhere, inRange, whereCondition } from "../sql.js";
-
-/** The message the SQLite adapter already raises for a non-scalar `listWhereIn`
- *  value. The reference raises the same one so the two backends agree. */
-const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
-
-function isJsonScalar(value: unknown): boolean {
-  return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
-    typeof value === "bigint"
-  );
-}
-
-function assertScalarInValues(values: readonly unknown[]): void {
-  for (const value of values) {
-    if (!isJsonScalar(value)) throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
-  }
-}
+import { assertInValues, assertWhere, inRange, whereCondition } from "../sql.js";
 
 let nextMemoryStoreId = 1;
 
@@ -177,7 +157,7 @@ export class InMemoryStore
     // Validation order mirrors the SQLite adapter, which builds the caller's
     // WHERE clause before the IN clause.
     if (filter?.where) assertWhere(filter.where);
-    assertScalarInValues(values);
+    assertInValues(values);
     const set = new Set(values);
     const col = this.ensureCollection(collection);
     const items = [...col.values()].filter((item) => {
