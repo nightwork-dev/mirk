@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-store"
-version = "0.13.1"
+version = "0.14.0"
 description = "Storage primitives with no domain baked in: key-value, collections, vector, full-text search, append-only log, and graph. Python port of @mirk/store."
 readme = "README.md"
 license = "Apache-2.0"
