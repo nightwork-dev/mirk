@@ -5,6 +5,36 @@ distribution carries the same version and is bumped together, so "mirk 0.12.0" m
 thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
 This file records each release and repository-wide contract changes.
 
+## 0.14.0 — 2026-10-23
+
+Indexed collection queries.
+
+### Store
+
+- `listWhereIn` runs as one statement on SQLite, both SQLite adapters, PostgreSQL, and now libSQL,
+  which did not implement it before. A call takes at most 10,000 values (`too-many-in-values`).
+- `ensureIndex(collection, field)` declares an index on a collection field. It is idempotent, so it
+  is safe to call on every start. SQLite, libSQL and the Python SQLite store create the same
+  expression index under the same name. PostgreSQL creates two (jsonb, and a `COLLATE "C"` text
+  index for code-point string order), using a plain `CREATE INDEX` that blocks writes while it
+  builds, so declare indexes at startup. The in-memory, IndexedDB and Surreal stores accept the call
+  and do nothing. `where` equality, `listWhereIn`, `sortBy` and range filters use the index.
+- Range filters in `where`: `{ seenAt: { gte: since } }`, with `gt`, `gte`, `lt` and `lte`. A number
+  bound compares only numbers and a string bound only strings, by Unicode code point. null and
+  missing values never match. A bound that is not a finite number or a string throws
+  `invalid-range-bound`.
+- NaN and infinite numbers in filters throw `non-finite-number` on every backend.
+- Field names containing `"`, `\`, control characters or lone surrogates now match on SQLite,
+  libSQL and Python, which write path labels the way `JSON.stringify` does.
+
+On 120,000 SQLite records with an index: equality 41 ms to 0.3 ms, a `>= since` range 42 ms to
+0.9 ms, a sorted page 118 ms to under 0.1 ms, and `listWhereIn` with 50 values 52 ms to 9 ms.
+
+### Python
+
+`mirk-store` gains `ensureIndex`, range filters and the same validation. All Python distributions
+move to 0.14.0 with the version set.
+
 ## 0.13.1 — 2026-10-23
 
 ### Fixes
