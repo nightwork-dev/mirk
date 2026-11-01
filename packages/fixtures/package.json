@@ -56,7 +56,10 @@
   "files": [
     "dist",
     "README.md",
-    "docs"
+    "docs",
+    "godot",
+    "test/authored-data-cases.json",
+    "test/authored-data.gd"
   ],
   "scripts": {
     "test": "vitest run",
