@@ -6,11 +6,12 @@ from typing import Any
 
 from mirk.data import merge_layers, merge_overlay
 
-CASES = json.loads(
-    (
+_cases_file = Path(__file__).with_name("authored-data-cases.json")
+if not _cases_file.exists():
+    _cases_file = (
         Path(__file__).resolve().parents[3] / "packages/fixtures/test/authored-data-cases.json"
-    ).read_text()
-)
+    )
+CASES = json.loads(_cases_file.read_text())
 
 
 def test_shared_overlay_cases() -> None:

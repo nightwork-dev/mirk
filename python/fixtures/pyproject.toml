@@ -38,6 +38,9 @@ packages = ["src/mirk"]
 [tool.hatch.build.targets.sdist]
 include = ["README.md", "LICENSE", "pyproject.toml", "src/mirk", "tests"]
 
+[tool.hatch.build.targets.sdist.force-include]
+"../../packages/fixtures/test/authored-data-cases.json" = "tests/authored-data-cases.json"
+
 [tool.pyright]
 typeCheckingMode = "strict"
 include = ["src", "tests"]
