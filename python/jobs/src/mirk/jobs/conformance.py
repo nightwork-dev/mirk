@@ -31,6 +31,17 @@ class JobsConformanceTarget:
             {"id": id, "queue": queue, "payload": payload, "priority": priority}, self._key()
         )["value"]
 
+    def enqueueCommand(self, input: Any, commandKey: str) -> Any:
+        return self.jobs.enqueue(input, {"key": commandKey})["value"]
+
+    def rememberClaim(self, id: str, alias: str) -> None:
+        self.claims[alias] = self.claims[id]
+
+    def corruptRecord(self, id: str, patch: Any) -> None:
+        job = self.jobs.get(id)
+        assert job is not None
+        self.jobs.store.put(self.jobs.collection, {**job["value"], **patch})
+
     def get(self, id: str) -> Any:
         result = self.jobs.get(id)
         return result["value"] if result else None

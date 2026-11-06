@@ -7,7 +7,8 @@ from collections.abc import Callable
 from typing import Any
 
 from .core import JobsCore, Record, validate_positive, validate_time
-from .core import JobsError as JobsError
+from .errors import JobsError as JobsError
+from .validation import validate_claim
 
 
 class JobsStore(JobsCore):
@@ -20,6 +21,8 @@ class JobsStore(JobsCore):
         change: Callable[[Record, int], None],
         allow_cancel: bool = False,
     ) -> Record:
+        validate_claim(claim)
+
         def work() -> Record:
             prior = self._require(claim["jobId"])
             now = validate_time(self.now())
@@ -254,6 +257,7 @@ class JobsStore(JobsCore):
                 raise JobsError("conflict")
             if prior["value"]["state"] not in ("succeeded", "failed", "cancelled"):
                 raise JobsError("not-terminal")
+            stream = self._stream(id) if self.delete_history else None
             result = self.store.mutateAtomically(
                 {
                     "conditions": [
@@ -263,13 +267,22 @@ class JobsStore(JobsCore):
                             "version": expectedVersion,
                         }
                     ],
-                    "operations": [{"op": "remove", "collection": self.collection, "id": id}],
+                    "operations": [
+                        {"op": "remove", "collection": self.collection, "id": id},
+                        {
+                            "op": "set",
+                            "key": self._generation_key(id),
+                            "value": prior["value"]["generation"],
+                        },
+                    ],
                 }
             )
             if result["status"] != "applied":
                 raise JobsError("conflict")
             if self.delete_history:
-                self.log.deleteStream(self._stream(id))
+                assert self.log is not None
+                assert stream is not None
+                self.log.deleteStream(stream)
             return True
 
         return self._command(
