@@ -87,23 +87,6 @@ def distance_value(value: object) -> object:
     return getattr(value, "value", value)
 
 
-def vector_params(info: Any) -> tuple[int, object, object, object] | None:
-    params = getattr(getattr(info, "config", None), "params", None)
-    vectors = getattr(params, "vectors", None)
-    if isinstance(vectors, dict):
-        return None
-    size = getattr(vectors, "size", None)
-    distance = getattr(vectors, "distance", None)
-    if not isinstance(size, int) or distance is None:
-        return None
-    return (
-        size,
-        distance_value(distance),
-        distance_value(getattr(vectors, "datatype", None)),
-        getattr(vectors, "multivector_config", None),
-    )
-
-
 def condition(key: str, value: str | bool) -> models.FieldCondition:
     return models.FieldCondition(key=key, match=models.MatchValue(value=value))
 
