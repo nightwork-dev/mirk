@@ -6,30 +6,31 @@
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "import": "./index.js",
-      "default": "./index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "index.js",
-    "index.d.ts",
     "install.js",
     "dist/native/*.c",
     "dist/native/*.h",
     "dist/native/*.patch",
     "dist/native/provenance.json",
-    "dist/native/LICENSE"
+    "dist/native/LICENSE",
+    "dist/index.js",
+    "dist/index.d.ts"
   ],
   "scripts": {
-    "prepack": "python3 ../../native/sqlite-vec/prepare.py dist/native",
-    "build": "python3 ../../native/sqlite-vec/prepare.py dist/native && node install.js",
+    "prepack": "python3 ../../native/sqlite-vec/prepare.py dist/native && tsup src/index.ts --format esm --dts",
+    "build": "python3 ../../native/sqlite-vec/prepare.py dist/native && node install.js && tsup src/index.ts --format esm --dts",
     "install": "node install.js",
-    "typecheck": "tsc --allowJs --checkJs --noEmit --module nodenext --target es2022 index.js install.js"
+    "typecheck": "tsc --noEmit --module nodenext --target es2022 src/index.ts && tsc --allowJs --checkJs --noEmit --module nodenext --target es2022 install.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "tsup": "^9.0.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
