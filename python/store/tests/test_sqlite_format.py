@@ -244,3 +244,32 @@ console.log(JSON.stringify({ok:true}));
         }
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("has_vector_table", [True, False])
+def test_unsafe_legacy_dimensions_reject_without_mutating_empty_files(
+    tmp_path: Path, has_vector_table: bool
+) -> None:
+    path = tmp_path / "unsafe-dimensions.db"
+    legacy_file(path, struct.pack("<2f", 1.0, 0.0))
+    connection = sqlite3.connect(path, isolation_level=None)
+    connection.execute("DELETE FROM vectors")
+    if not has_vector_table:
+        connection.execute("DROP TABLE vectors")
+    dimensions = "9007199254740992"
+    connection.execute("UPDATE _vec_meta SET value=? WHERE key='dimensions'", (dimensions,))
+    schema = connection.execute("SELECT name,sql FROM sqlite_master ORDER BY name").fetchall()
+    try:
+        with pytest.raises(SqliteAdapterError) as caught:
+            ensure_registry(connection)
+        assert caught.value.code == "malformed-schema"
+        assert str(caught.value) == "Invalid legacy vector dimensions"
+        assert (
+            connection.execute("SELECT name,sql FROM sqlite_master ORDER BY name").fetchall()
+            == schema
+        )
+        assert connection.execute("SELECT value FROM _mirk_meta").fetchone()[0] == "2"
+        assert connection.execute("SELECT value FROM _vec_meta").fetchone()[0] == dimensions
+        assert connection.execute("SELECT value FROM app").fetchone()[0] == "preserved"
+    finally:
+        connection.close()

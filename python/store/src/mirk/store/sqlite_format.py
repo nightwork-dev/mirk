@@ -42,7 +42,7 @@ def migrate_vectors(connection: sqlite3.Connection) -> None:
                 dimensions = int(row[0])
             except (TypeError, ValueError) as error:
                 raise ValueError("Invalid legacy vector dimensions") from error
-            if dimensions <= 0 or str(dimensions) != str(row[0]):
+            if dimensions <= 0 or dimensions > 2**53 - 1 or str(dimensions) != str(row[0]):
                 raise ValueError("Invalid legacy vector dimensions")
     if exists("vectors"):
         columns = {row[1] for row in connection.execute("PRAGMA table_info(vectors)")}
