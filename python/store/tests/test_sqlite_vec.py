@@ -80,3 +80,38 @@ def test_shared_vector_corpus_through_extension() -> None:
             assert not run_scenario(facet, scenario), scenario.id
         finally:
             db.close()
+
+
+@pytest.mark.parametrize(
+    "limit,expected",
+    [
+        (2.5, ["a", "b"]),
+        (-2.5, ["a"]),
+        (0.5, []),
+        (-0.5, []),
+        (float("nan"), []),
+        (float("inf"), ["a", "b", "c"]),
+        (float("-inf"), []),
+    ],
+)
+def test_limit_normalization_across_engines(limit: float, expected: list[str]) -> None:
+    from mirk.store.sqlite_vector import SqliteVectorFacet
+    from mirk.store.vector import InMemoryVectorStore, VectorStore
+
+    for kind in ["memory", "sqlite", "native"]:
+        db = sqlite3.connect(":memory:")
+        try:
+            store: VectorStore = (
+                InMemoryVectorStore()
+                if kind == "memory"
+                else SqliteVectorFacet(
+                    db, vector_engine=sqlite_vec_engine() if kind == "native" else None
+                )
+            )
+            store.ensureSpace("default", {"dimensions": 1})
+            for identifier in ["a", "b", "c"]:
+                store.upsert("docs", {"id": identifier, "vectors": {"default": [1.0]}})
+            actual = store.search("docs", {"space": "default", "vector": [1.0]}, {"topK": limit})
+            assert [hit["id"] for hit in actual] == expected, kind
+        finally:
+            db.close()

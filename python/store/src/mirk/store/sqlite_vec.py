@@ -9,7 +9,13 @@ import sqlite3
 from typing import Any, Protocol, cast
 
 from .filter import dumps_json
-from .vector import VectorSearchOptions, VectorSearchResult, VectorSearchResultList, vector_to_bytes
+from .vector import (
+    VectorSearchOptions,
+    VectorSearchResult,
+    VectorSearchResultList,
+    top_k_of,
+    vector_to_bytes,
+)
 
 
 class SqliteVecError(RuntimeError):
@@ -118,7 +124,7 @@ class SqliteVecEngine:
         if minimum is not None and not math.isnan(minimum):
             floor = " AND score>=?"
             params.append(minimum)
-        limit = options.get("topK", 10)
+        limit = top_k_of(opts)
         limit_sql = f"max((SELECT count(*) FROM accepted)+{limit},0)" if limit < 0 else str(limit)
         sql = f"""WITH population AS NOT MATERIALIZED (
             SELECT v.id,v.vec,d.metadata FROM _mirk_vector_values v

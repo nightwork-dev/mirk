@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import struct
+import sys
 from typing import (
     Any,
     Literal,
@@ -263,8 +264,13 @@ def sort_results(results: VectorSearchResultList) -> None:
 
 
 def top_k_of(opts: VectorSearchOptions | None) -> int:
+    """Apply JavaScript slice-end normalization within the host index range."""
     raw = opts.get("topK", DEFAULT_TOP_K) if opts else DEFAULT_TOP_K
-    return int(raw)
+    if (isinstance(raw, float) and math.isnan(raw)) or raw == -math.inf:
+        return 0
+    if raw == math.inf:
+        return sys.maxsize
+    return max(-sys.maxsize, min(sys.maxsize, int(raw)))
 
 
 def min_score_of(opts: VectorSearchOptions | None) -> float | None:

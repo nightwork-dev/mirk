@@ -1159,4 +1159,18 @@ export const scenarios = [
       { op: "count", args: ["assets"], expect: { value: true } },
     ],
   }),
+  defineScenario({
+    id: "vector/fractional-topk",
+    title: "fractional limits truncate toward zero before slicing the ranked results",
+    ports: ["vector"],
+    steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsertMany", args: ["docs", LADDER] },
+      ...[2.5, -2.5, 0.5, -0.5].map(topK => ({
+        op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK }],
+        expect: { ids: true as const },
+      })),
+    ],
+  }),
+
 ];
