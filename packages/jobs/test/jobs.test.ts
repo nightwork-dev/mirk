@@ -4,6 +4,7 @@ import { InMemoryLogStore, toAsyncLog } from '@mirk/store/log';
 import { InMemoryKv, toAsync } from '@mirk/store/kv';
 import { createMemoryTransactions } from '@mirk/store/transaction';
 import type { JsonValue } from '@mirk/store/atomic';
+import type { BlockedDecision } from '../src/types.js';
 import { JobsStore } from '../src/index.js';
 
 const handles: NodeSqliteAdapter[] = [];
@@ -145,6 +146,19 @@ describe.each(['memory','sqlite'])('durable jobs %s', backend => {
     const pending = jobs.enqueue(mutable,{key:'e'}); mutable.payload.input='changed';
     release(); await held;
     expect((await pending).value.payload).toEqual({input:'original'});
+  });
+
+  it('validates malformed blocked decisions before looking up a used command key', async () => {
+    const {jobs} = setup(); await jobs.enqueue(input,{key:'e'});
+    const claim = (await jobs.claim('job',{key:'c',leaseMs:10}))!;
+    const blocked = await jobs.block(claim,null,{key:'block'});
+    const decision = {state:'cancelled'} as const;
+    const resolved = await jobs.resolveBlocked('job',blocked.version,decision,{key:'resolve'});
+    expect(await jobs.resolveBlocked('job',blocked.version,decision,{key:'resolve'})).toEqual(resolved);
+    for (const malformed of [{state:'cancelled',result:'unexpected'},{}]) {
+      expect(() => jobs.resolveBlocked('job',blocked.version,malformed as BlockedDecision,{key:'resolve'})).toThrowError(expect.objectContaining({code:'invalid-input'}));
+    }
+    expect(await jobs.get('job')).toEqual(resolved);
   });
 
 });

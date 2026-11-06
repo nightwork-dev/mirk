@@ -184,3 +184,18 @@ def test_cancel_after_expiry(fixture: Any) -> None:
         "requestedAt": 110,
         "generation": claim["generation"],
     }
+
+
+def test_malformed_blocked_decision_precedes_used_key_lookup(fixture: Any) -> None:
+    jobs, _, _ = fixture
+    jobs.enqueue({"id": "job", "queue": "q", "payload": None}, {"key": "e"})
+    claim = jobs.claim("job", {"key": "c", "leaseMs": 10})
+    blocked = jobs.block(claim, None, {"key": "block"})
+    decision = {"state": "cancelled"}
+    resolved = jobs.resolveBlocked("job", blocked["version"], decision, {"key": "resolve"})
+    assert jobs.resolveBlocked("job", blocked["version"], decision, {"key": "resolve"}) == resolved
+    for malformed in ({"state": "cancelled", "result": "unexpected"}, {}):
+        with pytest.raises(JobsError) as error:
+            jobs.resolveBlocked("job", blocked["version"], malformed, {"key": "resolve"})
+        assert error.value.code == "invalid-input"
+    assert jobs.get("job") == resolved

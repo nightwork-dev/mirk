@@ -34,6 +34,11 @@ class JobsConformanceTarget:
     def enqueueCommand(self, input: Any, commandKey: str) -> Any:
         return self.jobs.enqueue(input, {"key": commandKey})["value"]
 
+    def resolveBlockedCommand(self, id: str, decision: Any, commandKey: str) -> Any:
+        return self.jobs.resolveBlocked(id, self._version(id), decision, {"key": commandKey})[
+            "value"
+        ]
+
     def rememberClaim(self, id: str, alias: str) -> None:
         self.claims[alias] = self.claims[id]
 

@@ -101,4 +101,16 @@ export const scenarios = [
     ],
   }),
 
+  defineScenario({
+    id: 'jobs/malformed-blocked-decision-before-command-replay',
+    title: 'blocked decision shape validation precedes lookup of an already used command key',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'job',queue:'q',payload:null},'used-key']},
+      {op:'resolveBlockedCommand',args:['job',{state:'cancelled',result:'unexpected'},'used-key'],expect:{throws:true}},
+      {op:'resolveBlockedCommand',args:['job',{},'used-key'],expect:{throws:true}},
+      {op:'get',args:['job'],expect:{value:true}},
+    ],
+  }),
+
 ];
