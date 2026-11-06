@@ -296,6 +296,11 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
     );
   let adapter: T | undefined;
   try {
+    if (opts.backupPath !== undefined && client.protocol !== "file")
+      throw new LibsqlAdapterError(
+        "unsupported-backup",
+        "Migration backups require a local file client",
+      );
     adapter = construct(client, ownsClient, opts);
     await adapter.initialize(
       opts.versionIdentity ?? crypto.randomUUID(),
