@@ -16,17 +16,16 @@ export interface VectorStoreMeta {
   /** Backend identifier (e.g. "memory", "sqlite"). */
   backend: string;
   engine?: string;
-  /** True when the backend answers from a native vector index; false when it
-   *  does exact JS-side cosine search. `@mirk/store-libsql` reports its own
-   *  `vector_top_k` path here; the SQLite adapter is always false, having no
-   *  accelerated path (roadmap MR-22). Informational only. */
+  /** True when search computation runs in the backend native engine. */
   accelerated: boolean;
 }
 
-export interface VectorDocument<M extends Record<string, unknown> = Record<string, unknown>> {
+export interface VectorDocument<
+  M extends Record<string, unknown> = Record<string, unknown>,
+> {
   /** Unique id within the collection. */
   id: string;
-  /** The embedding. Length must equal the store's configured dimensions. */
+  /** Complete named embedding map; each vector matches its declared space. */
   vectors: Record<string, Vector>;
   /** Typed context stored alongside the vector. Persisted as JSON by disk-backed
    *  backends, so it must be JSON-serializable; values JSON can't represent
@@ -34,7 +33,9 @@ export interface VectorDocument<M extends Record<string, unknown> = Record<strin
   metadata?: M;
 }
 
-export interface VectorSearchResult<M extends Record<string, unknown> = Record<string, unknown>> {
+export interface VectorSearchResult<
+  M extends Record<string, unknown> = Record<string, unknown>,
+> {
   id: string;
   /** Cosine similarity in [-1, 1]. Higher is more similar. */
   score: number;
@@ -50,7 +51,7 @@ export interface VectorSearchOptions {
    *  exact-match conditions. Applied before scoring, so topK is out of the passing
    *  set only. `where` and `whereNot` are independent — both may be provided. */
   where?: Record<string, unknown>;
-  /** Pre-KNN filter: exclude documents whose metadata satisfies ANY of these
+  /** Pre-KNN filter: exclude documents whose metadata satisfies ALL of these
    *  exact-match conditions. Applied before scoring. */
   whereNot?: Record<string, unknown>;
 }
@@ -60,9 +61,19 @@ export interface VectorSearchOptions {
  *  All operations are synchronous. Construction may be async for backends that
  *  load native bindings (see each backend's static `open`); once opened, every
  *  call is pure sync. */
-export interface VectorSpace { name: string; dimensions: number; metric: "cosine"; encoding: "float32"; }
-export interface VectorSpaceOptions { dimensions: number; }
-export interface VectorQuery { space: string; vector: Vector; }
+export interface VectorSpace {
+  name: string;
+  dimensions: number;
+  metric: "cosine";
+  encoding: "float32";
+}
+export interface VectorSpaceOptions {
+  dimensions: number;
+}
+export interface VectorQuery {
+  space: string;
+  vector: Vector;
+}
 
 export interface VectorStore {
   ensureSpace(name: string, options: VectorSpaceOptions): void;

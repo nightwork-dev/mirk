@@ -358,45 +358,77 @@ def ensure_registry(connection: sqlite3.Connection) -> None:
             )
         return parsed
 
-    version()
-    with _registry_write(connection):
-        found = version()
-        if found == SCHEMA_VERSION:
-            for table in (
-                REGISTRY_TABLE,
-                "_mirk_vector_spaces",
-                "_mirk_vector_documents",
-                "_mirk_vector_values",
-            ):
-                if not table_exists(connection, table):
-                    raise SqliteAdapterError("malformed-schema", f"Missing Mirk table {table}")
-            return
-        names = [
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        ]
-        if (
-            found is None
-            and any(name.startswith("_mirk_") for name in names)
-            and not table_exists(connection, REGISTRY_TABLE)
-            and not table_exists(connection, "_kv")
-        ):
-            raise SqliteAdapterError("malformed-schema", "Unrecognized unversioned Mirk layout")
-        if found not in (None, 1, 2):
-            raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
-        for statement in _REGISTRY_DDL:
-            connection.execute(statement)
-        from .sqlite_format import migrate_vectors
+    def validate_current() -> None:
+        tables = {
+            REGISTRY_TABLE: ("kind", "name", "table_name"),
+            "_mirk_vector_spaces": ("namespace", "name", "dimensions", "metric", "encoding"),
+            "_mirk_vector_documents": ("namespace", "collection", "id", "metadata"),
+            "_mirk_vector_values": ("namespace", "collection", "id", "space", "vec"),
+        }
+        for table, expected in tables.items():
+            if not table_exists(connection, table):
+                raise SqliteAdapterError("malformed-schema", f"Missing Mirk table {table}")
+            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if not set(expected).issubset(columns):
+                raise SqliteAdapterError("malformed-schema", f"Malformed Mirk table {table}")
 
-        try:
-            migrate_vectors(connection)
-        except ValueError as error:
-            raise SqliteAdapterError("malformed-schema", str(error)) from error
-        connection.execute(
-            "INSERT INTO _mirk_meta(key,value) VALUES('schema_version',?) ON "
-            "CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (str(SCHEMA_VERSION),),
-        )
+    if version() == SCHEMA_VERSION:
+        validate_current()
+        return
+    try:
+        with _registry_write(connection):
+            found = version()
+            if found == SCHEMA_VERSION:
+                validate_current()
+                return
+            names = [
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            ]
+            if found is None:
+                legacy = {
+                    REGISTRY_TABLE: ("kind", "name", "table_name"),
+                    "_mirk_atomic_versions": ("kind", "collection", "target_key", "version"),
+                    "_mirk_atomic_sequence": ("id", "value"),
+                    "_mirk_atomic_identity": ("id", "value"),
+                    "_mirk_atomic_receipts": ("idempotency_key", "request_digest", "result_json"),
+                    "_mirk_log": ("stream", "sequence", "record"),
+                    "_mirk_search_schema": ("collection", "fields_json"),
+                }
+                for name in names:
+                    if not name.startswith("_mirk_") or name.startswith("_mirk_coordination_"):
+                        continue
+                    expected = legacy.get(name)
+                    if expected is None:
+                        raise SqliteAdapterError(
+                            "malformed-schema", "Unrecognized unversioned Mirk layout"
+                        )
+                    actual = {row[1] for row in connection.execute(f'PRAGMA table_info("{name}")')}
+                    if not set(expected).issubset(actual):
+                        raise SqliteAdapterError(
+                            "malformed-schema", "Unrecognized unversioned Mirk layout"
+                        )
+            if found not in (None, 1, 2):
+                raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
+            for statement in _REGISTRY_DDL:
+                connection.execute(statement)
+            from .sqlite_format import migrate_vectors
+
+            try:
+                migrate_vectors(connection)
+            except ValueError as error:
+                raise SqliteAdapterError("malformed-schema", str(error)) from error
+            connection.execute(
+                "INSERT INTO _mirk_meta(key,value) VALUES('schema_version',?) ON "
+                "CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),),
+            )
+    except sqlite3.OperationalError as error:
+        if getattr(error, "sqlite_errorname", "").startswith("SQLITE_READONLY"):
+            raise SqliteAdapterError(
+                "migration-required", "Mirk SQLite file requires a writable format migration"
+            ) from error
+        raise
 
 
 def lookup_table(connection: sqlite3.Connection, kind: str, name: str) -> str | None:
@@ -605,10 +637,10 @@ class SqliteStore:
         self._tables: dict[str, str] = {}
         # Pragmas run outside any transaction; journal_mode is a no-op inside one.
         self._db.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
-        self._db.execute("PRAGMA journal_mode = WAL")
         self._db.execute("PRAGMA foreign_keys = ON")
         try:
             ensure_registry(self._db)
+            self._db.execute("PRAGMA journal_mode = WAL")
         except BaseException:
             if self._owns_connection:
                 self._db.close()

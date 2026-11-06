@@ -46,8 +46,9 @@ db.search.index("notes", { id: "n1", fields: { title: "Invoice", body: "Send the
 db.search.search("notes", "invoice"); // [{ id: "n1", ... }]
 
 // Vector search, ranked by exact cosine
-db.vector.upsert("docs", { id: "a", vector: new Float32Array([1, 0, 0]) });
-db.vector.search("docs", new Float32Array([1, 0.1, 0]), { topK: 5 }); // [{ id: "a", ... }]
+db.vector.ensureSpace("text", { dimensions: 3 });
+db.vector.upsert("docs", { id: "a", vectors: { text: new Float32Array([1, 0, 0]) } });
+db.vector.search("docs", { space: "text", vector: new Float32Array([1, 0.1, 0]) }, { topK: 5 }); // [{ id: "a", ... }]
 
 // One transaction across all of it
 db.transaction(() => {
@@ -364,7 +365,7 @@ reopen files the other wrote.
 ```ts
 import { SqliteAdapter } from "@mirk/store/sqlite";
 
-// .kv and .search work at once; vector dimensions are inferred on the first write.
+// Declare each embedding space before writing vectors.
 const db = new SqliteAdapter({ path: "data.db" });
 
 db.kv.set("user:1", { name: "Ada" });
@@ -372,8 +373,9 @@ db.search.index("pages", { id: "intro", fields: { title: "Intro", body: "hello w
 db.search.search("pages", "hello", { fieldWeights: { title: 4, body: 1 } });
 
 const embedding = new Float32Array(768); // your real embedding here
-db.vector.upsert("docs", { id: "a", vector: embedding });
-db.vector.search("docs", embedding, { topK: 10 }); // ranked by cosine
+db.vector.ensureSpace("text", { dimensions: 768 });
+db.vector.upsert("docs", { id: "a", vectors: { text: embedding } });
+db.vector.search("docs", { space: "text", vector: embedding }, { topK: 10 }); // ranked by cosine
 
 db.transaction(() => {
   db.kv.set("jobs:next", 42);
@@ -394,7 +396,8 @@ Both adapters take the same options; only the type of `db` differs.
 | ----------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`            | `string`                        | Database file path, or `":memory:"`.                                                                                                                           |
 | `db`              | `Database` / `DatabaseSync`     | Reuse an existing connection instead of opening one.                                                                                                           |
-| `dimensions`      | `number`                        | Optional embedding size. If omitted, it is inferred and stored from the first vector `upsert` / `upsertMany`; `search` still needs known dimensions.           |
+| `namespace` | `string` | Vector namespace; defaults to `"default"`. Space definitions and documents are isolated per namespace. KV/search/log keep their own existing names. |
+| `vectorEngine` | `SqliteVectorEngine` | Optional native search engine on the same connection. |
 | `busyTimeoutMs`   | `number`                        | Bounded wait for another SQLite writer. Defaults to 30 seconds; accepts `0` through `2_147_483_647` ms, and applies to owned and caller-supplied connections. |
 | `atomicLimits`    | `Partial<AtomicMutationLimits>` | Override the in-process atomic request limits (see [Request limits](#request-limits)).                                                                        |
 | `versionIdentity` | `string`                        | Prefix for atomic version tokens, written once when the file is first set up; a file that already has one keeps it. Defaults to a random UUID.                 |
@@ -495,14 +498,71 @@ To back up a live database, take a consistent SQLite snapshot (better-sqlite3's 
 `VACUUM INTO`), or stop the writers first. Copying the main file without its WAL is not a backup.
 The adapter has no backup or restore operation.
 
+### Shared SQLite file format
+
+The shared SQLite format is **3**, recorded as a decimal string in
+`_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
+are independent. Both Node drivers and Python use these tables and keys:
+
+| Table | Columns and identity |
+| --- | --- |
+| `_kv` | `key` primary key, JSON text `value`, `created_at`, `updated_at` |
+| `_mirk_tables` | `kind`, logical `name`, unique `table_name`; primary key `(kind,name)` |
+| Collection tables | `id` primary key, JSON text `data`, `created_at`, `updated_at`; `rowid` preserves insertion order |
+| Declared collection indexes | Ordinary SQLite indexes over JSON expressions, named by the shared index naming function |
+| `_mirk_search_schema` | `collection` primary key, `fields_json` array; registry-resolved docs/FTS5 tables and triggers store searchable text and nullable metadata |
+| `_mirk_vector_spaces` | `namespace`, `name`, positive integer `dimensions`, `metric='cosine'`, `encoding='float32'`; primary key `(namespace,name)` |
+| `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
+| `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
+| `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
+| `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
+| `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
+| `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
+
+Vector namespaces default to `default`; collections share space declarations only inside that
+namespace. Each `vec` is exactly `dimensions * 4` bytes in little-endian IEEE float32 order.
+Metadata SQL NULL means absent, distinct from JSON `{}`. JSON uses ordinary UTF-8 JSON text with
+object/array order preserved; no language-specific object encoding is stored. Optional coordination
+tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
+`_mirk_coordination_meta` use their separately documented versioned lease format and are preserved.
+
+Open validates version metadata before schema changes. Malformed metadata and unsupported future
+versions fail. Recognized pre-registry or version-1/2 files migrate atomically under `BEGIN
+IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
+the `default` namespace and `default` space; raw BLOBs and nullable metadata are copied unchanged.
+Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
+creates no space. Obsolete vector tables are dropped only after successful copying; the version
+is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
+versions, receipts and log positions remain intact. Concurrent openers converge on one migration.
+A read-only connection requiring migration raises `migration-required` and never migrates.
+
+For a portable single-file handoff, use the consistent backup operation, or finish a checkpoint
+and close writers before copying. Copying the main file alone during active WAL writes omits data.
+
 ### Vectors
 
-A `Vector` is a `Float32Array`. The SQLite adapters store vectors as little-endian float32 BLOBs
-and rank them by **exact cosine**, accumulated in float64. That is their only search path, so
-`db.vector.meta.accelerated` is always `false`. `sqlite-vec` is no longer a peer dependency; files
-written by versions that declared it still open and read normally. `compareCodePoints` from
-`@mirk/store/vector` gives other adapters the same deterministic ID ordering as the reference
-store.
+A `Vector` is a `Float32Array`. Declare spaces with `ensureSpace(name, { dimensions })`;
+`listSpaces()` returns `{ name, dimensions, metric: "cosine", encoding: "float32" }` in Unicode
+code-point name order. Names are nonempty and dimensions are positive integers. Definitions are
+shared by collections in the vector namespace and cannot change: an identical declaration is
+idempotent; another dimension raises `space-definition-conflict`.
+
+Documents contain `{ id, vectors: { [space]: embedding }, metadata? }`. The vector map must be
+nonempty and each space must already exist. A document may omit any space. `upsert` replaces the
+complete map and metadata, removing omitted embeddings. `upsertMany` validates and commits the
+whole batch atomically. `get` returns every embedding; `count` counts documents; `remove` deletes
+the document and all its embeddings. Vector and KV records with the same collection/ID remain
+separate facets; use the adapter transaction when both must change together.
+
+Search takes `search(collection, { space, vector }, options)`. Unknown spaces raise
+`unknown-space`; known spaces with no matching documents return `[]`. Metadata filters run before
+ranking, `whereNot` excludes a full conjunction, `minScore` is inclusive, and equal scores use
+Unicode code-point ID order. Zero or non-finite stored vectors remain readable but do not match.
+The ordinary engine computes exact cosine with float64 accumulation over float32 components.
+`meta.engine` reports `javascript`; `meta.accelerated` is false. The optional
+`@mirk/store/sqlite-vec` engine performs native computation on the existing connection and reports
+its engine name after initialization; a load or execution failure raises instead of falling back.
+`compareCodePoints` is exported for adapters that need the same ordering.
 
 ## Atomic mutations
 

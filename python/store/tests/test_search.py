@@ -631,8 +631,10 @@ def test_a_legacy_search_file_has_its_tables_adopted(tmp_path: Path) -> None:
     store.close()
 
     stripped = sqlite3.connect(path, isolation_level=None)
-    stripped.execute("DELETE FROM _mirk_tables")
-    stripped.execute("DELETE FROM _mirk_meta")
+    stripped.execute("DROP TABLE _mirk_tables")
+    stripped.execute("DROP TABLE _mirk_meta")
+    for table in ("_mirk_vector_values", "_mirk_vector_documents", "_mirk_vector_spaces"):
+        stripped.execute(f"DROP TABLE {table}")
     stripped.close()
 
     reopened_facet, reopened = _sqlite_facet(path)

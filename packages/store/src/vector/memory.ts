@@ -14,7 +14,12 @@ import type {
 } from "./types.js";
 import { matchesWhere } from "./filter.js";
 import { compareCodePoints } from "../order.js";
-import { cosineSimilarity, assertDimensions, isUsableVector, VectorInputError } from "./cosine.js";
+import {
+  cosineSimilarity,
+  assertDimensions,
+  isUsableVector,
+  VectorInputError,
+} from "./cosine.js";
 
 type AnyDoc = VectorDocument<Record<string, unknown>>;
 
@@ -30,20 +35,42 @@ export class InMemoryVectorStore implements VectorStore {
   ensureSpace(name: string, options: VectorSpaceOptions): void {
     validateSpace(name, options);
     const found = this.spaces.get(name);
-    if (found && found.dimensions !== options.dimensions) throw new VectorInputError("space-definition-conflict", `Space ${name} already has ${found.dimensions} dimensions`);
-    this.spaces.set(name, { name, dimensions: options.dimensions, metric: "cosine", encoding: "float32" });
+    if (found && found.dimensions !== options.dimensions)
+      throw new VectorInputError(
+        "space-definition-conflict",
+        `Space ${name} already has ${found.dimensions} dimensions`,
+      );
+    this.spaces.set(name, {
+      name,
+      dimensions: options.dimensions,
+      metric: "cosine",
+      encoding: "float32",
+    });
   }
 
-  listSpaces(): VectorSpace[] { return [...this.spaces.values()].sort((a,b) => compareCodePoints(a.name,b.name)).map(space => ({...space})); }
+  listSpaces(): VectorSpace[] {
+    return [...this.spaces.values()]
+      .sort((a, b) => compareCodePoints(a.name, b.name))
+      .map((space) => ({ ...space }));
+  }
 
   private validate(doc: AnyDoc): void {
-    if (!Object.keys(doc.vectors).length) throw new VectorInputError("empty-vectors", "A document needs at least one vector");
-    for (const [space, vector] of Object.entries(doc.vectors)) assertDimensions(vector, this.requireSpace(space).dimensions);
+    if (!Object.keys(doc.vectors).length)
+      throw new VectorInputError(
+        "empty-vectors",
+        "A document needs at least one vector",
+      );
+    for (const [space, vector] of Object.entries(doc.vectors))
+      assertDimensions(vector, this.requireSpace(space).dimensions);
   }
 
   private requireSpace(name: string): VectorSpace {
     const space = this.spaces.get(name);
-    if (!space) throw new VectorInputError("unknown-space", `Unknown vector space: ${name}`);
+    if (!space)
+      throw new VectorInputError(
+        "unknown-space",
+        `Unknown vector space: ${name}`,
+      );
     return space;
   }
 
@@ -109,7 +136,11 @@ export class InMemoryVectorStore implements VectorStore {
       const score = cosineSimilarity(query.vector, vector);
       if (!Number.isFinite(score)) continue;
       if (minScore !== undefined && score < minScore) continue;
-      scored.push({ id: doc.id, score, metadata: doc.metadata as M | undefined });
+      scored.push({
+        id: doc.id,
+        score,
+        metadata: doc.metadata as M | undefined,
+      });
     }
     // Ties break deterministically by id in Unicode code point order — the same
     // tiebreak the sqlite adapter applies, so equal-score results order alike.
@@ -128,6 +159,11 @@ export class InMemoryVectorStore implements VectorStore {
 }
 
 export function validateSpace(name: string, options: VectorSpaceOptions): void {
-  if (!name) throw new VectorInputError("invalid-space", "Space name must be nonempty");
-  if (!Number.isSafeInteger(options.dimensions) || options.dimensions <= 0) throw new VectorInputError("invalid-dimensions", `Vector dimensions must be a positive integer; got ${options.dimensions}.`);
+  if (!name)
+    throw new VectorInputError("invalid-space", "Space name must be nonempty");
+  if (!Number.isSafeInteger(options.dimensions) || options.dimensions <= 0)
+    throw new VectorInputError(
+      "invalid-dimensions",
+      `Vector dimensions must be a positive integer; got ${options.dimensions}.`,
+    );
 }

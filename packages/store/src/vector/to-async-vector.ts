@@ -8,7 +8,7 @@ import type {
   VectorQuery,
   VectorSpace,
   VectorSpaceOptions,
-} from './types.js';
+} from "./types.js";
 
 // Adapter: present a synchronous VectorStore through the AsyncVectorStore interface
 // by resolving every result. The one-way bridge — sync ⊂ async; the reverse is
@@ -17,8 +17,12 @@ import type {
 class AsyncVectorStoreAdapter implements AsyncVectorStore {
   constructor(private readonly sync: VectorStore) {}
 
-  async ensureSpace(name: string, options: VectorSpaceOptions): Promise<void> { this.sync.ensureSpace(name, options); }
-  async listSpaces(): Promise<VectorSpace[]> { return this.sync.listSpaces(); }
+  async ensureSpace(name: string, options: VectorSpaceOptions): Promise<void> {
+    this.sync.ensureSpace(name, options);
+  }
+  async listSpaces(): Promise<VectorSpace[]> {
+    return this.sync.listSpaces();
+  }
 
   get meta(): VectorStoreMeta {
     return this.sync.meta;

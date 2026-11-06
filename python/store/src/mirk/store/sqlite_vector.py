@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from .filter import dumps_json
 from .sqlite import connection_of, ensure_registry
+from .transaction import check_sqlite_caller
 from .vector import (
     VectorDocument,
     VectorInputError,
@@ -48,6 +49,7 @@ class SqliteVectorFacet:
     ) -> None:
         self._db = db
         self._namespace = namespace
+        check_sqlite_caller(db)
         ensure_registry(db)
         self._engine = vector_engine
         if vector_engine is not None:
@@ -63,6 +65,7 @@ class SqliteVectorFacet:
 
     @contextmanager
     def _write(self) -> Generator[None]:
+        check_sqlite_caller(self._db)
         nested = self._db.in_transaction
         self._db.execute("SAVEPOINT mirk_vector" if nested else "BEGIN IMMEDIATE")
         try:
@@ -75,6 +78,7 @@ class SqliteVectorFacet:
             raise
 
     def _space(self, name: str) -> VectorSpace | None:
+        check_sqlite_caller(self._db)
         row = self._db.execute(
             "SELECT dimensions,metric,encoding FROM _mirk_vector_spaces WHERE "
             "namespace=? AND name=?",
@@ -105,6 +109,7 @@ class SqliteVectorFacet:
             )
 
     def listSpaces(self) -> list[VectorSpace]:
+        check_sqlite_caller(self._db)
         names = self._db.execute(
             "SELECT name FROM _mirk_vector_spaces WHERE namespace=?", (self._namespace,)
         ).fetchall()
@@ -150,6 +155,7 @@ class SqliteVectorFacet:
                     )
 
     def get(self, collection: str, id: str) -> VectorDocument | None:
+        check_sqlite_caller(self._db)
         row = self._db.execute(
             "SELECT metadata FROM _mirk_vector_documents WHERE namespace=? AND"
             " collection=? AND id=?",
@@ -188,6 +194,7 @@ class SqliteVectorFacet:
             )
 
     def count(self, collection: str) -> int:
+        check_sqlite_caller(self._db)
         return int(
             self._db.execute(
                 "SELECT COUNT(*) FROM _mirk_vector_documents WHERE namespace=? AND collection=?",

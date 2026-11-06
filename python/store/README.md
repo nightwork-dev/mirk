@@ -132,6 +132,34 @@ committed data. Foreign task or thread calls fail while a block owns the stores.
 admission waits for the prior owner. A store belongs to one domain. Keep blocks to short storage
 work; run provider and network calls outside them.
 
+## Named vectors
+
+```python
+from mirk.store.sqlite_vector import SqliteVectorFacet
+
+vectors = SqliteVectorFacet(store.connection, namespace="default")
+vectors.ensureSpace("text", {"dimensions": 2})
+vectors.ensureSpace("image", {"dimensions": 3})
+vectors.upsert("assets", {
+    "id": "a", "vectors": {"text": [1.0, 0.0], "image": [0.0, 1.0, 0.0]},
+})
+vectors.search("assets", {"space": "image", "vector": [0.0, 1.0, 0.0]})
+```
+
+`InMemoryVectorStore()` implements the same port. `ensureSpace` is idempotent for matching
+positive integer dimensions and rejects changes with `space-definition-conflict`. `listSpaces`
+returns definitions in code-point name order. Collections in one namespace share definitions.
+A document has shared metadata and a nonempty `vectors` map; every named space must exist.
+`upsert` replaces the entire document, removing omitted vectors and metadata. `upsertMany`
+validates and commits the whole batch atomically. `get` returns every vector, `count` counts
+documents, and `remove` removes all embeddings. Unknown search spaces raise `unknown-space`;
+a known empty space returns `[]`. Search preserves metadata prefiltering, full-conjunction
+`whereNot`, inclusive `minScore`, float64 cosine, and code-point ID ties. Stored zero or non-finite
+vectors remain readable but do not match. Components round to float32 on write and query.
+The ordinary SQLite engine reports `meta.engine="python"` and `accelerated=False`.
+Pass `vector_engine=sqlite_vec_engine()` from `mirk.store.sqlite_vec` for optional native
+computation on the same connection; initialization and execution failures raise visibly.
+
 ## Threads and transactions
 
 One connection per thread; sync by design. `SqliteStore` is thread-affine, the
@@ -165,15 +193,45 @@ after its docs table, so one registry row governs both.
 A file written before the registry existed keeps working. The first open records
 the table it already has under its logical name, in place, with no rewrite.
 
-`_mirk_meta` holds `schema_version`, currently `2`. Opening a file whose version
-is higher than this adapter understands raises rather than reading it by rules
-that no longer apply. The TypeScript adapter uses the same registry, the same
-candidate sequence, and the same version, so both languages resolve a shared file
-to the same tables. When two connections race to register the same new logical
-name, the loser's `_mirk_tables` insert raises a constraint violation; both
-languages catch it and restart resolution, up to five attempts, so the loser
-ends up reading the winner's row as a registry hit instead of surfacing the
-error from an ordinary write.
+
+The shared SQLite format is **3**, recorded as a decimal string in
+`_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
+are independent. Both Node drivers and Python use these tables and keys:
+
+| Table | Columns and identity |
+| --- | --- |
+| `_kv` | `key` primary key, JSON text `value`, `created_at`, `updated_at` |
+| `_mirk_tables` | `kind`, logical `name`, unique `table_name`; primary key `(kind,name)` |
+| Collection tables | `id` primary key, JSON text `data`, `created_at`, `updated_at`; `rowid` preserves insertion order |
+| Declared collection indexes | Ordinary SQLite indexes over JSON expressions, named by the shared index naming function |
+| `_mirk_search_schema` | `collection` primary key, `fields_json` array; registry-resolved docs/FTS5 tables and triggers store searchable text and nullable metadata |
+| `_mirk_vector_spaces` | `namespace`, `name`, positive integer `dimensions`, `metric='cosine'`, `encoding='float32'`; primary key `(namespace,name)` |
+| `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
+| `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
+| `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
+| `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
+| `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
+| `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
+
+Vector namespaces default to `default`; collections share space declarations only inside that
+namespace. Each `vec` is exactly `dimensions * 4` bytes in little-endian IEEE float32 order.
+Metadata SQL NULL means absent, distinct from JSON `{}`. JSON uses ordinary UTF-8 JSON text with
+object/array order preserved; no language-specific object encoding is stored. Optional coordination
+tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
+`_mirk_coordination_meta` use their separately documented versioned lease format and are preserved.
+
+Open validates version metadata before schema changes. Malformed metadata and unsupported future
+versions fail. Recognized pre-registry or version-1/2 files migrate atomically under `BEGIN
+IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
+the `default` namespace and `default` space; raw BLOBs and nullable metadata are copied unchanged.
+Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
+creates no space. Obsolete vector tables are dropped only after successful copying; the version
+is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
+versions, receipts and log positions remain intact. Concurrent openers converge on one migration.
+A read-only connection requiring migration raises `migration-required` and never migrates.
+
+For a portable single-file handoff, use the consistent backup operation, or finish a checkpoint
+and close writers before copying. Copying the main file alone during active WAL writes omits data.
 
 ## The contract
 
@@ -225,10 +283,6 @@ differing.
   FTS5 tokenizer strips diacritics (`café` indexes as `cafe`); the in-memory
   tokenizer keeps them, in both languages. No document mixing the two is in
   the corpus. Don't compare indexed diacritics across backends.
-- **The vector facet has no accelerated path.** `SqliteAdapter.vector` always
-  computes exact float64 cosine similarity; there is no `sqlite-vec`
-  extension to install and no `vec` extra. `meta.accelerated` is always
-  `false`.
 - **Physical table naming can collide only in principle, not in practice.**
   Two collection or search names that sanitize and hash to the same physical
   name still get two distinct tables: the registry described above appends
