@@ -62,7 +62,7 @@ function search(db: SqliteDb, request: SqliteVectorSearchRequest) {
       ORDER BY score DESC,id COLLATE BINARY LIMIT ${limitSql}`;
   return (db.prepare(sql).all(...params) as { id: string; score: number; metadata: string | null }[])
     .map(row => ({ id: row.id, score: row.score,
-      ...(row.metadata === null ? {} : { metadata: JSON.parse(row.metadata) as Record<string, unknown> }) }));
+      metadata: row.metadata === null ? undefined : JSON.parse(row.metadata) as Record<string, unknown> }));
 }
 
 export function sqliteVecEngine(): SqliteVectorEngine {
