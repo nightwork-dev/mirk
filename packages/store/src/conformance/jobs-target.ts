@@ -1,5 +1,6 @@
 import type { JsonValue } from '@mirk/store/atomic';
-import { JobsStore } from '@mirk/jobs';
+import { systemClock } from '@mirk/store/coordination/core';
+import { runClaim, JobsStore } from '@mirk/jobs';
 import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord, StartInput, JobListOptions } from '@mirk/jobs';
 
 export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) => void): Record<string, unknown> {
@@ -17,6 +18,7 @@ export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) =
     listFiltered: async (filter: JobListOptions) => (await jobs.list(filter)).map(j=>j.value),
     corruptActiveSlot: async (queue: string, activeKey: string, id: string) => {await jobs.options.store.set('mirk-jobs-active:'+JSON.stringify([jobs.collection,queue,activeKey]),id); return null;},
     seedLegacy: async (id: string) => {const job=(await jobs.get(id))!.value; const {activeKey:_k,subject:_s,kind:_t,...legacy}=job;await jobs.options.store.put(jobs.collection,{...legacy,schemaVersion:1});return null;},
+    runClaimNoop: async (id: string) => runClaim(jobs,claim(id),{leaseMs:20,renewEveryMs:5,commandKey:key().key,clock:{...systemClock,now:jobs.options.now ?? Date.now}},async()=> 'work-done'),
     get: async (id: string) => (await jobs.get(id))?.value ?? null,
     list: async (queue: string) => (await jobs.list({queue})).map(j => j.value),
     claim: async (id: string, leaseMs: number) => { const value = await jobs.claim(id,{...key(),leaseMs}); if(value) claims.set(value.jobId,value); return value; },

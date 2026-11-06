@@ -1,6 +1,7 @@
 """Portable durable jobs; execution and provider calls belong to the application."""
 
 from .conformance import conformance_target
+from .runner import run_claim
 from .store import JobsError, JobsStore
 
-__all__ = ["JobsError", "JobsStore", "conformance_target"]
+__all__ = ["JobsError", "JobsStore", "conformance_target", "run_claim"]

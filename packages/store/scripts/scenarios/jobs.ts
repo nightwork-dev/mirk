@@ -139,4 +139,13 @@ export const scenarios = [
     ],
   }),
 
+  defineScenario({
+    id:'jobs/one-claim-helper',title:'one claim helper renews without terminal policy and refuses cancelled work',ports:['jobs'],steps:[
+      {op:'enqueue',args:['job','q',null]}, {op:'claim',args:['job',10]},
+      {op:'runClaimNoop',args:['job'],expect:{value:true}}, {op:'get',args:['job'],expect:{value:true}},
+      {op:'requestCancel',args:['job']}, {op:'runClaimNoop',args:['job'],expect:{throws:true}},
+      {op:'acknowledgeCancel',args:['job']}, {op:'get',args:['job'],expect:{value:true}},
+    ],
+  }),
+
 ];

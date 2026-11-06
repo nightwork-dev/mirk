@@ -69,6 +69,34 @@ class JobsConformanceTarget:
         }
         self.jobs.store.put(self.jobs.collection, {**legacy, "schemaVersion": 1})
 
+    def runClaimNoop(self, id: str) -> str:
+        import asyncio
+
+        from mirk.store.coordination import CoordinationAbortSignal, SystemClock
+
+        from .runner import run_claim
+
+        clock = self.clock
+
+        class FixtureClock(SystemClock):
+            def now(self) -> int:
+                return clock[0]
+
+        async def work(_: CoordinationAbortSignal) -> str:
+            return "work-done"
+
+        return asyncio.run(
+            run_claim(
+                self.jobs,
+                self.claims[id],
+                lease_ms=20,
+                renew_every_ms=5,
+                command_key=self._key()["key"],
+                clock=FixtureClock(),
+                work=work,
+            )
+        )
+
     def get(self, id: str) -> Any:
         result = self.jobs.get(id)
         return result["value"] if result else None
