@@ -13,7 +13,8 @@ import json
 import threading
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
-from typing import Any, Literal, Protocol, TypedDict
+from copy import deepcopy
+from typing import Any, Literal, Protocol, TypedDict, cast
 
 from .canonical import canonical_json
 from .filter import dumps_json
@@ -138,9 +139,16 @@ class InMemoryLogStore:
 
     def __init__(self) -> None:
         self._streams: dict[str, list[str]] = {}
+        self._generation = 0
         self._owner: tuple[int, object] | None = None
         self._depth = 0
         self._transaction_domain: Any = None
+
+    def _transaction_checkpoint(self) -> object:
+        return deepcopy((self._generation, self._streams))
+
+    def _transaction_restore(self, state: object) -> None:
+        self._generation, self._streams = cast(tuple[int, dict[str, list[str]]], state)
 
     def _check_caller(self) -> None:
         if self._transaction_domain is not None:
@@ -200,13 +208,13 @@ class InMemoryLogStore:
         let another task's append be rolled back with it. Blocks nest within
         their own task."""
         self._check_caller()
-        checkpoint = {stream: entries.copy() for stream, entries in self._streams.items()}
+        checkpoint = self._transaction_checkpoint()
         self._owner = _caller()
         self._depth += 1
         try:
             yield
         except BaseException:
-            self._streams = checkpoint
+            self._transaction_restore(checkpoint)
             raise
         finally:
             self._depth -= 1
