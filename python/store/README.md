@@ -369,8 +369,10 @@ Generation allocation continues forward through rollback, so repeated owner toke
 an escaped provisional handle. Rollback invalidates new handles and restores prior handle expiry.
 Ownership-loss signal effects from provisional release or failed assertions wait until commit;
 assertions still throw immediately. Rollback discards those effects and preserves previously valid
-handles. Async lease methods queue behind foreign transaction ownership; synchronous assertions and
-expiry reads reject foreign access. A state can join only one domain. Unenlisted state remains
+handles. Immediate acquisition returns `unavailable` when foreign transaction ownership prevents
+admission, without reading provisional leases. `runExclusive` retains clock-driven retries,
+cancellation, and timeouts. Renewal and release queue behind foreign ownership; synchronous
+assertions and expiry reads reject foreign access. A state can join only one domain. Unenlisted state remains
 independently committed. Clock advancement, external cancellation, and external side effects are
 outside rollback; callers may already have observed provisional results.
 
@@ -381,8 +383,8 @@ store transaction. This is distinct from the opt-in memory participant above.
 `await coordinator.tryAcquire(key, leaseMs=5000, signal=signal)` makes one atomic attempt and
 returns a dictionary: `{"status": "acquired", "lease": lease}`, `{"status": "held", "expiresAt": ms}`,
 or `{"status": "unavailable", "retryable": True}`. SQLite lock contention is unavailable;
-other failures are errors. The lease attempt does not poll or wait on a native lock. Explicitly
-enlisted memory state first waits for admission to its transaction domain.
+other failures are errors. The lease attempt does not queue, poll, or wait on a native lock.
+Explicitly enlisted memory state returns `unavailable` if admission cannot happen immediately.
 A lease exposes `key`, `ownerToken`, `fencingGeneration`, `expiresAt`, `signal`, `assertOwned()`,
 `await renew(leaseMs)`, and `await release()`. Manual leases do not renew automatically.
 Renewal and release succeed only for the current unexpired token and generation; repeat release

@@ -63,6 +63,11 @@ export function createMemoryTransactions(stores: {
     },
   });
   const admission = {
+    available() {
+      if (coordinator.inUsableScope()) return true;
+      if (!coordinator.inTransaction()) coordinator.synchronousConnection();
+      return !active;
+    },
     afterCommit: (work: () => void) => coordinator.afterCommit(work),
     afterRollback: (work: () => void) => coordinator.afterRollback(work),
     check() {

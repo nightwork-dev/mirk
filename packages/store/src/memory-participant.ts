@@ -1,5 +1,6 @@
 export interface MemoryAdmission {
   check(): void;
+  available(): boolean;
   afterCommit(work: () => void): void;
   afterRollback(work: () => void): void;
   run<T>(work: () => T | Promise<T>): Promise<T>;
@@ -36,6 +37,7 @@ export function runMemoryOperation<T>(
 export function memoryAdmission(store: object): MemoryAdmission {
   return {
     check: () => checkMemoryAdmission(store),
+    available: () => participants.get(store)?.admission?.available() ?? true,
     run: (work) => runMemoryOperation(store, work),
     afterCommit: (work) => {
       const admission = participants.get(store)?.admission;

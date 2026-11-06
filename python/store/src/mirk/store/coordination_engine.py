@@ -26,6 +26,7 @@ T = TypeVar("T")
 
 class LeaseParticipation(Protocol):
     def check(self) -> None: ...
+    def available(self) -> bool: ...
     async def run(self, work: Callable[[], Awaitable[T]]) -> T: ...
     def afterCommit(self, work: Callable[[], None]) -> None: ...
     def afterRollback(self, work: Callable[[], None]) -> None: ...
@@ -182,19 +183,13 @@ class LeaseCoordinator:
     async def tryAcquire(
         self, key: str, *, leaseMs: int = 5000, signal: CoordinationAbortSignal | None = None
     ) -> CoordinationAcquireResult:
-        async def acquire() -> CoordinationAcquireResult:
-            return await self._tryAcquire(key, leaseMs=leaseMs, signal=signal)
-
-        domain = participation(self.backend)
-        return await domain.run(acquire) if domain else await acquire()
-
-    async def _tryAcquire(
-        self, key: str, *, leaseMs: int, signal: CoordinationAbortSignal | None
-    ) -> CoordinationAcquireResult:
         if type(key) is not str or not key:
             raise ValueError("coordination key must not be empty")
         positive(leaseMs, "leaseMs")
         self._check(signal)
+        domain = participation(self.backend)
+        if domain and not domain.available():
+            return {"status": "unavailable", "retryable": True}
         token = self.token()
         result = self.backend.acquire(key, token, leaseMs)
         if "status" in result:

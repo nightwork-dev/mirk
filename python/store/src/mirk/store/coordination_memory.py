@@ -56,6 +56,10 @@ class _MemoryBackend:
         if self.state._transaction_domain is not None:
             self.state._transaction_domain.check()
 
+    def available(self) -> bool:
+        domain = self.state._transaction_domain
+        return domain.available() if domain else True
+
     async def run(self, work: Callable[[], Awaitable[T]]) -> T:
         domain = self.state._transaction_domain
         return await domain.run_operation(work) if domain else await work()

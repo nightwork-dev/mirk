@@ -132,16 +132,19 @@ def test_foreign_async_calls_queue_and_sync_handles_refuse_uncommitted_state() -
             lease.assertOwned()
         with pytest.raises(TransactionScopeError):
             _ = lease.expiresAt
-        acquiring = asyncio.create_task(s.acquire("other"))
+        assert await s.coordinator.tryAcquire("other") == {
+            "status": "unavailable",
+            "retryable": True,
+        }
         renewing = asyncio.create_task(lease.renew(100))
         releasing = asyncio.create_task(lease.release())
         await asyncio.sleep(0.005)
-        assert not any(task.done() for task in (acquiring, renewing, releasing))
+        assert not any(task.done() for task in (renewing, releasing))
         gate.set()
         await running
         assert await renewing
         assert await releasing
-        (await acquiring).assertOwned()
+        (await s.acquire("other")).assertOwned()
 
     asyncio.run(run())
 
@@ -182,5 +185,111 @@ def test_uncertain_sqlite_ownership_read_does_not_abort_handle(tmp_path: Path) -
         finally:
             lock.close()
             coordinator.close()
+
+    asyncio.run(run())
+
+
+def test_immediate_foreign_admission_preserves_errors_and_hides_provisional_lease() -> None:
+    async def run() -> None:
+        from mirk.store.coordination import CoordinationAbortedError, CoordinationAbortSignal
+
+        s = Fixture()
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        async def transaction() -> None:
+            async with s.tx.transaction():
+                await s.acquire("private")
+                entered.set()
+                await finish.wait()
+
+        running = asyncio.create_task(transaction())
+        await entered.wait()
+        try:
+            assert await s.coordinator.tryAcquire("private") == {
+                "status": "unavailable",
+                "retryable": True,
+            }
+            assert await s.coordinator.tryAcquire("free") == {
+                "status": "unavailable",
+                "retryable": True,
+            }
+            with pytest.raises(ValueError, match="must not be empty"):
+                await s.coordinator.tryAcquire("")
+            with pytest.raises(ValueError, match="positive safe integer"):
+                await s.coordinator.tryAcquire("free", leaseMs=0)
+            abort = CoordinationAbortSignal()
+            abort.abort()
+            with pytest.raises(CoordinationAbortedError):
+                await s.coordinator.tryAcquire("free", signal=abort)
+        finally:
+            finish.set()
+            await running
+        assert (await s.coordinator.tryAcquire("private"))["status"] == "held"
+        assert (await s.acquire("free")).fencingGeneration == 1
+
+    asyncio.run(run())
+
+
+def test_foreign_run_exclusive_cancels_and_times_out_while_transaction_remains_open() -> None:
+    async def run() -> None:
+        from mirk.store.coordination import (
+            CoordinationAbortedError,
+            CoordinationAbortSignal,
+            CoordinationGuard,
+            CoordinationTimeoutError,
+        )
+
+        s = Fixture()
+        entered, finish = asyncio.Event(), asyncio.Event()
+        work_called = False
+
+        async def work(_guard: CoordinationGuard) -> None:
+            nonlocal work_called
+            work_called = True
+
+        async def transaction() -> None:
+            async with s.tx.transaction():
+                entered.set()
+                await finish.wait()
+
+        running = asyncio.create_task(transaction())
+        await entered.wait()
+        try:
+            abort = CoordinationAbortSignal()
+            cancelled = asyncio.create_task(s.coordinator.runExclusive("key", work, signal=abort))
+            await s.clock.advance(0)
+            assert len(s.clock.pending) == 1
+            abort.abort()
+            with pytest.raises(CoordinationAbortedError):
+                await cancelled
+            timed = asyncio.create_task(s.coordinator.runExclusive("key", work, waitMs=50))
+            await s.clock.advance(0)
+            await s.clock.advance(50)
+            with pytest.raises(CoordinationTimeoutError):
+                await timed
+            assert not work_called
+            assert not s.clock.pending
+            assert not s.state.leases
+        finally:
+            finish.set()
+            await running
+
+    asyncio.run(run())
+
+
+def test_ended_scope_acquisition_is_an_error() -> None:
+    async def run() -> None:
+        s = Fixture()
+        finish = asyncio.Event()
+
+        async def detached() -> object:
+            await finish.wait()
+            return await s.coordinator.tryAcquire("key")
+
+        async with s.tx.transaction():
+            task = asyncio.create_task(detached())
+        finish.set()
+        with pytest.raises(TransactionScopeError, match="ended"):
+            await task
 
     asyncio.run(run())
