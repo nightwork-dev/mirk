@@ -56,6 +56,7 @@
       ],
       "expect": {
         "value": {
+          "generation": 1,
           "sequence": 1,
           "record": {
             "n": 2

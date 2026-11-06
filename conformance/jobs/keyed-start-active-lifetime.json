@@ -1,0 +1,272 @@
+{
+  "id": "jobs/keyed-start-active-lifetime",
+  "title": "keyed starts retain active and uncertain work and release terminal work",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "first",
+          "queue": "q",
+          "payload": null,
+          "subject": "asset",
+          "kind": "render"
+        },
+        "first"
+      ],
+      "expect": {
+        "value": {
+          "started": true,
+          "job": {
+            "activeKey": "key",
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "first",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": "asset",
+            "updatedAt": 100
+          }
+        }
+      }
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "ignored",
+          "queue": "q",
+          "payload": "different"
+        },
+        "reuse"
+      ],
+      "expect": {
+        "value": {
+          "started": false,
+          "job": {
+            "activeKey": "key",
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "first",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": "asset",
+            "updatedAt": 100
+          }
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "first",
+        10
+      ]
+    },
+    {
+      "op": "block",
+      "args": [
+        "first",
+        {
+          "providerId": "remote"
+        }
+      ]
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "ignored",
+          "queue": "q",
+          "payload": null
+        },
+        "blocked"
+      ],
+      "expect": {
+        "value": {
+          "started": false,
+          "job": {
+            "activeKey": "key",
+            "attempt": 1,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": {
+              "providerId": "remote"
+            },
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 1,
+            "id": "first",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "blocked",
+            "subject": "asset",
+            "updatedAt": 100
+          }
+        }
+      }
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "first"
+      ]
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "next",
+          "queue": "q",
+          "payload": null
+        },
+        "next"
+      ],
+      "expect": {
+        "value": {
+          "started": true,
+          "job": {
+            "activeKey": "key",
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "next",
+            "kind": null,
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": null,
+            "updatedAt": 100
+          }
+        }
+      }
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "first",
+          "queue": "q",
+          "payload": null,
+          "subject": "asset",
+          "kind": "render"
+        },
+        "first"
+      ],
+      "expect": {
+        "value": {
+          "job": {
+            "activeKey": "key",
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "first",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": "asset",
+            "updatedAt": 100
+          },
+          "started": true
+        }
+      }
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "key",
+          "id": "other-queue",
+          "queue": "other",
+          "payload": null
+        },
+        "other"
+      ],
+      "expect": {
+        "value": {
+          "started": true,
+          "job": {
+            "activeKey": "key",
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "other-queue",
+            "kind": null,
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "other",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": null,
+            "updatedAt": 100
+          }
+        }
+      }
+    }
+  ]
+}

@@ -128,7 +128,7 @@ describe.each(['memory','sqlite'])('durable jobs %s', backend => {
     await jobs.enqueue({...input,payload:'new incarnation'},{key:'replacement'});
     const fresh = await log.list(JSON.stringify([jobs.collection,'job',claim.generation+1]));
     expect(fresh).toHaveLength(1); expect(fresh[0]!.sequence).toBe(1);
-    expect(await log.list(stream,{after:before.at(-1)!.sequence})).toEqual([]);
+    await expect(log.list(stream,{after:{generation:before.at(-1)!.generation,sequence:before.at(-1)!.sequence}})).rejects.toMatchObject({code:'stale-cursor'});
   });
   it('retains a cancellation first requested after expiry for blocked reconciliation', async () => {
     const {jobs,clock} = setup(); await jobs.enqueue(input,{key:'e'});

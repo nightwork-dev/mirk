@@ -41,7 +41,7 @@ def test_record_history_rollback_and_nested_notifications(domain: Any) -> None:
         assert log.append("a", "replacement") == 1
         raise ValueError()
     assert kv.getVersioned({"kind": "record", "collection": "jobs", "id": "a"}) == original
-    assert log.list("a") == [{"sequence": 1, "record": {"state": "queued"}}]
+    assert log.list("a") == [{"generation": 1, "sequence": 1, "record": {"state": "queued"}}]
     with tx.transaction():
         tx.after_commit(lambda: notifications.append("first"))
         with pytest.raises(ValueError), tx.transaction():
@@ -96,7 +96,7 @@ def test_delete_stream_lifecycle_and_standalone_rollback() -> None:
         log.deleteStream("a")
         assert log.append("a", "new") == 1
         raise ValueError()
-    assert log.get("a", 1) == {"sequence": 1, "record": "old"}
+    assert log.get("a", 1) == {"generation": 1, "sequence": 1, "record": "old"}
     assert log.deleteStream("a")
     assert log.lastSequence("a") == 0
     assert log.append("a", "new") == 1

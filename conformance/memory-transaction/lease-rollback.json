@@ -1,0 +1,28 @@
+{
+  "id": "memory-transaction/lease-rollback",
+  "title": "Explicitly enlisted memory leases roll back with KV and log while fencing escaped handles",
+  "ports": [
+    "memory_transaction"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "memoryTransactionRollback",
+      "args": [],
+      "expect": {
+        "value": {
+          "recordPresent": false,
+          "historyLength": 0,
+          "priorExpiry": 1100,
+          "priorAborted": false,
+          "assertionFailed": true,
+          "prematureAbort": false,
+          "provisionalAborted": true,
+          "nextGeneration": 2,
+          "staleRenewed": false,
+          "staleReleased": false
+        }
+      }
+    }
+  ]
+}

@@ -60,30 +60,35 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": {
               "step": "a"
             }
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": {
               "step": "b"
             }
           },
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "step": "c"
             }
           },
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
             }
           },
           {
+            "generation": 1,
             "sequence": 5,
             "record": {
               "step": "e"
@@ -97,24 +102,30 @@
       "args": [
         "s",
         {
-          "after": 2
+          "after": {
+            "generation": 1,
+            "sequence": 2
+          }
         }
       ],
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "step": "c"
             }
           },
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
             }
           },
           {
+            "generation": 1,
             "sequence": 5,
             "record": {
               "step": "e"
@@ -128,19 +139,24 @@
       "args": [
         "s",
         {
-          "after": 2,
+          "after": {
+            "generation": 1,
+            "sequence": 2
+          },
           "limit": 2
         }
       ],
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "step": "c"
             }
           },
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
@@ -160,6 +176,7 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": {
               "step": "a"
@@ -173,19 +190,24 @@
       "args": [
         "s",
         {
-          "after": 3,
+          "after": {
+            "generation": 1,
+            "sequence": 3
+          },
           "limit": 100
         }
       ],
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
             }
           },
           {
+            "generation": 1,
             "sequence": 5,
             "record": {
               "step": "e"
@@ -211,7 +233,10 @@
       "args": [
         "s",
         {
-          "after": 5
+          "after": {
+            "generation": 1,
+            "sequence": 5
+          }
         }
       ],
       "expect": {
@@ -223,7 +248,10 @@
       "args": [
         "s",
         {
-          "after": 99,
+          "after": {
+            "generation": 1,
+            "sequence": 99
+          },
           "limit": 3
         }
       ],

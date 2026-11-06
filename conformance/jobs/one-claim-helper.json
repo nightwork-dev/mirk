@@ -1,0 +1,118 @@
+{
+  "id": "jobs/one-claim-helper",
+  "title": "one claim helper renews without terminal policy and refuses cancelled work",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "job",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "claim",
+      "args": [
+        "job",
+        10
+      ]
+    },
+    {
+      "op": "runClaimNoop",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": "work-done"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "job",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "job"
+      ]
+    },
+    {
+      "op": "runClaimNoop",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "acknowledgeCancel",
+      "args": [
+        "job"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "job",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "cancelled",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    }
+  ]
+}

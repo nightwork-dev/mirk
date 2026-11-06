@@ -68,30 +68,35 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": {
               "step": "a"
             }
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": {
               "step": "b"
             }
           },
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "step": "c"
             }
           },
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
             }
           },
           {
+            "generation": 1,
             "sequence": 5,
             "record": {
               "step": "e"
@@ -118,30 +123,35 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": {
               "step": "a"
             }
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": {
               "step": "b"
             }
           },
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "step": "c"
             }
           },
           {
+            "generation": 1,
             "sequence": 4,
             "record": {
               "step": "d"
             }
           },
           {
+            "generation": 1,
             "sequence": 5,
             "record": {
               "step": "e"

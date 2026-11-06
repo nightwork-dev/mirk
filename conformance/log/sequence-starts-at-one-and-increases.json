@@ -62,14 +62,17 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": "first"
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": "second"
           },
           {
+            "generation": 1,
             "sequence": 3,
             "record": "third"
           }

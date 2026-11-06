@@ -37,6 +37,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": {
@@ -51,13 +52,15 @@
           "expiresAt": 110,
           "generation": 1,
           "id": "job",
+          "kind": null,
           "ownerToken": "owner-1",
           "payload": null,
           "priority": 0,
           "queue": "renders",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "leased",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -95,6 +98,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": {
@@ -109,13 +113,15 @@
           "expiresAt": null,
           "generation": 2,
           "id": "job",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 0,
           "queue": "renders",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "blocked",
+          "subject": null,
           "updatedAt": 110
         }
       }
@@ -143,6 +149,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": {
@@ -157,13 +164,15 @@
           "expiresAt": null,
           "generation": 2,
           "id": "job",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 0,
           "queue": "renders",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "cancelled",
+          "subject": null,
           "updatedAt": 110
         }
       }

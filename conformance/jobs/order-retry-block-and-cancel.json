@@ -55,6 +55,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 200,
           "cancellation": null,
@@ -64,13 +65,15 @@
           "expiresAt": null,
           "generation": 1,
           "id": "a",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 3,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "queued",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -99,6 +102,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": null,
@@ -110,13 +114,15 @@
           "expiresAt": null,
           "generation": 1,
           "id": "b",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 3,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "blocked",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -132,6 +138,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": null,
@@ -143,13 +150,15 @@
           "expiresAt": null,
           "generation": 1,
           "id": "b",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 3,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "queued",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -181,6 +190,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 2,
           "availableAt": 100,
           "cancellation": {
@@ -195,13 +205,15 @@
           "expiresAt": null,
           "generation": 2,
           "id": "b",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 3,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "cancelled",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -213,6 +225,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 0,
           "availableAt": 100,
           "cancellation": {
@@ -225,13 +238,15 @@
           "expiresAt": null,
           "generation": 0,
           "id": "z",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 0,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "cancelled",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -266,6 +281,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 2,
           "availableAt": 200,
           "cancellation": null,
@@ -277,13 +293,15 @@
           "expiresAt": null,
           "generation": 2,
           "id": "a",
+          "kind": null,
           "ownerToken": null,
           "payload": null,
           "priority": 3,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "failed",
+          "subject": null,
           "updatedAt": 200
         }
       }
@@ -296,6 +314,7 @@
       "expect": {
         "value": [
           {
+            "activeKey": null,
             "attempt": 2,
             "availableAt": 200,
             "cancellation": null,
@@ -307,16 +326,44 @@
             "expiresAt": null,
             "generation": 2,
             "id": "a",
+            "kind": null,
             "ownerToken": null,
             "payload": null,
             "priority": 3,
             "queue": "q",
             "result": null,
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "state": "failed",
+            "subject": null,
             "updatedAt": 200
           },
           {
+            "activeKey": null,
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": {
+              "generation": 0,
+              "requestedAt": 100
+            },
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "z",
+            "kind": null,
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "cancelled",
+            "subject": null,
+            "updatedAt": 100
+          },
+          {
+            "activeKey": null,
             "attempt": 2,
             "availableAt": 100,
             "cancellation": {
@@ -331,35 +378,15 @@
             "expiresAt": null,
             "generation": 2,
             "id": "b",
+            "kind": null,
             "ownerToken": null,
             "payload": null,
             "priority": 3,
             "queue": "q",
             "result": null,
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "state": "cancelled",
-            "updatedAt": 100
-          },
-          {
-            "attempt": 0,
-            "availableAt": 100,
-            "cancellation": {
-              "generation": 0,
-              "requestedAt": 100
-            },
-            "checkpoint": null,
-            "enqueuedAt": 100,
-            "error": null,
-            "expiresAt": null,
-            "generation": 0,
-            "id": "z",
-            "ownerToken": null,
-            "payload": null,
-            "priority": 0,
-            "queue": "q",
-            "result": null,
-            "schemaVersion": 1,
-            "state": "cancelled",
+            "subject": null,
             "updatedAt": 100
           }
         ]

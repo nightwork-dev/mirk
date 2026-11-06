@@ -63,10 +63,12 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": "kept"
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": "next"
           }

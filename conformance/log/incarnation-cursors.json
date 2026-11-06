@@ -1,0 +1,200 @@
+{
+  "id": "log/incarnation-cursors",
+  "title": "generation cursors refuse deleted, recreated, and different streams",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "lastCursor",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "one"
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "two"
+      ]
+    },
+    {
+      "op": "lastCursor",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": {
+          "generation": 1,
+          "sequence": 2
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": 1
+          },
+          "limit": 1
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "generation": 1,
+            "sequence": 2,
+            "record": "two"
+          }
+        ]
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "other",
+        "independent"
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "other",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log cursor belongs to a missing or replaced stream"
+      }
+    },
+    {
+      "op": "deleteRolledBack",
+      "args": [
+        "s",
+        "uncommitted replacement"
+      ]
+    },
+    {
+      "op": "lastCursor",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": {
+          "generation": 1,
+          "sequence": 2
+        }
+      }
+    },
+    {
+      "op": "deleteStream",
+      "args": [
+        "s"
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": 1
+          },
+          "limit": 0
+        }
+      ],
+      "expect": {
+        "throws": "log cursor belongs to a missing or replaced stream"
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "replacement"
+      ]
+    },
+    {
+      "op": "lastCursor",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": {
+          "generation": 3,
+          "sequence": 1
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": 1
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log cursor belongs to a missing or replaced stream"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 3,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "generation": 3,
+            "sequence": 1,
+            "record": "replacement"
+          }
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "missing",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log cursor belongs to a missing or replaced stream"
+      }
+    }
+  ]
+}
