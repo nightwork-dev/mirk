@@ -120,5 +120,5 @@ it("refuses exhausted generation allocation without wrapping or leaving a live s
     expect(db.log.lastCursor("new")).toBeNull();
     expect(db.log.append("existing", "two")).toBe(2);
     expect(raw.prepare("SELECT COUNT(*) AS n FROM _mirk_log_streams").get()).toEqual({ n: 1 });
-  } finally { db.close(); raw.close(); }
+  } finally { db.close(); }
 });
