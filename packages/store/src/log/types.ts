@@ -29,7 +29,7 @@ export interface LogListOptions {
  *   can observe one without the other.
  * - An append that does not commit (it threw, or its transaction rolled back)
  *   leaves no trace, and its sequence is given to the next append.
- * - Records are never changed or removed through this port.
+ * - Individual records are immutable; deleteStream removes an entire stream.
  */
 export interface LogStore {
   /** Append a record to the end of `stream` and return its sequence. A
@@ -42,6 +42,7 @@ export interface LogStore {
   list<T = JsonValue>(stream: string, options?: LogListOptions): LogEntry<T>[];
   /** The highest committed sequence in `stream`, or 0 when it is empty. */
   lastSequence(stream: string): number;
+  deleteStream(stream: string): boolean;
 }
 
 /** The async face of the same log. Sync stores reach it via {@link toAsyncLog}. */
@@ -51,4 +52,5 @@ export interface AsyncLogStore {
   get<T = JsonValue>(stream: string, sequence: number): Promise<LogEntry<T> | null>;
   list<T = JsonValue>(stream: string, options?: LogListOptions): Promise<LogEntry<T>[]>;
   lastSequence(stream: string): Promise<number>;
+  deleteStream(stream: string): Promise<boolean>;
 }

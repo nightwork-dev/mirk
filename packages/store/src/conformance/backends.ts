@@ -1,3 +1,5 @@
+import { recordHistoryApi } from "./record-history-target.js";
+import { createMemoryTransactions } from "../transaction.js";
 // ─── Conformance backend targets ────────────────────────────────────────────
 // The one module in src/conformance that touches a native binding: it builds a
 // live target per backend for a scenario. It is TOOLING, not a package entry
@@ -79,7 +81,7 @@ const VECTOR_METHODS = ["upsert", "upsertMany", "get", "has", "remove", "count",
 
 const SEARCH_METHODS = ["index", "indexMany", "remove", "search"] as const;
 
-const LOG_METHODS = ["append", "get", "list", "lastSequence"] as const;
+const LOG_METHODS = ["append", "get", "list", "lastSequence", "deleteStream"] as const;
 
 /** The log target: the port's methods, plus `appendRolledBack(stream,
  *  record)`, which appends inside the backend's own transaction, rolls that
@@ -90,6 +92,20 @@ function logApi(
 ): Record<string, unknown> {
   return {
     ...methodApi(log, LOG_METHODS),
+    deleteRolledBack: (stream: string, record?: JsonValue) => {
+      const rollback = new Error("roll back");
+      let removed = false;
+      try {
+        transaction(() => {
+          removed = log.deleteStream(stream);
+          if (record !== undefined) log.append(stream, record);
+          throw rollback;
+        });
+      } catch (error) {
+        if (error !== rollback) throw error;
+      }
+      return removed;
+    },
     appendRolledBack: (stream: string, record: JsonValue) => {
       const rollback = new Error("roll back");
       let sequence: number | undefined;
@@ -198,8 +214,10 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
     }
     if (kind === "log") {
       const log = new InMemoryLogStore();
+      const kv = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+      const transactions = createMemoryTransactions({ kv, log });
       return {
-        target: { kind, api: logApi(log, (work) => log.transaction(work)) },
+        target: { kind, api: { ...logApi(log, (work) => log.transaction(work)), ...recordHistoryApi(kv, log, transactions) } },
         dispose: () => {},
       };
     }
@@ -245,7 +263,7 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   }
   if (kind === "log") {
     return {
-      target: { kind, api: logApi(adapter.log, (work) => adapter.transaction(work)) },
+      target: { kind, api: { ...logApi(adapter.log, (work) => adapter.transaction(work)), ...recordHistoryApi(adapter.kv, adapter.log, { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }) } },
       dispose,
     };
   }

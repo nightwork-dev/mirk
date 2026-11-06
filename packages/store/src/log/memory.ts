@@ -1,3 +1,4 @@
+import { checkMemoryAdmission, registerMemoryParticipant } from "../memory-participant.js";
 import type { JsonCompatible, JsonValue } from "../atomic.js";
 import type { LogEntry, LogListOptions, LogStore } from "./types.js";
 import { assertSequence, assertStream, encodeRecord, listBounds } from "./validate.js";
@@ -7,9 +8,17 @@ import { assertSequence, assertStream, encodeRecord, listBounds } from "./valida
 export class InMemoryLogStore implements LogStore {
   readonly #streams = new Map<string, string[]>();
 
+  constructor() {
+    registerMemoryParticipant(this, {
+      checkpoint: () => this.checkpoint(),
+      restore: (state) => this.restore(state as Map<string, string[]>),
+    });
+  }
+
   append(stream: string, record: JsonValue): number;
   append<T>(stream: string, record: T & JsonCompatible<T>): number;
   append(stream: string, record: unknown): number {
+    checkMemoryAdmission(this);
     assertStream(stream);
     const text = encodeRecord(record);
     let entries = this.#streams.get(stream);
@@ -22,6 +31,7 @@ export class InMemoryLogStore implements LogStore {
   }
 
   get<T = JsonValue>(stream: string, sequence: number): LogEntry<T> | null {
+    checkMemoryAdmission(this);
     assertStream(stream);
     assertSequence(sequence);
     const text = this.#streams.get(stream)?.[sequence - 1];
@@ -29,6 +39,7 @@ export class InMemoryLogStore implements LogStore {
   }
 
   list<T = JsonValue>(stream: string, options?: LogListOptions): LogEntry<T>[] {
+    checkMemoryAdmission(this);
     assertStream(stream);
     const { after, limit } = listBounds(options);
     const entries = this.#streams.get(stream) ?? [];
@@ -40,17 +51,33 @@ export class InMemoryLogStore implements LogStore {
     return out;
   }
 
+  deleteStream(stream: string): boolean {
+    checkMemoryAdmission(this);
+    assertStream(stream);
+    return this.#streams.delete(stream);
+  }
+
   lastSequence(stream: string): number {
+    checkMemoryAdmission(this);
     assertStream(stream);
     return this.#streams.get(stream)?.length ?? 0;
+  }
+
+  private checkpoint(): Map<string, string[]> {
+    return new Map([...this.#streams].map(([stream, entries]) => [stream, [...entries]]));
+  }
+
+  private restore(checkpoint: Map<string, string[]>): void {
+    this.#streams.clear();
+    for (const [stream, entries] of checkpoint) this.#streams.set(stream, [...entries]);
   }
 
   /** Run `work` so that every append it makes is undone if it throws, the
    *  in-memory counterpart of the SQLite adapter's `transaction()`. A
    *  rolled-back append's sequence goes to the next append. */
   transaction<T>(work: () => T): T {
-    const lengths = new Map<string, number>();
-    for (const [stream, entries] of this.#streams) lengths.set(stream, entries.length);
+    checkMemoryAdmission(this);
+    const checkpoint = this.checkpoint();
     try {
       const result = work();
       if (
@@ -62,11 +89,7 @@ export class InMemoryLogStore implements LogStore {
       }
       return result;
     } catch (error) {
-      for (const [stream, entries] of this.#streams) {
-        const length = lengths.get(stream);
-        if (length === undefined) this.#streams.delete(stream);
-        else entries.length = length;
-      }
+      this.restore(checkpoint);
       throw error;
     }
   }

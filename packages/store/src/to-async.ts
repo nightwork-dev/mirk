@@ -1,3 +1,4 @@
+import { runMemoryOperation } from "./memory-participant.js";
 import type {
   SyncStore,
   SyncStoreInQuery,
@@ -51,18 +52,18 @@ class AsyncStoreAdapter
         field: string,
         values: readonly unknown[],
         filter?: StoreFilter
-      ): Promise<T[]> => sync.listWhereIn<T>(collection, field, values, filter);
+      ): Promise<T[]> => runMemoryOperation(sync, () => sync.listWhereIn<T>(collection, field, values, filter));
     }
     if (hasEnsureIndex(sync)) {
       this.ensureIndex = async (collection: string, field: string) =>
-        sync.ensureIndex(collection, field);
+        runMemoryOperation(sync, () => sync.ensureIndex(collection, field));
     }
     if (supportsAtomicMutation(sync)) {
       // Lifting to async changes nothing about what the request may contain.
       this.atomicLimits = sync.atomicLimits;
       this.getVersioned = async <T>(target: StoreTarget) =>
-        sync.getVersioned<T>(target);
-      this.mutateAtomically = async (request) => sync.mutateAtomically(request);
+        runMemoryOperation(sync, () => sync.getVersioned<T>(target));
+      this.mutateAtomically = async (request) => runMemoryOperation(sync, () => sync.mutateAtomically(request));
     }
   }
 
@@ -71,35 +72,35 @@ class AsyncStoreAdapter
   }
 
   async get<T>(key: string): Promise<T | null> {
-    return this.sync.get<T>(key);
+    return runMemoryOperation(this.sync, () => this.sync.get<T>(key));
   }
   async set<T>(key: string, value: T): Promise<void> {
-    this.sync.set<T>(key, value);
+    await runMemoryOperation(this.sync, () => this.sync.set<T>(key, value));
   }
   async has(key: string): Promise<boolean> {
-    return this.sync.has(key);
+    return runMemoryOperation(this.sync, () => this.sync.has(key));
   }
   async delete(key: string): Promise<boolean> {
-    return this.sync.delete(key);
+    return runMemoryOperation(this.sync, () => this.sync.delete(key));
   }
   async keys(prefix?: string): Promise<string[]> {
-    return this.sync.keys(prefix);
+    return runMemoryOperation(this.sync, () => this.sync.keys(prefix));
   }
 
   async list<T>(collection: string, filter?: StoreFilter): Promise<T[]> {
-    return this.sync.list<T>(collection, filter);
+    return runMemoryOperation(this.sync, () => this.sync.list<T>(collection, filter));
   }
   async getById<T>(collection: string, id: string): Promise<T | null> {
-    return this.sync.getById<T>(collection, id);
+    return runMemoryOperation(this.sync, () => this.sync.getById<T>(collection, id));
   }
   async put<T extends { id: string }>(collection: string, item: T): Promise<T> {
-    return this.sync.put<T>(collection, item);
+    return runMemoryOperation(this.sync, () => this.sync.put<T>(collection, item));
   }
   async remove(collection: string, id: string): Promise<boolean> {
-    return this.sync.remove(collection, id);
+    return runMemoryOperation(this.sync, () => this.sync.remove(collection, id));
   }
   async count(collection: string, filter?: StoreFilter): Promise<number> {
-    return this.sync.count(collection, filter);
+    return runMemoryOperation(this.sync, () => this.sync.count(collection, filter));
   }
 }
 

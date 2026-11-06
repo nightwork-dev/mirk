@@ -49,6 +49,9 @@ class SqliteLogFacet:
         self._db.execute(_LOG_DDL)
 
     def append(self, stream: str, record: Any) -> int:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         assert_stream(stream)
         text = encode_record(record)
         statement = (
@@ -77,6 +80,9 @@ class SqliteLogFacet:
             raise
 
     def get(self, stream: str, sequence: int) -> LogEntry | None:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         assert_stream(stream)
         sequence = assert_sequence(sequence)
         row = self._db.execute(
@@ -88,6 +94,9 @@ class SqliteLogFacet:
         return {"sequence": sequence, "record": json.loads(row[0])}
 
     def list(self, stream: str, options: LogListOptions | None = None) -> list[LogEntry]:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         assert_stream(stream)
         after, limit = list_bounds(options)
         rows = self._db.execute(
@@ -97,7 +106,27 @@ class SqliteLogFacet:
         ).fetchall()
         return [{"sequence": int(row[0]), "record": json.loads(row[1])} for row in rows]
 
+    def deleteStream(self, stream: str) -> bool:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
+        assert_stream(stream)
+        try:
+            return (
+                self._db.execute(f"DELETE FROM {LOG_TABLE} WHERE stream = ?", (stream,)).rowcount
+                > 0
+            )
+        except sqlite3.OperationalError as error:
+            if (error.sqlite_errorcode & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                raise AtomicMutationBackendError(
+                    "unavailable", True, "SQLite is busy or locked."
+                ) from error
+            raise
+
     def lastSequence(self, stream: str) -> int:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         assert_stream(stream)
         row = self._db.execute(
             f"SELECT COALESCE(MAX(sequence), 0) FROM {LOG_TABLE} WHERE stream = ?",

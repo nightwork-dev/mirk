@@ -70,6 +70,7 @@ class InMemoryStore:
         ``None`` keeps receipts forever. ``now`` is the clock, in milliseconds
         since the epoch, that stamps and expires receipts."""
         global _next_memory_store_id
+        self._transaction_domain: Any = None
         self._meta = StoreMeta(backend="memory")
         self._kv: dict[str, Any] = {}
         self._collections: dict[str, dict[str, Any]] = {}
@@ -96,18 +97,26 @@ class InMemoryStore:
 
     # ── Key-value ────────────────────────────────────────────────────────
     def get(self, key: str) -> Any:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         if key not in self._kv:
             return None
         return copy_json(self._kv[key])
 
     def set(self, key: str, value: Any) -> None:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         self._kv[key] = copy_json(value)
         self._versions[target_key({"kind": "key", "key": key})] = self._new_version()
 
     def has(self, key: str) -> bool:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         return key in self._kv
 
     def delete(self, key: str) -> bool:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         if key in self._kv:
             del self._kv[key]
             self._versions.pop(target_key({"kind": "key", "key": key}), None)
@@ -115,6 +124,8 @@ class InMemoryStore:
         return False
 
     def keys(self, prefix: str | None = None) -> list[str]:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         ordered = sorted(self._kv.keys())
         if not prefix:
             return ordered
@@ -130,20 +141,28 @@ class InMemoryStore:
         return existing
 
     def list(self, collection: str, filter: StoreFilter | None = None) -> list[Any]:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         items = list(self._collection(collection).values())
         return [copy_json(item) for item in apply_filter(items, filter)]
 
     def ensureIndex(self, collection: str, field: str) -> None:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         """Accepted and a no-op: the reference scans in memory."""
         self._collection(collection)
 
     def getById(self, collection: str, id: str) -> Any:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         item = self._collection(collection).get(id, _MISSING)
         if item is _MISSING:
             return None
         return copy_json(item)
 
     def put(self, collection: str, item: JsonObject) -> JsonObject:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         col = self._collection(collection)
         item_id = item.get("id")
         if not isinstance(item_id, str):
@@ -155,6 +174,8 @@ class InMemoryStore:
         return item
 
     def remove(self, collection: str, id: str) -> bool:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         col = self._collection(collection)
         if id in col:
             del col[id]
@@ -165,6 +186,8 @@ class InMemoryStore:
         return False
 
     def count(self, collection: str, filter: StoreFilter | None = None) -> int:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         items = list(self._collection(collection).values())
         where = filter.get("where") if filter else None
         narrowed: StoreFilter = {"where": where} if where else {}
@@ -200,6 +223,8 @@ class InMemoryStore:
         return {"value": None if value is _MISSING else value, "version": version}
 
     def getVersioned(self, target: dict[str, Any]) -> dict[str, Any] | None:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         """The value at a target and the token identifying this exact revision."""
         observed = self._observe(target)
         if observed is None:
@@ -207,6 +232,8 @@ class InMemoryStore:
         return {"value": copy_json(observed["value"]), "version": observed["version"]}
 
     def mutateAtomically(self, request: dict[str, Any]) -> dict[str, Any]:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         """Apply conditions and operations as one indivisible step."""
         validated = validate_atomic_request(request, self._atomic_limits)
         key = validated.idempotency_key
@@ -298,6 +325,8 @@ class InMemoryStore:
         return self._receipt_retention_ms
 
     def pruneExpiredReceipts(self) -> int:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         """Delete every expired receipt and return how many were deleted."""
         if self._receipt_retention_ms is None:
             return 0
@@ -353,6 +382,8 @@ class InMemoryStore:
         values: list[Any],
         filter: StoreFilter | None = None,
     ) -> list[Any]:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         if len(values) == 0:
             return []
         where = filter.get("where") if filter else None

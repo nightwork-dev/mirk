@@ -102,6 +102,14 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
     }
   }
 
+  synchronousConnection(): C | undefined {
+    const scope = this.#scopes.getStore();
+    if (!scope) return undefined;
+    if (!scope.active) throw ended();
+    if (scope.childActive) throw new Error("A nested transaction owns this scope");
+    return scope.connection;
+  }
+
   /** True when the calling async context is inside an open transaction. */
   inTransaction(): boolean {
     return this.#scopes.getStore()?.active === true;
@@ -268,3 +276,5 @@ function deliver(callbacks: readonly AfterCommitNotify[]): void {
     }
   }
 }
+
+export { createMemoryTransactions } from "./memory-transactions.js";

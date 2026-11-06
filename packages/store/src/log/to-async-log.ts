@@ -1,3 +1,4 @@
+import { runMemoryOperation } from "../memory-participant.js";
 import type { JsonCompatible, JsonValue } from "../atomic.js";
 import type { AsyncLogStore, LogEntry, LogListOptions, LogStore } from "./types.js";
 
@@ -7,19 +8,23 @@ class AsyncLogStoreAdapter implements AsyncLogStore {
   append(stream: string, record: JsonValue): Promise<number>;
   append<T>(stream: string, record: T & JsonCompatible<T>): Promise<number>;
   async append(stream: string, record: unknown): Promise<number> {
-    return this.sync.append(stream, record as JsonValue);
+    return runMemoryOperation(this.sync, () => this.sync.append(stream, record as JsonValue));
   }
 
   async get<T = JsonValue>(stream: string, sequence: number): Promise<LogEntry<T> | null> {
-    return this.sync.get<T>(stream, sequence);
+    return runMemoryOperation(this.sync, () => this.sync.get<T>(stream, sequence));
   }
 
   async list<T = JsonValue>(stream: string, options?: LogListOptions): Promise<LogEntry<T>[]> {
-    return this.sync.list<T>(stream, options);
+    return runMemoryOperation(this.sync, () => this.sync.list<T>(stream, options));
+  }
+
+  async deleteStream(stream: string): Promise<boolean> {
+    return runMemoryOperation(this.sync, () => this.sync.deleteStream(stream));
   }
 
   async lastSequence(stream: string): Promise<number> {
-    return this.sync.lastSequence(stream);
+    return runMemoryOperation(this.sync, () => this.sync.lastSequence(stream));
   }
 }
 

@@ -74,6 +74,16 @@ export class SqliteLogFacet implements LogStore {
     }));
   }
 
+  deleteStream(stream: string): boolean {
+    assertStream(stream);
+    try {
+      return Number(this.db.prepare("DELETE FROM _mirk_log WHERE stream = ?").run(stream).changes) > 0;
+    } catch (error) {
+      if (isSqliteBusyOrLocked(error)) throw new AtomicMutationBackendError("unavailable", true, "SQLite is busy or locked.");
+      throw error;
+    }
+  }
+
   lastSequence(stream: string): number {
     assertStream(stream);
     const row = this.db
