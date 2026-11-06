@@ -4,7 +4,7 @@ Draft specifications for David, 5 November 2026.
 
 Mirk must let an application keep named embeddings, records, event history, and job claims behind portable storage contracts. These proposals extend the existing vector, log, transaction, and coordination modules. A new jobs module owns reusable job storage and conditional transitions. Existing services retain execution, scheduling, and provider behavior.
 
-**Status:** proposed contracts, not implemented features. “Seen” identifies current source behavior. “Assumption” identifies an interpretation of the request. API sketches define the proposed shape.
+**Status:** implementation in progress on `codex/mirk-storage-specs`. The contracts below incorporate the checked GLM review; individual features are not complete until their acceptance checks pass. “Seen” identifies current source behavior. “Assumption” identifies an interpretation of the request. API sketches define the proposed shape.
 
 | Request | Proposed home | Main result |
 | --- | --- | --- |
@@ -221,7 +221,7 @@ A lease extends the existing guard with `expiresAt`, `renew(leaseMs): Promise<bo
 - `assertOwned` checks current ownership and expiry. Ownership loss aborts the guard signal. An aborted acquisition never enters caller work.
 - Recovery performs its authoritative write with a current generation or version condition. Checking ownership and later writing unconditionally is insufficient fencing.
 
-The same result contract applies to memory and SQLite. Move the native SQLite implementation into an explicitly imported source subpath. The coordination port and memory implementation must not load better-sqlite3.
+The same result contract applies to memory and SQLite in both TypeScript and Python. Python gains the coordinator port, not merely preservation of the SQLite tables. Move the native SQLite implementation into an explicitly imported source subpath. The coordination port and memory implementation must not load better-sqlite3.
 
 **Acceptance**
 
@@ -260,7 +260,7 @@ The returned object implements `AsyncStoreTransactions`. It binds the actual sto
 - Existing standalone log transactions use the same checkpoint mechanism. Delete the old append-length-only rollback path once shared checkpoints replace it.
 - Python provides matching memory participants and context-managed transaction ownership. Its async context must isolate tasks, with equivalent nested rollback and after-commit behavior.
 
-The TypeScript async factory can live beside the existing Node async-context engine. Plain sync ports and memory stores retain their runtime-neutral imports.
+The factory binds each supplied store to one transaction domain through synchronous ownership and checkpoint hooks. Promise-returning access uses that same domain for admission. Transactions contain only short storage work; provider and network calls run outside them. The TypeScript async factory lives beside the existing Node async-context engine. Plain sync ports and memory stores retain their runtime-neutral imports.
 
 **Memory lease coordinator**
 
@@ -297,7 +297,7 @@ The production clock uses epoch milliseconds and real timers. A manual test cloc
 - Renew only before expiry. If time advances beyond expiry before renewal runs, renewal fails and the guard loses ownership. It must not renew retroactively.
 - Cancellation wakes waiting operations without requiring clock advancement. Cleanup removes pending sleeps and abort listeners when an operation ends.
 - Waiting on the same coordinator instance must not hide expired ownership behind an unresolved prior callback. An expired owner is fenced and signaled, and a contender can acquire a higher generation.
-- At the deadline, a positive-duration wait times out before another acquisition attempt. A zero wait performs one immediate attempt. `tryAcquire` never schedules a sleep.
+- At the deadline, a positive-duration wait times out before another acquisition attempt. This intentionally removes the old acquisition attempt at the deadline. A zero wait performs one immediate attempt. `tryAcquire` never schedules a sleep.
 - Coordinators sharing durable lease state use comparable epoch clocks. Tests give all handles the same manual clock. SQLite's native lock timeout remains a separate bounded backend wait, not a lease clock.
 
 Run the same lease state machine for memory and SQLite. Backend code supplies atomic lease operations. It does not duplicate retry, renewal, and expiry policy.
@@ -314,9 +314,9 @@ Provide a small `@mirk/jobs` package, with a matching Python package, for portab
 
 **Storage model and operations**
 
-A job stores its ID, queue, payload or input reference, state, priority, enqueue time, availability time, attempt number, owner token, generation, expiry, checkpoint, and terminal result or error. Every record carries a jobs schema version. Payload, checkpoint, and result are JSON data. Artifact bytes remain in the artifact store.
+A job stores its ID, queue, payload or input reference, state, priority, enqueue time, availability time, attempt number, owner token, generation, expiry, checkpoint, cancellation request, and terminal result or error. Every record carries a jobs schema version. Payload, checkpoint, and result are JSON data. Artifact bytes remain in the artifact store.
 
-States are `queued`, `leased`, `blocked`, `succeeded`, `failed`, and `cancelled`. Blocked work requires application reconciliation before it can be claimed again.
+States are `queued`, `leased`, `blocked`, `succeeded`, `failed`, and `cancelled`. Blocked work requires application reconciliation before it can be claimed again. A cancellation request records its timestamp and attempt generation separately from state. Recovery preserves that request. Reads return the current record version for administrative conditional operations. Worker claim tokens contain job identity, owner token, and generation; they do not contain a mutable KV version.
 
 | Operation | Required behavior |
 | --- | --- |
@@ -346,20 +346,20 @@ States are `queued`, `leased`, `blocked`, `succeeded`, `failed`, and `cancelled`
 - Stale workers cannot complete, fail, retry, checkpoint, or release a successor's work. Expired attempts cannot publish completion.
 - Cancellation committed before completion prevents success. A later cancellation of a terminal job returns its terminal state. Cancellation is cooperative and does not prove a remote provider stopped.
 - Expiry does not prove a remote submission failed. Recovery moves the attempt to blocked state, preserving provider identifiers and checkpoints. The application decides whether to resume, query the provider, complete, fail, cancel, or requeue.
-- Mutation receipts make retried storage transitions idempotent. They do not make provider calls execute exactly once. A replayed claim receipt cannot confer authority after that lease expires.
+- A command idempotency key identifies canonical caller intent, independent of generated timestamps, tokens, and changing KV versions. Store its outcome in the same transaction as the transition. Resolve a repeated command before generating new fields. Existing atomic mutation receipts still protect exact request replay. Neither mechanism makes provider calls execute exactly once. A replayed claim receipt cannot confer authority after that lease expires.
 - Receipt retention covers the consumer's reconciliation window. Removal must not discard retained idempotency protection prematurely. Keep the existing indefinite default until a consumer supplies a retention policy.
 
 Use an injected clock for availability and lease checks. Job storage runs short atomic operations. Worker code runs outside database transactions.
 
 **Composition and ownership**
 
-The jobs package consumes existing store ports and atomic mutations. It opens no database and starts no worker loop. Consumers inject an `AsyncStore` with atomic capability. Memory and SQLite are the first complete implementations.
+The jobs package consumes existing store ports, atomic mutations, and a transaction provider for the same storage domain. It opens no database and starts no worker loop. Every transition acquires writer admission before reading the job and clock. Lease validity is decided at that protected point; the mutation and any command outcome commit before the transaction ends. An atomic-capable store without this transaction guarantee is insufficient. Memory and SQLite are the first complete implementations.
 
 When a consumer needs job state, application records, and log history committed together, it supplies transaction and log capabilities from the same storage domain. A missing log capability is explicit. PostgreSQL and libSQL adoption cannot silently pretend to include the local log facet.
 
 Reuse and extract Gonk's existing persistence logic where it supplies the chosen behavior. During adoption, replace the corresponding Gonk persistence implementation with this module. Keep Gonk's execution policy and application checkpoints in their current owners.
 
-The first integration is llm-service's existing `IAssetMetadataBackend`. Preserve its API, priority, progress, and cancellation behavior. Map its claims to Mirk claims, and adapt recovery to retain live or uncertain attempts. Do not maintain an independent queue record that can disagree with the asset's authoritative lifecycle state. The integration must establish one owner for each persisted state transition. Fabric's `RelayMailboxStore` remains a different delivery contract. Asset backend interface: `ai/llm-service/packages/server/asset/asset/src/types/index.ts:208` (private source), consumer evaluation: `studio-docs/research/mirk-job-queues-2026-11-04/README.md:35` (private source).
+The first integration is llm-service's existing `IAssetMetadataBackend`. Preserve its user journey, priority, progress, and cancellation behavior. Carry the original Mirk claim through every worker update and completion, changing the internal backend interface where necessary. Adapt recovery to retain live or uncertain attempts. Do not maintain an independent queue record that can disagree with the asset's authoritative lifecycle state. The Mirk job record is the lifecycle authority. Asset status is a projection of that record; asset-specific data remains application-owned. The consumer mapping must expose blocked reconciliation and pending cancellation without presenting uncertain work as finished. Fabric's `RelayMailboxStore` remains a different delivery contract. Asset backend interface: `ai/llm-service/packages/server/asset/asset/src/types/index.ts:208` (private source), consumer evaluation: `studio-docs/research/mirk-job-queues-2026-11-04/README.md:35` (private source).
 
 **Acceptance**
 
