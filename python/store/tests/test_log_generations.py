@@ -221,3 +221,31 @@ def test_generation_exhaustion_does_not_wrap_or_leave_an_empty_stream(tmp_path: 
         assert log.lastCursor("new") is None
         assert log.append("existing", "two") == 2
         assert store.connection.execute("SELECT COUNT(*) FROM _mirk_log_streams").fetchone()[0] == 1
+
+
+def test_failed_sqlite_commit_rolls_back_generation_and_stream(tmp_path: Path) -> None:
+    from mirk.store import AtomicMutationBackendError
+
+    path = str(tmp_path / "commit-busy.db")
+    with SqliteStore(path) as store:
+        log = SqliteLogFacet(store)
+        log.append("original", "kept")
+        store.connection.execute("PRAGMA journal_mode = DELETE")
+        store.connection.execute("PRAGMA busy_timeout = 0")
+        reader = sqlite3.connect(path, isolation_level=None)
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM _mirk_log").fetchall()
+            with pytest.raises(AtomicMutationBackendError):
+                log.append("new", "must not commit")
+            assert not store.connection.in_transaction
+            assert log.lastCursor("new") is None
+            assert (
+                store.connection.execute("SELECT value FROM _mirk_log_generation").fetchone()[0]
+                == 1
+            )
+            reader.execute("ROLLBACK")
+            assert log.append("new", "committed") == 1
+            assert log.lastCursor("new") == {"generation": 2, "sequence": 1}
+        finally:
+            reader.close()
