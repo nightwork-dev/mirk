@@ -9,6 +9,23 @@ import { LibsqlAdapter } from "../libsql-adapter.js";
 const v = (...values: number[]): Float32Array => Float32Array.from(values);
 
 describe("libSQL named vector persistence", () => {
+  it("initializes isolated prefixed formats through the shared migration plan", async () => {
+    const client = createClient({ url: ":memory:" });
+    const first = await LibsqlAdapter.open({ url: ":memory:", client, tablePrefix: "one_" });
+    const second = await LibsqlAdapter.open({ url: ":memory:", client, tablePrefix: "two_" });
+    try {
+      await first.vector.ensureSpace("text", { dimensions: 2 });
+      await second.vector.ensureSpace("text", { dimensions: 3 });
+      await first.vector.upsert("docs", { id: "a", vectors: { text: v(1, 0) } });
+      await second.vector.upsert("docs", { id: "a", vectors: { text: v(0, 1, 0) } });
+      expect((await first.vector.get("docs", "a"))!.vectors.text).toEqual(v(1, 0));
+      expect((await second.vector.get("docs", "a"))!.vectors.text).toEqual(v(0, 1, 0));
+      const reopened = await LibsqlAdapter.open({ url: ":memory:", client, tablePrefix: "one_" });
+      try { expect(await reopened.vector.count("docs")).toBe(1); } finally { reopened.close(); }
+      expect((await client.execute("SELECT name FROM sqlite_master WHERE name='_mirk_meta'")).rows).toEqual([]);
+    } finally { first.close(); second.close(); client.close(); }
+  });
+
   it.each([false, true])("stores distinct dimensions, replaces maps and shares portable bytes (JS=%s)", async (forceJsCosine) => {
     const directory = mkdtempSync(join(tmpdir(), "mirk-libsql-spaces-"));
     const path = join(directory, "vectors.db");
