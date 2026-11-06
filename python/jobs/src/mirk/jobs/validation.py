@@ -63,14 +63,22 @@ def generation(value: Any) -> int:
 
 def validate_job(value: Any) -> None:
     job = record(value)
-    exact(job, FIELDS)
+    exact(
+        job, FIELDS if job.get("schemaVersion") == 1 else FIELDS | {"activeKey", "subject", "kind"}
+    )
     if (
         isinstance(job["schemaVersion"], bool)
-        or job["schemaVersion"] != 1
+        or job["schemaVersion"] not in (1, 2)
         or not isinstance(job["state"], str)
         or job["state"] not in STATES
     ):
         invalid()
+    if job["schemaVersion"] == 2:
+        for field in ("activeKey", "subject", "kind"):
+            if job[field] is not None and not isinstance(job[field], str):
+                invalid()
+    if job["schemaVersion"] == 2 and job["activeKey"] is not None:
+        text(job["activeKey"])
     text(job["id"])
     text(job["queue"])
     priority = job["priority"]
@@ -104,6 +112,22 @@ def validate_job(value: Any) -> None:
         invalid()
 
 
+def normalize_job(value: Any) -> dict[str, Any]:
+    validate_job(value)
+    if value["schemaVersion"] == 2:
+        return record(value)
+    return {**value, "schemaVersion": 2, "activeKey": None, "subject": None, "kind": None}
+
+
+def normalize_outcome(name: str, value: Any) -> Any:
+    validate_outcome(name, value)
+    if name == "start":
+        return {**value, "job": {**value["job"], "value": normalize_job(value["job"]["value"])}}
+    if name in {"claim", "claimNext", "removeTerminal"}:
+        return value
+    return {**value, "value": normalize_job(value["value"])}
+
+
 def validate_claim(value: Any) -> None:
     claim = record(value)
     exact(claim, {"jobId", "ownerToken", "generation"})
@@ -114,6 +138,13 @@ def validate_claim(value: Any) -> None:
 
 
 def validate_outcome(name: str, value: Any) -> None:
+    if name == "start":
+        result = record(value)
+        exact(result, {"started", "job"})
+        if not isinstance(result["started"], bool):
+            invalid()
+        validate_outcome("enqueue", result["job"])
+        return
     if name in {"claim", "claimNext"}:
         if value is not None:
             validate_claim(value)
@@ -136,5 +167,8 @@ def validate_receipt(value: Any) -> None:
 
 def validate_enqueue(value: Any) -> None:
     input = record(value)
-    if set(input) - {"id", "queue", "payload", "priority", "availableAt"} or "payload" not in input:
+    if (
+        set(input) - {"id", "queue", "payload", "priority", "availableAt", "subject", "kind"}
+        or "payload" not in input
+    ):
         invalid()

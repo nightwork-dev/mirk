@@ -80,7 +80,7 @@ def test_order_discovery_and_rollback(fixture: Any) -> None:
     for id, priority in [("z", 0), ("b", 3), ("a", 3)]:
         jobs.enqueue({"id": id, "queue": "q", "payload": None, "priority": priority}, {"key": id})
     assert jobs.claimNext("q", {"key": "c", "leaseMs": 10})["jobId"] == "a"
-    assert jobs.list({"state": "queued", "limit": 1})[0]["value"]["id"] == "b"
+    assert jobs.list({"state": "queued", "sortBy": "priority", "limit": 1})[0]["value"]["id"] == "b"
 
 
 def test_admin_retry(fixture: Any) -> None:

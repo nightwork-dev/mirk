@@ -113,4 +113,30 @@ export const scenarios = [
     ],
   }),
 
+  defineScenario({
+    id:'jobs/keyed-start-active-lifetime',title:'keyed starts retain active and uncertain work and release terminal work',ports:['jobs'],steps:[
+      {op:'start',args:[{key:'key',id:'first',queue:'q',payload:null,subject:'asset',kind:'render'},'first'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'ignored',queue:'q',payload:'different'},'reuse'],expect:{value:true}},
+      {op:'claim',args:['first',10]}, {op:'block',args:['first',{providerId:'remote'}]},
+      {op:'start',args:[{key:'key',id:'ignored',queue:'q',payload:null},'blocked'],expect:{value:true}},
+      {op:'requestCancel',args:['first']},
+      {op:'start',args:[{key:'key',id:'next',queue:'q',payload:null},'next'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'first',queue:'q',payload:null,subject:'asset',kind:'render'},'first'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'other-queue',queue:'other',payload:null},'other'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id:'jobs/indexed-discovery-and-legacy-upgrade',title:'filters and recency precede limits and legacy records normalize safely',ports:['jobs'],steps:[
+      {op:'enqueueCommand',args:[{id:'old',queue:'q',payload:null,subject:'asset',kind:'render'},'old']},
+      {op:'setNow',args:[101]},
+      {op:'enqueueCommand',args:[{id:'b',queue:'q',payload:null,subject:'asset',kind:'render'},'b']},
+      {op:'enqueueCommand',args:[{id:'a',queue:'q',payload:null,subject:'asset',kind:'render'},'a']},
+      {op:'listFiltered',args:[{subject:'asset',kind:'render',state:'queued',limit:2}],expect:{value:true}},
+      {op:'seedLegacy',args:['old']}, {op:'get',args:['old'],expect:{value:true}},
+      {op:'claim',args:['old',10]}, {op:'get',args:['old'],expect:{value:true}},
+      {op:'corruptActiveSlot',args:['q','repair','missing']},
+      {op:'start',args:[{key:'repair',id:'repaired',queue:'q',payload:null},'repair'],expect:{value:true}},
+    ],
+  }),
+
 ];

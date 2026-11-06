@@ -47,6 +47,28 @@ class JobsConformanceTarget:
         assert job is not None
         self.jobs.store.put(self.jobs.collection, {**job["value"], **patch})
 
+    def start(self, input: Any, commandKey: str) -> Any:
+        result = self.jobs.start(input, {"key": commandKey})
+        return {**result, "job": result["job"]["value"]}
+
+    def listFiltered(self, filter: Any) -> Any:
+        return [j["value"] for j in self.jobs.list(filter)]
+
+    def corruptActiveSlot(self, queue: str, activeKey: str, id: str) -> None:
+        from mirk.store.canonical import canonical_json
+
+        self.jobs.store.set(
+            "mirk-jobs-active:" + canonical_json([self.jobs.collection, queue, activeKey]), id
+        )
+
+    def seedLegacy(self, id: str) -> None:
+        job = self.jobs.get(id)
+        assert job is not None
+        legacy = {
+            k: v for k, v in job["value"].items() if k not in {"activeKey", "subject", "kind"}
+        }
+        self.jobs.store.put(self.jobs.collection, {**legacy, "schemaVersion": 1})
+
     def get(self, id: str) -> Any:
         result = self.jobs.get(id)
         return result["value"] if result else None

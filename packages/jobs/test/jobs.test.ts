@@ -50,7 +50,7 @@ describe.each(['memory','sqlite'])('durable jobs %s', backend => {
     const {jobs} = setup();
     for (const [id,priority] of [['z',0],['b',3],['a',3]] as const) await jobs.enqueue({...input,id,priority},{key:`e${id}`});
     expect((await jobs.claimNext('test',{leaseMs:10,key:'c'}))!.jobId).toBe('a');
-    expect((await jobs.list({state:'queued',limit:1}))[0]!.value.id).toBe('b');
+    expect((await jobs.list({state:'queued',sortBy:'priority',limit:1}))[0]!.value.id).toBe('b');
   });
   it('rolls job and command outcome back with an outer application transaction', async () => {
     const {transactions,jobs} = setup();

@@ -5,7 +5,10 @@ import type { AsyncLogStore } from '@mirk/store/log';
 export type JobState = 'queued' | 'leased' | 'blocked' | 'succeeded' | 'failed' | 'cancelled';
 export interface JobRecord {
   id: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
+  activeKey: string | null;
+  subject: string | null;
+  kind: string | null;
   queue: string;
   payload: JsonValue;
   state: JobState;
@@ -27,9 +30,11 @@ export interface JobClaim { jobId: string; ownerToken: string; generation: numbe
 export interface JobCommand { key: string }
 export interface ClaimOptions extends JobCommand { leaseMs: number }
 export interface EnqueueInput {
-  id: string; queue: string; payload: JsonValue; priority?: number; availableAt?: number;
+  id: string; queue: string; payload: JsonValue; priority?: number; availableAt?: number; subject?: string; kind?: string;
 }
-export interface JobListOptions { queue?: string; state?: JobState; limit?: number }
+export interface StartInput extends Omit<EnqueueInput, 'id'> { key: string; id?: string }
+export interface StartResult { started: boolean; job: VersionedJob }
+export interface JobListOptions { queue?: string; subject?: string; kind?: string; state?: JobState; sortBy?: 'updatedAt' | 'enqueuedAt' | 'priority'; sortDir?: 'asc' | 'desc'; limit?: number }
 export type BlockedDecision =
   | { state: 'queued'; availableAt: number }
   | { state: 'succeeded'; result: JsonValue }
