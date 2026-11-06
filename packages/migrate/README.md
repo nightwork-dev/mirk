@@ -73,7 +73,7 @@ it runs; that is what makes resuming by count correct.
 | -------------------- | -------------------------------------- | ----------------------------- | ---------------------- |
 | `copyCollection`     | one named `AsyncStore` collection      | `AsyncStore`                  | `collection:<name>`    |
 | `migrateStore`       | several named `AsyncStore` collections | `AsyncStore`                  | `collection:<name>` each |
-| `copyVectorManifest` | `AsyncIterable<VectorManifestEntry>`   | `AsyncVectorStore`            | `vector`               |
+| `copyVectorManifest` | `VectorManifest`   | `AsyncVectorStore`            | `vector`               |
 | `copySearchManifest` | `AsyncIterable<SearchManifestEntry>`   | `AsyncSearchStore`            | `search`               |
 | `copyGraphManifest`  | `AsyncIterable<GraphManifestEntry>`    | `AsyncStore` edge collections | `graph`                |
 | `copyObjectManifest` | `AsyncIterable<ObjectManifestEntry>`   | `ObjectStore`                 | `object`               |
@@ -86,7 +86,8 @@ the total processed count.
 A manifest copy, with a checkpoint saved after every 100 entries:
 
 ```ts
-await copyVectorManifest(entries(), destination, {
+const spaces = await sourceVectors.listSpaces();
+await copyVectorManifest({ spaces, entries: entries() }, destination, {
   batchSize: 100,
   resume: { vector: previousVectorCount },
   onCheckpoint: async ({ lane, processed }) => {
@@ -98,6 +99,34 @@ await copyVectorManifest(entries(), destination, {
 Each manifest entry names its collection and carries the document: `{ collection, document }` for
 vectors and search, `{ collection, edge }` for graph, and `{ key, bytes, mediaType?, metadata? }` for
 objects.
+
+### Named vector manifests
+
+A vector manifest contains `{ spaces, entries }`. `spaces` is a snapshot from the source vector
+store's `listSpaces()`. Each entry carries the complete document vector map:
+
+```ts
+const manifest = {
+  spaces: await sourceVectors.listSpaces(),
+  entries: exportDocuments(), // yields { collection, document: { id, vectors, metadata? } }
+};
+await copyVectorManifest(manifest, destinationVectors, { batchSize: 100 });
+```
+
+The helper validates every definition and declares all spaces before it writes documents. Space
+definitions specify the name, dimensions, cosine metric and float32 encoding. Different spaces can
+have different dimensions. A conflicting destination definition stops the copy before document
+writes. The helper does not infer dimensions or change an existing space.
+
+Every document retains its complete `vectors` map. A single document upsert copies text and image
+vectors together. The destination uses ordinary replacement semantics, so vectors omitted from the
+source document disappear from that destination document.
+
+Every document vector must name a space in the manifest. A missing definition fails even when the
+destination already has that space. Document validation also covers entries skipped by a resume
+checkpoint. Resuming declares the same definitions again before continuing document writes.
+Changed definitions fail against the immutable destination schema. Definitions do not count toward
+the `vector` checkpoint, which continues to count document entries.
 
 ## Options
 
@@ -135,7 +164,7 @@ const plan = {
   destinationIdentity: "destination:staging",
 } as const;
 
-await copyVectorManifest(entries(), destination, {
+await copyVectorManifest({ spaces, entries: entries() }, destination, {
   plan,
   onCheckpoint: saveCheckpointV2,
 });
