@@ -52,8 +52,8 @@ class SqliteVectorFacet:
         check_sqlite_caller(db)
         ensure_registry(db)
         self._engine = vector_engine
-        if vector_engine is not None:
-            vector_engine.initialize(db)
+        if vector_engine is not None and vector_engine.initialize(db) is False:
+            self._engine = None
 
     @property
     def meta(self) -> VectorStoreMeta:

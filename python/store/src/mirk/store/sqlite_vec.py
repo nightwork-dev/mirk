@@ -55,7 +55,7 @@ def _match(metadata: dict[str, Any], params: list[Any]) -> str:
 class SqliteVectorEngine(Protocol):
     name: str
 
-    def initialize(self, db: sqlite3.Connection) -> None: ...
+    def initialize(self, db: sqlite3.Connection) -> bool | None: ...
 
     def search(
         self,
@@ -71,12 +71,23 @@ class SqliteVectorEngine(Protocol):
 class SqliteVecEngine:
     name = "sqlite-vec"
 
-    def initialize(self, db: sqlite3.Connection) -> None:
+    def initialize(self, db: sqlite3.Connection) -> bool | None:
         try:
-            extension = importlib.import_module("mirk_sqlite_vec_native")
+            try:
+                extension = importlib.import_module("mirk_sqlite_vec_native")
+            except ModuleNotFoundError as error:
+                if error.name == "mirk_sqlite_vec_native":
+                    return False
+                raise
+            try:
+                path = extension.loadable_path()
+            except Exception as error:
+                if getattr(error, "code", None) == "native-companion-unavailable":
+                    return False
+                raise
             db.enable_load_extension(True)
             try:
-                db.load_extension(extension.loadable_path())
+                db.load_extension(path)
             finally:
                 db.enable_load_extension(False)
             row = db.execute(

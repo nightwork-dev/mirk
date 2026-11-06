@@ -11,6 +11,7 @@ export interface SqliteVectorSearchRequest {
 
 export interface SqliteVectorEngine {
   readonly name: string;
-  initialize(db: SqliteDb): void;
+  /** Return false to select the existing ordinary exact engine on this connection. */
+  initialize(db: SqliteDb): void | false;
   search(db: SqliteDb, request: SqliteVectorSearchRequest): VectorSearchResult[];
 }
