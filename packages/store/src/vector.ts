@@ -5,6 +5,9 @@
 
 export type {
   Vector,
+  VectorSpace,
+  VectorSpaceOptions,
+  VectorQuery,
   VectorStore,
   AsyncVectorStore,
   VectorStoreMeta,
