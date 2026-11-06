@@ -1,35 +1,53 @@
 # Mirk implementation review
 
-GLM 5.3 Flash reviewed the storage implementation and its existing asset-service integration. The coordinator checked the findings against the owning code and runtime results. No high-severity defect was established within the reviewed scope. This is a source-review conclusion, not a claim that every platform or input was tested.
+GLM 5.3 Flash reviewed the second-round format, log, jobs, and memory-coordination changes.
+The coordinator checked the findings against complete owning helpers and runtime probes.
+The reviews used the integrated snapshot `315b6ae`; the first jobs review instead read its
+implementation branch at `5185557`, which contains the same jobs implementation. The separate
+coordination review covered the scope that first reviewer missed.
 
-The storage reviews inspected snapshot `7d41737`. The consumer review inspected its repository snapshot `31057a3`. Follow-up commits correct the confirmed issues below. The [original specification review](https://github.com/nightwork-dev/mirk/blob/d739d0f1a4cb0913543d60e5730d761a01691393/docs/reviews/2026-11-05-glm-mirk-storage-specs.md) remains in Git history.
+The [first-round review](https://github.com/nightwork-dev/mirk/blob/ddeeac88663eda7b54e9bfb7c38ccbb3251ab81f/docs/reviews/2026-11-05-glm-mirk-storage-specs.md)
+remains in Git history. This document records the current review outcome rather than a raw transcript.
 
 ## Confirmed corrections
 
-- **Python vector limits.** Native search interpolated a fractional `topK` into SQLite instead of using the reference's truncation. It now uses the shared `top_k_of` helper. Portable fraction scenarios and direct non-finite checks cover memory, ordinary SQLite, and native SQLite.
-- **Legacy dimension bounds.** Python accepted an unsafe integer dimension when no vector bytes exposed the mismatch. It now applies the same safe-integer bound as TypeScript. Rejection tests verify that schema, version, metadata, and application data remain unchanged.
-- **Qdrant migration errors.** Malformed legacy JSON could escape as an untyped parser error. Both languages now raise `QdrantCollectionError`, preserve the source and incomplete destination marker, and permit repair followed by resume.
-- **Blocked-decision validation.** Python checked the decision after command receipt lookup, producing a different error from TypeScript. Shape validation now precedes replay. Valid replay remains unchanged; malformed and empty decisions return `invalid-input`.
-- **JavaScript result shape.** The coordinator's strict public-adapter comparison found that native search omitted the optional metadata property while the ordinary engine returned it as undefined. Native results now preserve the ordinary shape. Both drivers have a strict-result regression.
-- **Consumer retry diagnostics.** Retryable failure details now stay in the existing job checkpoint and projection until success.
-- **Consumer cancellation failures.** A rejected cancellation now restores the prior process-local cancellation flag, so an uncommitted request cannot affect a later attempt.
+- **Python runner cancellation during cleanup.** Cancelling the caller while it awaited the renewal monitor could be swallowed by that monitor, allowing the helper to return success. The monitor now propagates task cancellation. A deterministic injected-clock regression covers memory and SQLite. Ordinary external-signal cancellation still aborts the work signal and rejects the helper.
+- **Duplicate or non-text format markers.** Python formerly accepted the first marker row and coerced its value to text. Admission now requires exactly one text value, matching TypeScript. Rejection leaves the file unchanged.
+- **Views in canonical table positions.** Python formerly accepted a view where the current format requires a table. Canonical admission now checks actual tables. Generic collision detection still recognizes views, so this correction does not hide application objects from table-name allocation. The malformed-file regression opens the same fixtures through both Python and TypeScript.
 
-The actual consumer journey also exposed setup wrappers that dropped claim/context arguments and an image route missing from Nitro's explicit image-request routing. Those paths were corrected and exercised against packed Mirk artifacts. A corrupt test PNG was replaced with an encoded fixture; no product decoder workaround was added.
+Integration also corrected old tests that still expected format 3, built an unversioned fixture
+with format-4 generation tables, or supplied a numeric log cursor. These were stale callers,
+not changes to the new contract. A separate integration check caught `tryAcquire` waiting behind
+memory transaction admission; the immediate-unavailable path and clock/cancellation tests cover
+that correction.
 
-## Findings not adopted
+## Findings checked and not adopted
 
-The libSQL migration already runs inside its admitted opening transaction. `LibsqlAdapterCore.initialize` wraps the private facet initialization, which makes the sole migration call. The underlying driver uses local `BEGIN IMMEDIATE` or remote `transaction("write")`. Adding another transaction would duplicate ownership. See [the caller](../../packages/store-libsql/src/libsql-core.ts) and [the shared plan driver](../../packages/store-libsql/src/libsql-format.ts).
-
-An ownership-read failure must not be treated as proof of ownership. The suggestion to assume a lease remains owned when SQLite is busy was rejected. Backend errors remain errors; generation checks still govern authoritative writes.
-
-Migration does not use `INSERT OR IGNORE` to conceal a conflicting destination definition. Atomic rollback already makes retry safe. Ignoring that conflict could admit vectors under the wrong dimension definition.
-
-The native README already distinguishes the added float64 scalar from upstream float32 functions and states zero-query behavior. The jobs README already states the shared-domain log precondition and that replay cannot restore an expired claim.
-
-Consumer recovery was already called during initialization and polling. Its reconciliation route already returned 400 for invalid generations and 409 for a valid stale generation. Regression tests confirm those paths; no extra timer or duplicate validation path was added.
+- **Relative backup paths.** The claimed failure did not reproduce. SQLite's `PRAGMA database_list` returned an absolute source filename for a relative open, and explicit migration with a relative backup destination succeeded. No speculative path rewrite was added.
+- **Default abort reasons.** Native `AbortController.abort()` supplies an `AbortError`. Python's `CoordinationAbortSignal.abort(None)` supplies `CoordinationAbortedError`. The claim that either normal call throws an undefined reason was false.
+- **Already-aborted Python signals.** `CoordinationAbortSignal.add` immediately invokes a listener when the signal is already aborted. The proposed extra post-registration check would duplicate that behavior.
+- **Renewal command replay.** A distinct command prefix per logical runner invocation is an explicit contract. Reusing it replays receipts and cannot restore expired ownership. No second renewal path or implicit invocation policy was added.
+- **Ownership between checks.** The authoritative renewal operation rechecks owner token, fencing generation, state, and expiry inside its transaction. A preceding helper check does not grant write authority.
+- **After-commit callback errors.** The contract makes notifications best effort and isolates failures so they do not fail a completed commit or stop later callbacks. Swallowing those errors is deliberate in both implementations.
+- **Facet admission.** Python facets can receive a raw connection and call the shared admission function. The call is not a second migration algorithm. An adapter opened with `explicit` or `refuse` rejects an old file before any facet is constructed.
+- **A completed backup after a failed migration.** Retaining that backup is required. A retry must select a new destination or deliberately manage the existing backup; migration never overwrites it.
 
 ## Review and runtime scope
 
-The reviews covered the native patch and packaging, SQLite migration policy, vector engines, Qdrant migration, coordination, shared memory transactions, jobs lifecycle and validation, and the consumer's claim, recovery, provider-submission, and image-serving paths. Individual reviewers did not read every adapter, test, or provider. They ran no services or runtime tests.
+The external reviews read the migration planner, local backup drivers, log generations,
+keyed job admission, lookup and renewal, and the memory lease transaction machinery. They did
+not read every adapter, the full format document, or the changed native loader. They ran no
+runtime tests. Their initial reports included unsupported claims; the corrections above reflect
+checked findings rather than accepting review text as authority.
 
-The coordinator and implementation lanes ran the actual backend and consumer checks summarized in the [implementation record](../proposals/mirk-storage-and-jobs-specifications.md#verification). Native platform proof is limited to macOS arm64. Environment-gated service tests remain separate from the executed local and Qdrant proofs.
+The coordinator inspected native fallback classification and ran the combined backend gates,
+independent golden readers, and [100k-vector benchmark](../benchmarks/vector-scale.md).
+The packed application consumer exercised migration policies, backups, job preservation,
+priority ordering, and its existing claim lifecycle. The libSQL implementation was split along
+its existing responsibilities after the review snapshot; its complete local suite and typecheck
+passed after the split.
+
+The [implementation record](../proposals/mirk-storage-and-jobs-specifications.md#verification-and-platform-scope)
+links the current contracts and explains platform and delivery limits. Native execution was
+measured on macOS arm64. Environment-gated service suites and other operating systems are not
+counted as executed proof.
