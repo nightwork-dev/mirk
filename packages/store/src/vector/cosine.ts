@@ -56,6 +56,10 @@ export function isUsableVector(v: Vector): boolean {
 }
 
 export type VectorInputErrorCode =
+  | "unknown-space"
+  | "space-definition-conflict"
+  | "invalid-space"
+  | "empty-vectors"
   | "dimension-mismatch"
   | "invalid-dimensions"
   | "dimensions-changed"

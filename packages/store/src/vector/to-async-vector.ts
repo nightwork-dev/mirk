@@ -5,7 +5,9 @@ import type {
   VectorDocument,
   VectorSearchResult,
   VectorSearchOptions,
-  Vector,
+  VectorQuery,
+  VectorSpace,
+  VectorSpaceOptions,
 } from './types.js';
 
 // Adapter: present a synchronous VectorStore through the AsyncVectorStore interface
@@ -14,6 +16,9 @@ import type {
 // method's generics intact, matching the pattern in src/to-async.ts.
 class AsyncVectorStoreAdapter implements AsyncVectorStore {
   constructor(private readonly sync: VectorStore) {}
+
+  async ensureSpace(name: string, options: VectorSpaceOptions): Promise<void> { this.sync.ensureSpace(name, options); }
+  async listSpaces(): Promise<VectorSpace[]> { return this.sync.listSpaces(); }
 
   get meta(): VectorStoreMeta {
     return this.sync.meta;
@@ -54,7 +59,7 @@ class AsyncVectorStoreAdapter implements AsyncVectorStore {
 
   async search<M extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
-    query: Vector,
+    query: VectorQuery,
     opts?: VectorSearchOptions,
   ): Promise<VectorSearchResult<M>[]> {
     return this.sync.search<M>(collection, query, opts);

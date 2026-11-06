@@ -15,8 +15,6 @@ export type Vector = Float32Array;
 export interface VectorStoreMeta {
   /** Backend identifier (e.g. "memory", "sqlite"). */
   backend: string;
-  /** Embedding dimensions this store is configured for. */
-  dimensions: number;
   /** True when the backend answers from a native vector index; false when it
    *  does exact JS-side cosine search. `@mirk/store-libsql` reports its own
    *  `vector_top_k` path here; the SQLite adapter is always false, having no
@@ -28,7 +26,7 @@ export interface VectorDocument<M extends Record<string, unknown> = Record<strin
   /** Unique id within the collection. */
   id: string;
   /** The embedding. Length must equal the store's configured dimensions. */
-  vector: Vector;
+  vectors: Record<string, Vector>;
   /** Typed context stored alongside the vector. Persisted as JSON by disk-backed
    *  backends, so it must be JSON-serializable; values JSON can't represent
    *  (`undefined`, functions) are dropped on persistence — don't rely on them. */
@@ -61,7 +59,13 @@ export interface VectorSearchOptions {
  *  All operations are synchronous. Construction may be async for backends that
  *  load native bindings (see each backend's static `open`); once opened, every
  *  call is pure sync. */
+export interface VectorSpace { name: string; dimensions: number; metric: "cosine"; encoding: "float32"; }
+export interface VectorSpaceOptions { dimensions: number; }
+export interface VectorQuery { space: string; vector: Vector; }
+
 export interface VectorStore {
+  ensureSpace(name: string, options: VectorSpaceOptions): void;
+  listSpaces(): VectorSpace[];
   readonly meta: VectorStoreMeta;
 
   /** Insert or replace a document by (collection, id). Throws on dimension mismatch. */
@@ -95,7 +99,7 @@ export interface VectorStore {
    *  Supports pre-KNN filtering via opts.where / opts.whereNot. */
   search<M extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
-    query: Vector,
+    query: VectorQuery,
     opts?: VectorSearchOptions,
   ): VectorSearchResult<M>[];
 }
@@ -107,6 +111,8 @@ export interface VectorStore {
  *  generics (`get<M>`, `search<M>`, …) collapse to `unknown` under inference — same
  *  constraint as the KV AsyncStore twin in src/types.ts. */
 export interface AsyncVectorStore {
+  ensureSpace(name: string, options: VectorSpaceOptions): Promise<void>;
+  listSpaces(): Promise<VectorSpace[]>;
   readonly meta: VectorStoreMeta;
 
   upsert<M extends Record<string, unknown> = Record<string, unknown>>(
@@ -132,7 +138,7 @@ export interface AsyncVectorStore {
 
   search<M extends Record<string, unknown> = Record<string, unknown>>(
     collection: string,
-    query: Vector,
+    query: VectorQuery,
     opts?: VectorSearchOptions,
   ): Promise<VectorSearchResult<M>[]>;
 }
