@@ -72,7 +72,7 @@ describe("libSQL named vector persistence", () => {
       db.close();
       const reopened = await LibsqlAdapter.open({ url });
       reopened.close();
-      expect((await raw.execute("SELECT value FROM _mirk_meta WHERE key='schema_version'")).rows[0]!.value).toBe("3");
+      expect((await raw.execute("SELECT value FROM _mirk_meta WHERE key='schema_version'")).rows[0]!.value).toBe("4");
       expect((await raw.execute("SELECT hex(vec) bytes FROM _mirk_vector_values")).rows[0]!.bytes).toBe("0000803F00000000");
       expect((await raw.execute("SELECT value FROM application")).rows[0]!.value).toBe("preserved");
       expect((await raw.execute("SELECT name FROM sqlite_master WHERE name IN ('vectors','_vec_meta')")).rows).toEqual([]);
@@ -88,7 +88,7 @@ describe("libSQL named vector persistence", () => {
         CREATE TABLE vectors(collection TEXT,id TEXT,vec BLOB,metadata TEXT,PRIMARY KEY(collection,id));
         INSERT INTO vectors VALUES('docs','a',x'0000803f00000000',NULL);
         CREATE TRIGGER fail_migration BEFORE UPDATE ON _mirk_meta
-          WHEN NEW.value='3' BEGIN SELECT RAISE(ABORT,'migration-interrupted'); END;`);
+          WHEN NEW.value='4' BEGIN SELECT RAISE(ABORT,'migration-interrupted'); END;`);
       await expect(LibsqlAdapter.open({ url })).rejects.toThrow("migration-interrupted");
       expect((await raw.execute("SELECT value FROM _mirk_meta")).rows[0]!.value).toBe("2");
       expect((await raw.execute("SELECT hex(vec) bytes FROM vectors")).rows[0]!.bytes).toBe("0000803F00000000");
