@@ -1,6 +1,6 @@
 import { JobsStore, type JobsOptions } from "@mirk/jobs";
 import { jobsConformanceTarget } from "./jobs-target.js";
-import { coordinationApi } from "../coordination/conformance.js";
+import { coordinationApi, memoryTransactionApi } from "../coordination/conformance.js";
 import { createMemoryCoordinator, createMemoryCoordinationState } from "../coordination/memory.js";
 import { SqliteCoordinator } from "../coordination/sqlite.js";
 import { recordHistoryApi } from "./record-history-target.js";
@@ -85,7 +85,7 @@ const VECTOR_METHODS = ["ensureSpace", "listSpaces", "upsert", "upsertMany", "ge
 
 const SEARCH_METHODS = ["index", "indexMany", "remove", "search"] as const;
 
-const LOG_METHODS = ["append", "get", "list", "lastSequence", "deleteStream"] as const;
+const LOG_METHODS = ["append", "get", "list", "lastSequence", "lastCursor", "deleteStream"] as const;
 
 /** The log target: the port's methods, plus `appendRolledBack(stream,
  *  record)`, which appends inside the backend's own transaction, rolls that
@@ -192,6 +192,11 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
 
   if (kind === "hash") {
     return { target: { kind, api: hashApi() }, dispose: () => {} };
+  }
+
+  if (kind === "memory_transaction") {
+    if (backend !== "memory") throw new Error("Memory transaction participation requires the memory backend");
+    return { target: { kind, api: memoryTransactionApi() }, dispose: () => {} };
   }
 
   if (kind === "coordination") {

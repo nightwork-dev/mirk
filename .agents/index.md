@@ -8,7 +8,9 @@ Substrate-agnostic storage primitives with no application domain baked in, publi
 - [`README.md`](README.md) — what Mirk is and the package inventory.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, conformance, and release commands.
 - `packages/*/README.md`, `python/*/README.md` — each package's contract. These are the only
-  specification; keep them current when behavior changes.
+  runtime contracts; keep them current when behavior changes.
+- [`docs/format.md`](docs/format.md) — the normative SQLite layouts and version policy for
+  independent readers. `testdata/sqlite-format/` holds immutable historical golden files.
 - [`conformance/README.md`](conformance/README.md) — the scenario format and its governance.
 - [`docs/roadmap.md`](docs/roadmap.md) — shipped and planned primitives.
 
@@ -34,7 +36,9 @@ generate elsewhere with `pnpm --filter @mirk/store conformance:gen --out <scratc
 - **No barrel files.** `export *` is forbidden.
 - **Ports vs source adapters.** Ports and in-memory references are zero-native. Source adapters
   implement ports over one backend connection and are the only place native bindings appear —
-  never re-export an adapter from a port subpath.
+  keep canonical port subpaths native-free. The historical `@mirk/store/coordination` entry has
+  explicitly requested deprecated SQLite re-exports; use `/coordination/core` for the native-free
+  contract and `/coordination/memory` for the memory implementation.
 - **Native deps are optional peers**, referenced only from the adapter that needs them.
 - **Sync by design.** Embedded backends are synchronous; `toAsync` lifts a `SyncStore`. Don't make
   local calls async by default.

@@ -66,6 +66,8 @@ SCENARIOS, CORPUS_ERROR = _load()
 
 
 def _backends_for_port(port: str) -> tuple[str, ...]:
+    if port == "memory_transaction":
+        return ("memory",)
     return ("markdown",) if port == "store_markdown" else ("memory", "sqlite")
 
 
