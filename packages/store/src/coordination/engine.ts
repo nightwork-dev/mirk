@@ -1,5 +1,9 @@
+import type { MemoryAdmission } from "../memory-participant.js";
+import { positiveInteger } from "./validation.js";
+import { ManagedLease } from "./lease.js";
 import {
   CoordinationAbortedError,
+  systemClock,
   CoordinationOwnershipLostError,
   CoordinationTimeoutError,
   type AsyncCoordinator,
@@ -8,10 +12,9 @@ import {
   type CoordinationAcquireResult,
   type CoordinationClock,
   type CoordinationGuard,
-  type CoordinationLease,
   type CoordinationOptions,
   type CoordinationRunOptions,
-} from "../coordination.js";
+} from "./core.js";
 
 export interface LeaseIdentity {
   key: string;
@@ -20,6 +23,7 @@ export interface LeaseIdentity {
   expiresAt: number;
 }
 export interface LeaseBackend {
+  participation?: MemoryAdmission;
   acquire(
     key: string,
     token: string,
@@ -34,31 +38,6 @@ export interface LeaseBackend {
   ): number | undefined | "unavailable";
   release(lease: LeaseIdentity): boolean | "unavailable";
   isOwned(lease: LeaseIdentity): boolean;
-}
-
-export const systemClock: CoordinationClock = {
-  now: Date.now,
-  sleep(ms, signal) {
-    return new Promise((resolve, reject) => {
-      const abort = () => {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", abort);
-        reject(signal?.reason);
-      };
-      const timer = setTimeout(() => {
-        signal?.removeEventListener("abort", abort);
-        resolve();
-      }, ms);
-      signal?.addEventListener("abort", abort, { once: true });
-      if (signal?.aborted) abort();
-    });
-  },
-};
-
-export function positiveInteger(value: number, name: string): number {
-  if (!Number.isSafeInteger(value) || value <= 0)
-    throw new Error(`${name} must be a positive safe integer; got ${value}.`);
-  return value;
 }
 
 export class LeaseCoordinator implements AsyncCoordinator {
@@ -79,6 +58,16 @@ export class LeaseCoordinator implements AsyncCoordinator {
     key: string,
     options: CoordinationAcquireOptions = {},
   ): Promise<CoordinationAcquireResult> {
+    const acquire = () => this.#tryAcquire(key, options);
+    return this.backend.participation
+      ? this.backend.participation.run(acquire)
+      : acquire();
+  }
+
+  async #tryAcquire(
+    key: string,
+    options: CoordinationAcquireOptions,
+  ): Promise<CoordinationAcquireResult> {
     if (typeof key !== "string" || !key)
       throw new Error("coordination key must not be empty.");
     const leaseMs = positiveInteger(options.leaseMs ?? 5000, "leaseMs");
@@ -92,6 +81,16 @@ export class LeaseCoordinator implements AsyncCoordinator {
       fencingGeneration: result.fencingGeneration,
       expiresAt: result.expiresAt,
     });
+    this.backend.participation?.afterRollback(() =>
+      lease.abort(
+        new CoordinationOwnershipLostError(
+          key,
+          ownerToken,
+          lease.fencingGeneration,
+          this.namespace,
+        ),
+      ),
+    );
     if (options.signal?.aborted) {
       await lease.release();
       this.#checkAbort(key, options.signal);
@@ -177,94 +176,5 @@ export class LeaseCoordinator implements AsyncCoordinator {
       throw error;
     }
     this.#checkAbort(key, signal);
-  }
-}
-
-class ManagedLease implements CoordinationLease {
-  readonly #controller = new AbortController();
-  readonly signal = this.#controller.signal;
-  readonly key: string;
-  readonly ownerToken: string;
-  readonly fencingGeneration: number;
-  expiresAt: number;
-  constructor(
-    readonly backend: LeaseBackend,
-    readonly namespace: string,
-    readonly clock: CoordinationClock,
-    identity: LeaseIdentity,
-  ) {
-    this.key = identity.key;
-    this.ownerToken = identity.ownerToken;
-    this.fencingGeneration = identity.fencingGeneration;
-    this.expiresAt = identity.expiresAt;
-  }
-  assertOwned(): void {
-    if (this.signal.aborted) throw this.signal.reason;
-    if (!this.backend.isOwned(this)) {
-      this.#lost();
-      throw this.signal.reason;
-    }
-  }
-  async renew(
-    leaseMs: number,
-    signal: CoordinationAbortSignal = this.signal,
-  ): Promise<boolean> {
-    positiveInteger(leaseMs, "leaseMs");
-    if (this.signal.aborted) return false;
-    while (
-      this.clock.now() < this.expiresAt &&
-      !this.signal.aborted &&
-      !signal.aborted
-    ) {
-      const expiry = this.backend.renew(this, leaseMs);
-      if (expiry === "unavailable") {
-        try {
-          await this.clock.sleep(
-            Math.max(0, Math.min(5, this.expiresAt - this.clock.now())),
-            signal,
-          );
-        } catch (error) {
-          if (signal.aborted) return false;
-          throw error;
-        }
-        continue;
-      }
-      if (expiry === undefined) {
-        this.#lost();
-        return false;
-      }
-      this.expiresAt = expiry;
-      return true;
-    }
-    if (!signal.aborted) this.#lost();
-    return false;
-  }
-  async release(): Promise<boolean> {
-    while (this.clock.now() < this.expiresAt) {
-      const released = this.backend.release(this);
-      if (released === "unavailable") {
-        await this.clock.sleep(
-          Math.max(0, Math.min(5, this.expiresAt - this.clock.now())),
-        );
-        continue;
-      }
-      this.#lost();
-      return released;
-    }
-    this.#lost();
-    return false;
-  }
-  abort(reason: unknown): void {
-    if (!this.signal.aborted) this.#controller.abort(reason);
-  }
-  #lost(): void {
-    this.abort(
-      new CoordinationOwnershipLostError(
-        this.key,
-        this.ownerToken,
-        this.fencingGeneration,
-        this.namespace,
-      ),
-    );
   }
 }

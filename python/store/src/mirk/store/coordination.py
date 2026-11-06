@@ -89,7 +89,8 @@ class CoordinationGuard(Protocol):
 
 
 class CoordinationLease(CoordinationGuard, Protocol):
-    expiresAt: int
+    @property
+    def expiresAt(self) -> int: ...
 
     async def renew(self, leaseMs: int) -> bool: ...
     async def release(self) -> bool: ...

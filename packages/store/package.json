@@ -92,6 +92,10 @@
     "./sqlite-vec": {
       "import": "./dist/sqlite-vec.js",
       "types": "./dist/sqlite-vec.d.ts"
+    },
+    "./coordination/core": {
+      "import": "./dist/coordination/core.js",
+      "types": "./dist/coordination/core.d.ts"
     }
   },
   "files": [
@@ -101,7 +105,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json",
-    "build": "rm -rf dist && tsup src/index.ts src/kv.ts src/atomic.ts src/transaction.ts src/vector.ts src/sqlite-vec.ts src/search.ts src/log.ts src/graph.ts src/sql.ts src/coordination.ts src/coordination/memory.ts src/coordination/sqlite.ts src/encrypted.ts src/adapters/sqlite.ts src/adapters/node-sqlite.ts --format esm --dts --external better-sqlite3 --external node:sqlite --external @mirk/sqlite-vec-native",
+    "build": "rm -rf dist && tsup src/index.ts src/kv.ts src/atomic.ts src/transaction.ts src/vector.ts src/sqlite-vec.ts src/search.ts src/log.ts src/graph.ts src/sql.ts src/coordination.ts src/coordination/core.ts src/coordination/memory.ts src/coordination/sqlite.ts src/encrypted.ts src/adapters/sqlite.ts src/adapters/node-sqlite.ts --format esm --dts --external better-sqlite3 --external node:sqlite --external @mirk/sqlite-vec-native",
     "conformance:gen": "tsx scripts/gen-conformance.ts",
     "conformance:current": "tsx scripts/check-conformance-current.ts"
   },

@@ -9,13 +9,18 @@ import inspect
 import sqlite3
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from .coordination_memory import MemoryCoordinationState
 
 from .log import InMemoryLogStore, _caller
 from .memory import InMemoryStore
+
+T = TypeVar("T")
 
 _sqlite_domains: weakref.WeakValueDictionary[int, SqliteTransactions] = (
     weakref.WeakValueDictionary()
@@ -38,6 +43,7 @@ class _Scope:
         self.parent = parent
         self.active = True
         self.callbacks: list[Callable[[], Any]] = []
+        self.rollback_callbacks: list[Callable[[], None]] = []
         self.state: Any = None
 
 
@@ -66,6 +72,18 @@ class Transactions:
             scope.callbacks.append(callback)
         else:
             _deliver([callback])
+
+    def after_rollback(self, callback: Callable[[], None]) -> None:
+        self.check()
+        scope = self._context.get()
+        if scope is not None and scope.owner == _caller():
+            scope.rollback_callbacks.append(callback)
+
+    async def run_operation(self, work: Callable[[], Awaitable[T]]) -> T:
+        while self._owner is not None and self._owner != _caller():
+            await asyncio.sleep(0.001)
+        self.check()
+        return await work()
 
     def _begin(self, scope: _Scope) -> None:
         raise NotImplementedError
@@ -128,10 +146,12 @@ class _TransactionContext:
                     self.domain._commit(scope)
                 except BaseException:
                     self.domain._rollback(scope)
+                    _rolled_back(scope)
                     raise
                 committed = True
             else:
                 self.domain._rollback(scope)
+                _rolled_back(scope)
         finally:
             scope.active = False
             self.domain._context.reset(self.token)
@@ -141,11 +161,16 @@ class _TransactionContext:
         if committed:
             if scope.parent is not None:
                 scope.parent.callbacks.extend(scope.callbacks)
+                scope.parent.rollback_callbacks.extend(scope.rollback_callbacks)
             else:
                 _deliver(scope.callbacks)
 
     async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         self.__exit__(exc_type, exc, traceback)
+
+
+def _rolled_back(scope: _Scope) -> None:
+    _deliver(list(reversed(scope.rollback_callbacks)))
 
 
 def _deliver(callbacks: list[Callable[[], Any]]) -> None:
@@ -160,10 +185,21 @@ def _deliver(callbacks: list[Callable[[], Any]]) -> None:
 
 
 class MemoryTransactions(Transactions):
-    def __init__(self, *, kv: InMemoryStore, log: InMemoryLogStore) -> None:
+    def __init__(
+        self,
+        *,
+        kv: InMemoryStore,
+        log: InMemoryLogStore,
+        coordination: MemoryCoordinationState | None = None,
+    ) -> None:
         super().__init__()
         if getattr(kv, "_transaction_domain", None) or getattr(log, "_transaction_domain", None):
             raise ValueError("A memory store already belongs to a transaction domain")
+        if coordination is not None and coordination._transaction_domain is not None:
+            raise ValueError("Memory coordination state already belongs to a transaction domain")
+        self.coordination = coordination
+        if coordination is not None:
+            coordination._transaction_domain = self
         self.kv = kv
         self.log = log
         kv._transaction_domain = self
@@ -177,7 +213,8 @@ class MemoryTransactions(Transactions):
                 self.kv._collections,
                 self.kv._versions,
                 self.kv._receipts,
-                self.log._streams,
+                self.log._transaction_checkpoint(),
+                self.coordination._transaction_checkpoint() if self.coordination else None,
             )
         )
 
@@ -190,12 +227,18 @@ class MemoryTransactions(Transactions):
             self.kv._collections,
             self.kv._versions,
             self.kv._receipts,
-            self.log._streams,
+            log_state,
+            coordination_state,
         ) = scope.state
+        self.log._transaction_restore(log_state)
+        if self.coordination is not None:
+            self.coordination._transaction_restore(coordination_state)
 
 
-def create_memory_transactions(*, kv: InMemoryStore, log: InMemoryLogStore) -> MemoryTransactions:
-    return MemoryTransactions(kv=kv, log=log)
+def create_memory_transactions(
+    *, kv: InMemoryStore, log: InMemoryLogStore, coordination: MemoryCoordinationState | None = None
+) -> MemoryTransactions:
+    return MemoryTransactions(kv=kv, log=log, coordination=coordination)
 
 
 class SqliteTransactions(Transactions):
@@ -226,3 +269,16 @@ class SqliteTransactions(Transactions):
         else:
             self.db.execute(f"ROLLBACK TO SAVEPOINT {scope.state}")
             self.db.execute(f"RELEASE SAVEPOINT {scope.state}")
+
+
+class MemoryTransactionTarget:
+    def memoryTransactionRollback(self) -> dict[str, object]:
+        from .coordination_transaction_conformance import memory_transaction_rollback
+
+        return asyncio.run(memory_transaction_rollback())
+
+
+def conformance_target(backend: str, connection: object) -> object:
+    if backend != "memory":
+        raise ValueError("Memory transaction participation requires the memory backend")
+    return MemoryTransactionTarget()

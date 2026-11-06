@@ -10,7 +10,7 @@ import {
   type CoordinationAbortSignal,
   type CoordinationClock,
   type CoordinationLease,
-} from "../coordination.js";
+} from "./core.js";
 import {
   createMemoryCoordinator,
   createMemoryCoordinationState,

@@ -887,10 +887,37 @@ transaction contexts reject further calls. Keep transactions limited to short st
 run provider or network calls outside them. Plain memory imports remain free of native bindings
 and Node async-context imports; this factory uses the existing Node transaction engine.
 
+Memory lease state joins this same domain only when explicitly supplied:
+
+```ts
+const state = createMemoryCoordinationState();
+const coordinator = createMemoryCoordinator({ state });
+const transactions = createMemoryTransactions({ kv, log, coordination: state });
+await transactions.transaction(async () => {
+  const result = await coordinator.tryAcquire("job/job-17");
+  if (result.status !== "acquired") throw new Error(result.status);
+  kv.put("jobs", { id: "job-17", state: "claimed" });
+  log.append("job/job-17", { type: "claimed" });
+});
+```
+
+Enlisted acquisition, renewal, and release roll back with KV and log, including nested savepoints.
+Generation allocation always advances: rollback leaves gaps rather than reusing an exposed fencing
+identity, even with a repeated injected owner token. A rolled-back acquisition invalidates its
+escaped handle. Rolling back renewal restores the previous handle expiry. Ownership-loss aborts
+caused by provisional release or failed ownership checks are delivered after commit; the check
+still throws immediately. Rollback discards those aborts and preserves a previously valid handle.
+The clock and external cancellation are not rolled back. Callers can observe provisional results;
+external work started from them cannot be undone by this transaction.
+
+Async lease operations on enlisted state use the domain's admission queue; foreign synchronous
+`assertOwned()` and `expiresAt` access fail during a transaction. Without explicit enlistment,
+shared memory coordination remains independently committed. A state can belong to only one domain.
+
 ## Async coordination
 
 A SQLite transaction must finish synchronously, so it cannot cover work that awaits: writing
-Markdown files, calling git, or talking to an object store. `@mirk/store/coordination` gives
+Markdown files, calling git, or talking to an object store. The coordinator gives
 cooperating writers one critical-section primitive for that work:
 
 ```ts
@@ -912,6 +939,11 @@ await coordinator.runExclusive(
 );
 ```
 
+`@mirk/store/coordination/core` provides the native-free contracts, errors, and production
+`systemClock`. The memory entry remains native-free. The historical `@mirk/store/coordination`
+entry re-exports the actual `SqliteCoordinator` and factory for compatibility and loads the optional
+`better-sqlite3` peer; this import is deprecated in favor of `/coordination/sqlite`.
+
 Each owner receives a unique `ownerToken`, a monotonic `fencingGeneration`, a guard `signal`,
 and `assertOwned()`. `runExclusive` renews while its callback runs and releases in `finally`.
 Ownership loss aborts the signal. Renewal cannot revive an expired lease, and stale renewal or
@@ -919,7 +951,8 @@ release cannot affect a successor. Checking ownership before an unconditional ap
 does not fence that write: the application must enforce the generation or record version itself.
 
 For manual ownership, `await coordinator.tryAcquire(key, { leaseMs, signal })` makes one atomic
-attempt without queuing, polling, or sleeping. Results are `{ status: "acquired", lease }`,
+attempt without lease contention polling or sleeping. Explicitly enlisted memory state first takes
+transaction admission. Results are `{ status: "acquired", lease }`,
 `{ status: "held", expiresAt }`, or `{ status: "unavailable", retryable: true }`. The SQLite
 source uses a non-waiting native lock attempt; a busy database is unavailable, never evidence of
 a held lease. Other backend errors propagate. A manual lease adds `expiresAt`,
@@ -929,7 +962,7 @@ automatic renewal. Release is idempotent and succeeds only for the current unexp
 `createMemoryCoordinator({ state: createMemoryCoordinationState() })` from
 `@mirk/store/coordination/memory` implements the same contract. Pass the same state to independent
 handles to make them contend. Distinct states are isolated. Generation history survives release
-for the lifetime of the shared state. Memory leases do not provide transaction rollback.
+for the lifetime of the shared state. For rollback, explicitly enlist the state as described above.
 
 Both sources accept `clock: { now(), sleep(ms, signal?) }`. The default uses epoch milliseconds
 and real timers. An injected clock controls acquisition deadlines, retry sleeps, and renewal.
@@ -944,7 +977,9 @@ or after their deadline; `waitMs: 0` makes exactly one immediate attempt. Timeou
 entering caller work. `busyTimeoutMs` controls constructor schema initialization only, separately
 from lease time. Call `close()` on SQLite handles when finished.
 
-SQLite transactions cover lease metadata only; they never remain open while callback work awaits.
+The durable coordinator opens its own SQLite connection and commits lease metadata independently
+of KV/log transactions, even when both connections use the same file. It does not enlist in those
+transactions. Its short lease transactions never remain open while callback work awaits.
 Coordination cannot roll back files, object-store writes, or other external effects. A live lease
 shows cooperative ownership, not operating-system process liveness.
 

@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Literal, Protocol, TypedDict, TypeVar
+from typing import Literal, Protocol, TypedDict, TypeVar, cast
 
 from .coordination import (
     CoordinationAbortedError,
@@ -24,11 +24,24 @@ from .coordination import (
 T = TypeVar("T")
 
 
+class LeaseParticipation(Protocol):
+    def check(self) -> None: ...
+    async def run(self, work: Callable[[], Awaitable[T]]) -> T: ...
+    def afterCommit(self, work: Callable[[], None]) -> None: ...
+    def afterRollback(self, work: Callable[[], None]) -> None: ...
+
+
+def participation(backend: LeaseBackend) -> LeaseParticipation | None:
+    return cast(LeaseParticipation | None, getattr(backend, "participation", None))
+
+
 class LeaseIdentity(Protocol):
     key: str
     ownerToken: str
     fencingGeneration: int
-    expiresAt: int
+
+    @property
+    def expiresAt(self) -> int: ...
 
 
 class Acquisition(TypedDict):
@@ -66,23 +79,41 @@ class ManagedLease:
         self.key = key
         self.ownerToken = token
         self.fencingGeneration = generation
-        self.expiresAt = expires
+        self._expiresAt = expires
+        self.participation = participation(backend)
         self.signal = CoordinationAbortSignal()
 
-    def _lost(self) -> None:
-        self.signal.abort(
-            CoordinationOwnershipLostError(
-                f'Lost "{self.key}" generation {self.fencingGeneration} in "{self.namespace}"'
-            )
+    @property
+    def expiresAt(self) -> int:
+        if self.participation:
+            self.participation.check()
+        return self._expiresAt
+
+    def _lost(self) -> CoordinationOwnershipLostError:
+        error = CoordinationOwnershipLostError(
+            f'Lost "{self.key}" generation {self.fencingGeneration} in "{self.namespace}"'
         )
+        if self.participation:
+            self.participation.afterCommit(lambda: self.signal.abort(error))
+        else:
+            self.signal.abort(error)
+        return error
 
     def assertOwned(self) -> None:
-        if not self.signal.aborted and not self.backend.isOwned(self):
-            self._lost()
+        if self.participation:
+            self.participation.check()
         if self.signal.aborted:
             raise self.signal.reason or CoordinationOwnershipLostError()
+        if not self.backend.isOwned(self):
+            raise self._lost()
 
     async def renew(self, leaseMs: int) -> bool:
+        async def work() -> bool:
+            return await self._renew(leaseMs)
+
+        return await self.participation.run(work) if self.participation else await work()
+
+    async def _renew(self, leaseMs: int) -> bool:
         positive(leaseMs, "leaseMs")
         if self.signal.aborted:
             return False
@@ -101,12 +132,24 @@ class ManagedLease:
             if expiry is None:
                 self._lost()
                 return False
-            self.expiresAt = expiry
+            previous = self._expiresAt
+            if self.participation:
+                self.participation.afterRollback(
+                    lambda previous=previous: setattr(self, "_expiresAt", previous)
+                )
+            self._expiresAt = expiry
             return True
         self._lost()
         return False
 
     async def release(self) -> bool:
+        return (
+            await self.participation.run(self._release)
+            if self.participation
+            else await self._release()
+        )
+
+    async def _release(self) -> bool:
         while self.clock.now() < self.expiresAt:
             released = self.backend.release(self)
             if released == "unavailable":
@@ -139,6 +182,15 @@ class LeaseCoordinator:
     async def tryAcquire(
         self, key: str, *, leaseMs: int = 5000, signal: CoordinationAbortSignal | None = None
     ) -> CoordinationAcquireResult:
+        async def acquire() -> CoordinationAcquireResult:
+            return await self._tryAcquire(key, leaseMs=leaseMs, signal=signal)
+
+        domain = participation(self.backend)
+        return await domain.run(acquire) if domain else await acquire()
+
+    async def _tryAcquire(
+        self, key: str, *, leaseMs: int, signal: CoordinationAbortSignal | None
+    ) -> CoordinationAcquireResult:
         if type(key) is not str or not key:
             raise ValueError("coordination key must not be empty")
         positive(leaseMs, "leaseMs")
@@ -156,6 +208,13 @@ class LeaseCoordinator:
             result["expiresAt"],
             self.clock,
         )
+        domain = participation(self.backend)
+        if domain:
+            domain.afterRollback(
+                lambda: lease.signal.abort(
+                    CoordinationOwnershipLostError("Provisional lease acquisition rolled back")
+                )
+            )
         if signal and signal.aborted:
             await lease.release()
             self._check(signal)

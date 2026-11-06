@@ -1,9 +1,9 @@
+import { systemClock } from "./core.js";
 import Database from "better-sqlite3";
-import type { CoordinationOptions } from "../coordination.js";
+import type { CoordinationOptions } from "./core.js";
 import { isSqliteBusyOrLocked, runSqliteBusyRetry } from "../sqlite-busy.js";
 import {
   LeaseCoordinator,
-  systemClock,
   type LeaseBackend,
   type LeaseIdentity,
 } from "./engine.js";

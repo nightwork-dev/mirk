@@ -37,7 +37,7 @@ export class TransactionScopeError extends Error {
   declare readonly name: "TransactionScopeError";
   constructor(
     readonly code: "transaction-ended",
-    message: string
+    message: string,
   ) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
@@ -54,6 +54,11 @@ interface Scope<C> {
   readonly connection: C;
   readonly parent: Scope<C> | undefined;
   readonly callbacks: { notify: AfterCommitNotify; scope: Scope<C> }[];
+  readonly rollbackCallbacks: {
+    notify: () => void;
+    scope: Scope<C>;
+    delivered: boolean;
+  }[];
   active: boolean;
   childActive: boolean;
   rolledBack: boolean;
@@ -67,7 +72,7 @@ interface Scope<C> {
 function ended(): TransactionScopeError {
   return new TransactionScopeError(
     "transaction-ended",
-    "The transaction has ended; await every store call inside transaction()."
+    "The transaction has ended; await every store call inside transaction().",
   );
 }
 
@@ -91,7 +96,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
    *  invoked synchronously after the final check. Throws
    *  `TransactionScopeError` if the transaction has ended. */
   async withConnection<T>(
-    op: (connection: C | undefined) => T | Promise<T>
+    op: (connection: C | undefined) => T | Promise<T>,
   ): Promise<T> {
     const scope = this.#scopes.getStore();
     if (!scope) return op(undefined);
@@ -106,7 +111,8 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
     const scope = this.#scopes.getStore();
     if (!scope) return undefined;
     if (!scope.active) throw ended();
-    if (scope.childActive) throw new Error("A nested transaction owns this scope");
+    if (scope.childActive)
+      throw new Error("A nested transaction owns this scope");
     return scope.connection;
   }
 
@@ -137,12 +143,20 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
     scope.callbacks.push({ notify, scope });
   }
 
+  afterRollback(notify: () => void): void {
+    const scope = this.#scopes.getStore();
+    if (!scope) return;
+    if (!scope.active) throw ended();
+    scope.rollbackCallbacks.push({ notify, scope, delivered: false });
+  }
+
   async #outermost<T>(work: () => T | Promise<T>): Promise<T> {
     const connection = await this.backend.begin();
     const scope: Scope<C> = {
       connection,
       parent: undefined,
       callbacks: [],
+      rollbackCallbacks: [],
       active: true,
       childActive: false,
       rolledBack: false,
@@ -166,6 +180,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
       let cleanupError: unknown;
       try {
         await this.backend.rollback(connection);
+        deliverRollback(scope);
       } catch (rollbackError) {
         cleanupError = rollbackError;
       }
@@ -176,7 +191,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
     deliver(
       scope.callbacks
         .filter((entry) => !rolledBackChain(entry.scope))
-        .map((entry) => entry.notify)
+        .map((entry) => entry.notify),
     );
     return value;
   }
@@ -189,6 +204,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
         connection: parent.connection,
         parent,
         callbacks: parent.callbacks,
+        rollbackCallbacks: parent.rollbackCallbacks,
         active: true,
         childActive: false,
         rolledBack: false,
@@ -212,6 +228,7 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
         if (created) {
           try {
             await this.backend.rollbackToSavepoint(parent.connection, name);
+            deliverRollback(child);
             await this.backend.releaseSavepoint(parent.connection, name);
           } catch (rollbackError) {
             // The savepoint's writes may still be in the transaction. Report
@@ -234,7 +251,10 @@ export class AsyncTransactionCoordinator<C> implements AsyncStoreTransactions {
 
 /** Wait until no nested transaction is queued on `scope`, including ones
  *  queued while waiting, then call `next` in the same tick as the final check. */
-async function settle<C, R>(scope: Scope<C>, next: () => R | Promise<R>): Promise<R> {
+async function settle<C, R>(
+  scope: Scope<C>,
+  next: () => R | Promise<R>,
+): Promise<R> {
   for (;;) {
     const tail = scope.tail;
     await tail;
@@ -250,8 +270,13 @@ function outermostOf<C>(scope: Scope<C>): Scope<C> {
 
 /** Attach a failed rollback to the error that caused it, as `rollbackError`. */
 function attachRollbackError(error: unknown, rollbackError: unknown): void {
-  if (error === null || (typeof error !== "object" && typeof error !== "function")) return;
-  if (!Object.isExtensible(error) || Object.hasOwn(error, "rollbackError")) return;
+  if (
+    error === null ||
+    (typeof error !== "object" && typeof error !== "function")
+  )
+    return;
+  if (!Object.isExtensible(error) || Object.hasOwn(error, "rollbackError"))
+    return;
   Object.defineProperty(error, "rollbackError", {
     value: rollbackError,
     enumerable: true,
@@ -278,3 +303,27 @@ function deliver(callbacks: readonly AfterCommitNotify[]): void {
 }
 
 export { createMemoryTransactions } from "./memory-transactions.js";
+
+function deliverRollback<C>(scope: Scope<C>): void {
+  const callbacks = scope.rollbackCallbacks
+    .filter((entry) => {
+      if (entry.delivered) return false;
+      for (
+        let current: Scope<C> | undefined = entry.scope;
+        current;
+        current = current.parent
+      ) {
+        if (current === scope) return true;
+      }
+      return false;
+    })
+    .reverse();
+  for (const entry of callbacks) {
+    entry.delivered = true;
+    try {
+      entry.notify();
+    } catch {
+      /* Other handle restoration must still run. */
+    }
+  }
+}

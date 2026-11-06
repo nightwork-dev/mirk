@@ -1,7 +1,11 @@
-import type { AsyncCoordinator, CoordinationOptions } from "../coordination.js";
+import { systemClock } from "./core.js";
+import {
+  registerMemoryParticipant,
+  memoryAdmission,
+} from "../memory-participant.js";
+import type { AsyncCoordinator, CoordinationOptions } from "./core.js";
 import {
   LeaseCoordinator,
-  systemClock,
   type LeaseBackend,
   type LeaseIdentity,
 } from "./engine.js";
@@ -19,7 +23,20 @@ export interface MemoryCoordinationState {
   readonly generations: Map<string, number>;
 }
 export function createMemoryCoordinationState(): MemoryCoordinationState {
-  return { leases: new Map(), generations: new Map() };
+  const state: MemoryCoordinationState = {
+    leases: new Map(),
+    generations: new Map(),
+  };
+  registerMemoryParticipant(state, {
+    checkpoint: () =>
+      new Map([...state.leases].map(([key, value]) => [key, { ...value }])),
+    restore: (snapshot) => {
+      state.leases.clear();
+      for (const [key, value] of snapshot as MemoryCoordinationState["leases"])
+        state.leases.set(key, { ...value });
+    },
+  });
+  return state;
 }
 export interface MemoryCoordinatorOptions extends CoordinationOptions {
   state: MemoryCoordinationState;
@@ -39,7 +56,9 @@ export function createMemoryCoordinator(
       ? current
       : undefined;
   };
+  const participation = memoryAdmission(options.state);
   const backend: LeaseBackend = {
+    participation,
     acquire(key, ownerToken, leaseMs) {
       const id = address(key);
       const current = options.state.leases.get(id);
@@ -72,6 +91,7 @@ export function createMemoryCoordinator(
       );
     },
     isOwned(lease) {
+      participation.check();
       return Boolean(owned(lease));
     },
   };

@@ -1,13 +1,21 @@
 """Explicitly shared in-memory coordination state."""
 
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, TypeVar, cast
+
+if TYPE_CHECKING:
+    from .transaction import Transactions
 
 from .coordination import CoordinationClock, Held, SystemClock
 from .coordination_engine import Acquisition, LeaseCoordinator, LeaseIdentity
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -19,6 +27,16 @@ class MemoryCoordinationState:
         default_factory=lambda: dict[tuple[str, str], int]()
     )
     lock: threading.RLock = field(default_factory=threading.RLock)
+    _transaction_domain: Transactions | None = field(default=None, repr=False)
+
+    def _transaction_checkpoint(self) -> object:
+        with self.lock:
+            return dict(self.leases)
+
+    def _transaction_restore(self, state: object) -> None:
+        with self.lock:
+            self.leases.clear()
+            self.leases.update(cast(dict[tuple[str, str], tuple[str, int, int]], state))
 
 
 def createMemoryCoordinationState() -> MemoryCoordinationState:
@@ -32,6 +50,27 @@ class _MemoryBackend:
         self.state = state
         self.namespace = namespace
         self.clock = clock
+        self.participation = self
+
+    def check(self) -> None:
+        if self.state._transaction_domain is not None:
+            self.state._transaction_domain.check()
+
+    async def run(self, work: Callable[[], Awaitable[T]]) -> T:
+        domain = self.state._transaction_domain
+        return await domain.run_operation(work) if domain else await work()
+
+    def afterCommit(self, work: Callable[[], None]) -> None:
+        domain = self.state._transaction_domain
+        if domain:
+            domain.after_commit(work)
+        else:
+            work()
+
+    def afterRollback(self, work: Callable[[], None]) -> None:
+        domain = self.state._transaction_domain
+        if domain:
+            domain.after_rollback(work)
 
     def _owned(self, lease: LeaseIdentity, now: int | None = None) -> bool:
         row = self.state.leases.get((self.namespace, lease.key))
@@ -77,6 +116,7 @@ class _MemoryBackend:
             return True
 
     def isOwned(self, lease: LeaseIdentity) -> bool:
+        self.check()
         with self.state.lock:
             return self._owned(lease)
 
