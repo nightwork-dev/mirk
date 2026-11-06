@@ -497,6 +497,9 @@ opening application facets. The result is `{ fromVersion, toVersion, changed, ba
 but honors `refuse`; change a refusal pin deliberately before migration. Current files return
 `changed: false`, and do not create a backup or rename spaces.
 
+Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot
+snapshot their uncommitted state.
+
 `backupPath` applies only to an actual upgrade of a local file. The source holds its SQLite
 writer lock while a separate read-only connection runs `VACUUM INTO`, so the snapshot includes
 committed WAL data and no competing writer can change the preimage before migration. An existing
@@ -510,6 +513,10 @@ or document identities abort the whole upgrade; migration never merges or discar
 Format 3 log streams receive generations in SQLite BINARY stream order, preserving sequences and
 records. Existing old receipt tables gain their missing `created_at` column before format 4 is
 stamped; a format 4 file missing that canonical column is malformed.
+
+Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles
+can retain cached schema across a migration. Concurrent openers running the current release are
+tested; hot cross-version clients are outside this guarantee.
 
 ### Shared SQLite file format
 
@@ -1035,7 +1042,3 @@ async only where a remote backend needs it.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
-Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.
-
-Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot snapshot their uncommitted state. An existing destination vector space or document identity aborts legacy-vector migration rather than merging existing named state.

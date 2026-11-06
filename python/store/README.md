@@ -203,6 +203,9 @@ from `mirk.store.sqlite` performs only the explicit format operation. It returns
 Explicit operations honor a `"refuse"` policy too. Current files are unchanged, create no backup,
 and do not rename existing spaces.
 
+Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot
+snapshot their uncommitted state.
+
 For an actual upgrade, `backup_path` creates a consistent SQLite snapshot including committed WAL
 records. Writer admission is held from snapshot through migration. The implementation uses a
 separate read-only connection and `VACUUM INTO`; an existing destination or backup failure raises
@@ -212,6 +215,10 @@ separate read-only connection and `VACUUM INTO`; an existing destination or back
 Destination conflicts abort atomically, without lossy merging. Format 4 assigns old log streams
 generations in SQLite BINARY order and repairs the historical missing receipt `created_at` column
 before stamping the version. A current-format file missing that column is malformed.
+
+Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles
+can retain cached schema across a migration. Concurrent openers running the current release are
+tested; hot cross-version clients are outside this guarantee.
 
 ## File layout and schema version
 
@@ -428,7 +435,3 @@ last_generation INTEGER NOT NULL)` retains history after release, with primary k
 `expires_at_ms INTEGER NOT NULL`, and `updated_at_ms INTEGER NOT NULL`. Times are epoch milliseconds;
 expiry is inclusive at `expires_at_ms <= now`. The default namespace is `default`.
 These are the same tables used by the TypeScript source; they can coexist with store tables.
-
-Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.
-
-Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot snapshot their uncommitted state. An existing destination vector space or document identity aborts legacy-vector migration rather than merging existing named state.
