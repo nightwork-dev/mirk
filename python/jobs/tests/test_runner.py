@@ -12,6 +12,7 @@ class Clock:
     def __init__(self, time: list[int]):
         self.time = time
         self.pending: list[tuple[int, asyncio.Future[None]]] = []
+        self.cancel_task: asyncio.Task[Any] | None = None
 
     def now(self) -> int:
         return self.time[0]
@@ -26,6 +27,9 @@ class Clock:
                 future.set_exception(
                     signal.reason if signal and signal.reason else ValueError("stop")
                 )
+                if self.cancel_task:
+                    self.cancel_task.cancel()
+                    self.cancel_task = None
 
         if signal:
             signal.add(abort)
@@ -124,3 +128,38 @@ def test_runner_renewal_abort_and_cleanup(fixture: Any, ending: str) -> None:
             assert jobs.get("job")["value"]["expiresAt"] == 110
 
     asyncio.run(scenario())
+
+
+def test_runner_preserves_cancellation_during_cleanup(fixture: Any) -> None:
+    jobs, _, time = fixture
+    clock = Clock(time)
+    jobs.enqueue({"id": "job", "queue": "q", "payload": None}, {"key": "e"})
+    claim = jobs.claim("job", {"key": "c", "leaseMs": 10})
+
+    async def scenario() -> None:
+        async def work(_: CoordinationAbortSignal) -> str:
+            await asyncio.sleep(0)
+            return "done"
+
+        task = asyncio.create_task(
+            run_claim(
+                jobs,
+                claim,
+                lease_ms=10,
+                renew_every_ms=3,
+                command_key="runner",
+                clock=clock,
+                work=work,
+            )
+        )
+        clock.cancel_task = task
+        try:
+            await task
+        except asyncio.CancelledError:
+            assert task.cancelling() == 1
+            assert task.cancelled()
+        else:
+            pytest.fail("run_claim swallowed cancellation during monitor cleanup")
+
+    asyncio.run(scenario())
+    assert not clock.pending
