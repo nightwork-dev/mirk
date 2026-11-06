@@ -269,7 +269,7 @@ documents and unknown spaces error.
 
 With a usable query and no metadata filters, search computes `vector_distance_cos` natively in SQL
 over the selected namespace, collection and space, then orders and limits in SQL. It uses canonical
-float32 BLOBs in the shared format-three tables. Different spaces can have different dimensions;
+float32 BLOBs in the shared named-vector tables. Different spaces can have different dimensions;
 there is no fixed-dimension ANN index or `vector_top_k` path. Native computation does not imply
 sublinear search. Native errors remain visible and do not select JavaScript scoring automatically.
 
@@ -279,7 +279,7 @@ scope: native libSQL scores may differ from the float64 reference near cutoffs. 
 full native float64 corpus parity. `meta.accelerated` identifies the configured native computation
 path; there is no global dimensions field.
 
-Opening a recognized format-two file migrates vectors atomically into space `default` in namespace
+By default, opening a recognized format-two file migrates vectors atomically into the selected legacy space (`default` unless configured) in namespace
 `default`, preserving raw bytes, absent metadata and application tables. Format-three files share
 the ordinary SQLite vector layout documented by `@mirk/store`; older implicit vector tables are
 removed only after their data has been copied. Unsupported newer or malformed formats fail.
@@ -343,3 +343,5 @@ upgrade. Remote URLs, the web entry point, and memory databases reject `backupPa
 `unsupported-backup` before database mutation. Remote backup and restore belong to the host.
 
 Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.
+
+Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot snapshot their uncommitted state. An existing destination vector space or document identity aborts legacy-vector migration rather than merging existing named state.

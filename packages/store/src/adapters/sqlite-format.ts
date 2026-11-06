@@ -16,6 +16,7 @@ export function ensureMirkFormat(
   backup?: (path: string) => void,
   explicitInvocation = false,
 ): SqliteMigrationResult {
+  const enteredInTransaction = db.inTransaction;
   const plan = mirkFormatMigration("", options, explicitInvocation);
   let next = plan.next();
   const drain = (): void => {
@@ -31,6 +32,11 @@ export function ensureMirkFormat(
         return;
       }
       if (step.kind === "backup") {
+        if (enteredInTransaction)
+          throw new SqliteFormatError(
+            "unsupported-backup",
+            "Commit caller transactions before requesting a migration backup",
+          );
         if (!backup)
           throw new SqliteFormatError(
             "unsupported-backup",

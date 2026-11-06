@@ -259,7 +259,7 @@ tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
 `_mirk_coordination_meta` use their separately documented versioned lease format and are preserved.
 
 Open validates version metadata before schema changes. Malformed metadata and unsupported future
-versions fail. Recognized pre-registry or version-1/2 files migrate atomically under `BEGIN
+versions fail. Recognized pre-registry or version-1/2/3 files migrate atomically under `BEGIN
 IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
 the `default` namespace and the selected legacy space (default `default`); raw BLOBs and nullable metadata are copied unchanged.
 Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
@@ -425,3 +425,5 @@ expiry is inclusive at `expires_at_ms <= now`. The default namespace is `default
 These are the same tables used by the TypeScript source; they can coexist with store tables.
 
 Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.
+
+Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot snapshot their uncommitted state. An existing destination vector space or document identity aborts legacy-vector migration rather than merging existing named state.
