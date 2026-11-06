@@ -1,3 +1,7 @@
+import Database from "better-sqlite3";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -13,6 +17,28 @@ describe("coordination package entry imports", () => {
     expect(historicalFactory).toBe(createSqliteCoordinator);
     const coordinator = new Historical({ path: ":memory:" });
     coordinator.close();
+  });
+  it("propagates uncertain SQLite ownership reads without aborting a valid handle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mirk-lease-uncertainty-"));
+    const path = join(root, "leases.db");
+    const coordinator = new SqliteCoordinator({ path });
+    const lock = new Database(path);
+    try {
+      const result = await coordinator.tryAcquire("key");
+      if (result.status !== "acquired") throw new Error(result.status);
+      lock.exec("BEGIN EXCLUSIVE");
+      expect(() => result.lease.assertOwned()).toThrow(
+        expect.objectContaining({ code: "SQLITE_BUSY" }),
+      );
+      expect(result.lease.signal.aborted).toBe(false);
+      lock.exec("ROLLBACK");
+      result.lease.assertOwned();
+      await result.lease.release();
+    } finally {
+      lock.close();
+      coordinator.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
   it("imports built core and memory entries with native bindings forbidden", () => {
     const loader =

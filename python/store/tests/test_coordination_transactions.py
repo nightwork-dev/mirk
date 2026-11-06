@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+from pathlib import Path
 
 import pytest
 
 from mirk.store.coordination import CoordinationLease, CoordinationOwnershipLostError
 from mirk.store.coordination_memory import createMemoryCoordinationState, createMemoryCoordinator
+from mirk.store.coordination_sqlite import SqliteCoordinator
 from mirk.store.log import InMemoryLogStore
 from mirk.store.memory import InMemoryStore
 from mirk.store.transaction import TransactionScopeError, create_memory_transactions
@@ -156,5 +159,28 @@ def test_unenlisted_coordination_is_independent_and_state_cannot_be_registered_t
             create_memory_transactions(
                 kv=InMemoryStore(), log=InMemoryLogStore(), coordination=enlisted.state
             )
+
+    asyncio.run(run())
+
+
+def test_uncertain_sqlite_ownership_read_does_not_abort_handle(tmp_path: Path) -> None:
+    async def run() -> None:
+        path = str(tmp_path / "leases.db")
+        coordinator = SqliteCoordinator(path=path)
+        lock = sqlite3.connect(path, isolation_level=None)
+        try:
+            result = await coordinator.tryAcquire("key")
+            assert result["status"] == "acquired"
+            lease = result["lease"]
+            lock.execute("BEGIN EXCLUSIVE")
+            with pytest.raises(sqlite3.OperationalError):
+                lease.assertOwned()
+            assert not lease.signal.aborted
+            lock.execute("ROLLBACK")
+            lease.assertOwned()
+            await lease.release()
+        finally:
+            lock.close()
+            coordinator.close()
 
     asyncio.run(run())
