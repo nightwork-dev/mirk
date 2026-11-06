@@ -10,9 +10,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CoordinationAbortedError,
   CoordinationOwnershipLostError,
-  SqliteCoordinator,
   type CoordinationGuard,
 } from "./coordination.js";
+
+import { SqliteCoordinator } from "./coordination/sqlite.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, "..");
@@ -550,7 +551,7 @@ function readEvents(path: string): WorkerEvent[] {
 
 function workerSource(): string {
   const coordinationEntry = pathToFileURL(
-    resolve(packageRoot, "dist/coordination.js")
+    resolve(packageRoot, "dist/coordination/sqlite.js")
   ).href;
   return `
     import { appendFileSync } from "node:fs";

@@ -144,7 +144,7 @@ refused, without writing again. The same key with a different request returns
 `idempotency-conflict` and does not touch the revision log. That conflict answer is stored too, so
 repeating it gets the same answer, including after a restart.
 
-**Writers do not race.** The SQLite adapter uses `@mirk/store/coordination` to serialize admission
+**Writers do not race.** The SQLite adapter uses `@mirk/store/coordination/sqlite` to serialize admission
 for each statement, so two writers revising the same claim cannot both win. The loser gets a
 `revision-conflict` receipt. Each operation commits its revision, its latest-revision pointer, and
 its receipt in one SQLite transaction.

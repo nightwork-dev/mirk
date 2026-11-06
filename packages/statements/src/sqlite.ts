@@ -1,10 +1,10 @@
+import type { AsyncCoordinator } from "@mirk/store/coordination";
 import { createHash, randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import { compareCodePoints } from "@mirk/store";
 import {
   createSqliteCoordinator,
-  type AsyncCoordinator,
-} from "@mirk/store/coordination";
+} from "@mirk/store/coordination/sqlite";
 
 import {
   STATEMENTS_STORAGE_SCHEMA_VERSION,
