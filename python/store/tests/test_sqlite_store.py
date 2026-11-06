@@ -317,7 +317,7 @@ def test_a_file_from_a_newer_adapter_is_refused(tmp_path: Path) -> None:
     path = str(tmp_path / "future.db")
     SqliteStore(path).close()
     connection = sqlite3.connect(path, isolation_level=None)
-    connection.execute("UPDATE _mirk_meta SET value = '3' WHERE key = 'schema_version'")
+    connection.execute("UPDATE _mirk_meta SET value = '4' WHERE key = 'schema_version'")
     connection.close()
 
     with pytest.raises(SqliteAdapterError) as caught:

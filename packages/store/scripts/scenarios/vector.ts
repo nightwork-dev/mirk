@@ -18,7 +18,7 @@ import { defineScenario } from "../../src/conformance/define.js";
 /** Twelve unit-ish vectors, decreasing in similarity to [1, 0, 0]. */
 const LADDER = Array.from({ length: 12 }, (_, i) => ({
   id: `d${String(i).padStart(2, "0")}`,
-  vector: [1, i / 12, 0],
+  vectors: { default: [1, i / 12, 0] },
 }));
 
 export const scenarios = [
@@ -28,13 +28,14 @@ export const scenarios = [
     title: "a vector and its nested metadata round-trip through upsert and get",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
         args: [
           "docs",
           {
             id: "a",
-            vector: [1, 0, 0],
+            vectors: { default: [1, 0, 0] },
             metadata: {
               type: "cat",
               tags: ["black", "small"],
@@ -53,7 +54,8 @@ export const scenarios = [
     title: "get on an id that was never upserted returns null",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
       { op: "get", args: ["docs", "ghost"], expect: { value: true } },
     ],
   }),
@@ -63,7 +65,8 @@ export const scenarios = [
     title: "a document upserted without metadata comes back without the field",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
     ],
   }),
@@ -73,13 +76,14 @@ export const scenarios = [
     title: "upserting the same id twice keeps the second vector and one row",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
-        args: ["docs", { id: "a", vector: [1, 0, 0], metadata: { v: 1 } }],
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] }, metadata: { v: 1 } }],
       },
       {
         op: "upsert",
-        args: ["docs", { id: "a", vector: [0, 1, 0], metadata: { v: 2 } }],
+        args: ["docs", { id: "a", vectors: { default: [0, 1, 0] }, metadata: { v: 2 } }],
       },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
       { op: "count", args: ["docs"], expect: { value: true } },
@@ -91,7 +95,8 @@ export const scenarios = [
     title: "has is true only for an id present in that collection",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["one", { id: "a", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
       { op: "has", args: ["one", "a"], expect: { value: true } },
       { op: "has", args: ["one", "b"], expect: { value: true } },
       { op: "has", args: ["two", "a"], expect: { value: true } },
@@ -103,7 +108,8 @@ export const scenarios = [
     title: "remove returns true once, then false, and the document is gone",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
       { op: "remove", args: ["docs", "a"], expect: { value: true } },
       { op: "remove", args: ["docs", "a"], expect: { value: true } },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
@@ -117,9 +123,10 @@ export const scenarios = [
     title: "count is scoped to its collection and zero for an unknown one",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["one", { id: "a", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["one", { id: "b", vector: [0, 1, 0] }] },
-      { op: "upsert", args: ["two", { id: "a", vector: [0, 0, 1] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["one", { id: "b", vectors: { default: [0, 1, 0] } }] },
+      { op: "upsert", args: ["two", { id: "a", vectors: { default: [0, 0, 1] } }] },
       { op: "count", args: ["one"], expect: { value: true } },
       { op: "count", args: ["two"], expect: { value: true } },
       { op: "count", args: ["nothing"], expect: { value: true } },
@@ -131,7 +138,8 @@ export const scenarios = [
     title: "components are rounded to float32 on store and read back rounded",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [0.1, 0.2, 0.3] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [0.1, 0.2, 0.3] } }] },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
     ],
   }),
@@ -143,10 +151,11 @@ export const scenarios = [
       "upserting a vector of the wrong length throws the shared mismatch message",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
       {
         op: "upsert",
-        args: ["docs", { id: "b", vector: [1, 0, 0, 0] }],
+        args: ["docs", { id: "b", vectors: { default: [1, 0, 0, 0] } }],
         expect: { throws: true },
       },
       { op: "count", args: ["docs"], expect: { value: true } },
@@ -159,8 +168,9 @@ export const scenarios = [
       "searching with a query of the wrong length throws the shared mismatch message",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
-      { op: "search", args: ["docs", [1, 0, 0, 0]], expect: { throws: true } },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0, 0] }], expect: { throws: true } },
     ],
   }),
 
@@ -169,14 +179,15 @@ export const scenarios = [
     title: "a mid-array dimension mismatch in upsertMany persists nothing",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "keep", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "keep", vectors: { default: [1, 0, 0] } }] },
       {
         op: "upsertMany",
         args: [
           "docs",
-          [
-            { id: "b", vector: [0, 1, 0] },
-            { id: "c", vector: [0, 0, 1, 1] },
+          { space: "default", vector: [
+            { id: "b", vectors: { default: [0, 1, 0] } } },
+            { id: "c", vectors: { default: [0, 0, 1, 1] } },
           ],
         ],
         expect: { throws: true },
@@ -192,13 +203,14 @@ export const scenarios = [
     title: "upsertMany inserts every document when all vectors are valid",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsertMany",
         args: [
           "docs",
-          [
-            { id: "a", vector: [1, 0, 0], metadata: { n: 1 } },
-            { id: "b", vector: [0, 1, 0] },
+          { space: "default", vector: [
+            { id: "a", vectors: { default: [1, 0, 0] } }, metadata: { n: 1 } },
+            { id: "b", vectors: { default: [0, 1, 0] } },
           ],
         ],
       },
@@ -214,12 +226,13 @@ export const scenarios = [
     title: "search returns near, mid and far in descending similarity",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "near", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "mid", vector: [1, 1, 0] }] },
-      { op: "upsert", args: ["docs", { id: "far", vector: [0, 1, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }] },
       {
         op: "search",
-        args: ["docs", [1, 0, 0]],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
     ],
@@ -230,9 +243,10 @@ export const scenarios = [
     title: "search without topK returns at most ten results",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       { op: "upsertMany", args: ["docs", LADDER] },
       { op: "count", args: ["docs"], expect: { value: true } },
-      { op: "search", args: ["docs", [1, 0, 0]], expect: { ids: true } },
+      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
     ],
   }),
 
@@ -241,12 +255,13 @@ export const scenarios = [
     title: "topK caps the result count at the nearest documents",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "near", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "mid", vector: [1, 1, 0] }] },
-      { op: "upsert", args: ["docs", { id: "far", vector: [0, 1, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }] },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { topK: 2 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 2 }],
         expect: { ids: true },
       },
     ],
@@ -257,16 +272,17 @@ export const scenarios = [
     title: "minScore keeps a document whose score equals the floor exactly",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "same", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "orthogonal", vector: [0, 1, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "same", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "orthogonal", vectors: { default: [0, 1, 0] } }] },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: 1 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 1 }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: 0 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0 }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
     ],
@@ -277,27 +293,28 @@ export const scenarios = [
     title: "minScore filters the candidate set before topK slices it",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       { op: "upsertMany", args: ["docs", LADDER] },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { topK: 3, minScore: 0.99 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 3, minScore: 0.99 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: 0.99 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0.99 }],
         expect: { ids: true },
       },
       // More documents clear the floor than topK admits, so the accelerated
       // path has to filter the whole candidate set and slice afterwards.
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { topK: 2, minScore: 0.9 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.9 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: 0.9 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0.9 }],
         expect: { ids: true },
       },
     ],
@@ -308,8 +325,9 @@ export const scenarios = [
     title: "search on a collection that was never written returns nothing",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
-      { op: "search", args: ["other", [1, 0, 0]], expect: { value: true } },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "search", args: ["other", { space: "default", vector: [1, 0, 0] }], expect: { value: true } },
     ],
   }),
 
@@ -318,10 +336,11 @@ export const scenarios = [
     title: "identical vectors in two collections do not leak across a search",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["one", { id: "a", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["two", { id: "b", vector: [1, 0, 0] }] },
-      { op: "search", args: ["one", [1, 0, 0]], expect: { ids: true } },
-      { op: "search", args: ["two", [1, 0, 0]], expect: { ids: true } },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["two", { id: "b", vectors: { default: [1, 0, 0] } }] },
+      { op: "search", args: ["one", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
+      { op: "search", args: ["two", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
     ],
   }),
 
@@ -331,10 +350,11 @@ export const scenarios = [
     title: "equal scores break by id ascending, not by insertion order",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "c", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "a", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "b", vector: [1, 0, 0] }] },
-      { op: "search", args: ["docs", [1, 0, 0]], expect: { ids: true } },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "b", vectors: { default: [1, 0, 0] } }] },
+      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
     ],
   }),
 
@@ -344,45 +364,46 @@ export const scenarios = [
       "ties at the topK boundary resolve by id, whatever order the rows went in",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       // More tied rows than topK. A backend that asks its index for exactly
       // topK nearest is handed an ARBITRARY topK of the tied set and can only
       // sort what it was given, so which ids come back depends on insertion
       // order. Both collections hold the same three tied vectors and must
       // answer identically; only the insertion order differs.
-      { op: "upsert", args: ["asc", { id: "a", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["asc", { id: "b", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["asc", { id: "c", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["desc", { id: "c", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["desc", { id: "b", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["desc", { id: "a", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["asc", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["asc", { id: "b", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["asc", { id: "c", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["desc", { id: "c", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["desc", { id: "b", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["desc", { id: "a", vectors: { default: [1, 0, 0] } }] },
       {
         op: "search",
-        args: ["asc", [1, 0, 0], { topK: 2 }],
+        args: ["asc", { space: "default", vector: [1, 0, 0] }, { topK: 2 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["desc", [1, 0, 0], { topK: 2 }],
+        args: ["desc", { space: "default", vector: [1, 0, 0] }, { topK: 2 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["asc", [1, 0, 0], { topK: 1 }],
+        args: ["asc", { space: "default", vector: [1, 0, 0] }, { topK: 1 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["desc", [1, 0, 0], { topK: 1 }],
+        args: ["desc", { space: "default", vector: [1, 0, 0] }, { topK: 1 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["asc", [1, 0, 0], { topK: 2, minScore: 0.5 }],
+        args: ["asc", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.5 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["desc", [1, 0, 0], { topK: 2, minScore: 0.5 }],
+        args: ["desc", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.5 }],
         expect: { ids: true },
       },
     ],
@@ -394,12 +415,13 @@ export const scenarios = [
       "id tie-breaks compare Unicode code points, so an astral id sorts last",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       // U+1F600 is one code point above U+E000, but its UTF-16 surrogate
       // (U+D83D) is BELOW it — a code-unit sort puts the emoji first.
-      { op: "upsert", args: ["docs", { id: "\u{1F600}", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "\uE000", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "z", vector: [1, 0, 0] }] },
-      { op: "search", args: ["docs", [1, 0, 0]], expect: { ids: true } },
+      { op: "upsert", args: ["docs", { id: "\u{1F600}", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "\uE000", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "z", vectors: { default: [1, 0, 0] } }] },
+      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
     ],
   }),
 
@@ -409,14 +431,15 @@ export const scenarios = [
     title: "an all-zero stored vector is stored and counted but never scored",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "zero", vector: [0, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "unit", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "unit", vectors: { default: [1, 0, 0] } }] },
       { op: "count", args: ["docs"], expect: { value: true } },
       { op: "has", args: ["docs", "zero"], expect: { value: true } },
       { op: "get", args: ["docs", "zero"], expect: { value: true } },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: -1 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: -1 }],
         expect: { ids: true },
       },
     ],
@@ -427,13 +450,14 @@ export const scenarios = [
     title: "an all-zero query scores every usable document zero, ordered by id",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "c", vector: [1, 0, 0] }] },
-      { op: "upsert", args: ["docs", { id: "a", vector: [0, 1, 0] }] },
-      { op: "upsert", args: ["docs", { id: "b", vector: [0, 0, 1] }] },
-      { op: "upsert", args: ["docs", { id: "zero", vector: [0, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [0, 1, 0] } }] },
+      { op: "upsert", args: ["docs", { id: "b", vectors: { default: [0, 0, 1] } }] },
+      { op: "upsert", args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }] },
       {
         op: "search",
-        args: ["docs", [0, 0, 0]],
+        args: ["docs", { space: "default", vector: [0, 0, 0] }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
     ],
@@ -445,24 +469,25 @@ export const scenarios = [
     title: "where keeps only documents matching every condition",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsertMany",
         args: [
           "pets",
-          [
+          { space: "default", vector: [
             {
               id: "cat-black",
-              vector: [1, 0, 0],
+              vectors: { default: [1, 0, 0] } },
               metadata: { type: "cat", color: "black" },
             },
             {
               id: "cat-white",
-              vector: [0.9, 0.1, 0],
+              vectors: { default: [0.9, 0.1, 0] },
               metadata: { type: "cat", color: "white" },
             },
             {
               id: "dog-a",
-              vector: [0, 1, 0],
+              vectors: { default: [0, 1, 0] },
               metadata: { type: "dog", color: "black" },
             },
           ],
@@ -470,7 +495,7 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["pets", [1, 0, 0], { where: { type: "cat" } }],
+        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" } }],
         expect: { ids: true },
       },
     ],
@@ -481,24 +506,25 @@ export const scenarios = [
     title: "whereNot drops documents that satisfy every condition",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsertMany",
         args: [
           "pets",
-          [
+          { space: "default", vector: [
             {
               id: "cat-black",
-              vector: [1, 0, 0],
+              vectors: { default: [1, 0, 0] } },
               metadata: { type: "cat", color: "black" },
             },
             {
               id: "cat-white",
-              vector: [0.9, 0.1, 0],
+              vectors: { default: [0.9, 0.1, 0] },
               metadata: { type: "cat", color: "white" },
             },
             {
               id: "dog-a",
-              vector: [0, 1, 0],
+              vectors: { default: [0, 1, 0] },
               metadata: { type: "dog", color: "black" },
             },
           ],
@@ -506,14 +532,14 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["pets", [1, 0, 0], { whereNot: { type: "cat" } }],
+        args: ["pets", { space: "default", vector: [1, 0, 0] }, { whereNot: { type: "cat" } }],
         expect: { ids: true },
       },
       {
         op: "search",
         args: [
           "pets",
-          [1, 0, 0],
+          { space: "default", vector: [1, 0, 0] },
           { where: { type: "cat" }, whereNot: { color: "black" } },
         ],
         expect: { ids: true },
@@ -526,17 +552,18 @@ export const scenarios = [
     title: "a document with no metadata never satisfies a where filter",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
         args: [
           "pets",
-          { id: "tagged", vector: [1, 0, 0], metadata: { type: "cat" } },
+          { id: "tagged", vectors: { default: [1, 0, 0] }, metadata: { type: "cat" } },
         ],
       },
-      { op: "upsert", args: ["pets", { id: "bare", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["pets", { id: "bare", vectors: { default: [1, 0, 0] } }] },
       {
         op: "search",
-        args: ["pets", [1, 0, 0], { where: { type: "cat" } }],
+        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" } }],
         expect: { ids: true },
       },
     ],
@@ -547,21 +574,22 @@ export const scenarios = [
     title: "topK counts filtered survivors, not nearest documents overall",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsertMany",
         args: [
           "pets",
-          [
-            { id: "cat-1", vector: [1, 0, 0], metadata: { type: "cat" } },
-            { id: "cat-2", vector: [0.9, 0.1, 0], metadata: { type: "cat" } },
-            { id: "cat-3", vector: [0.8, 0.2, 0], metadata: { type: "cat" } },
-            { id: "dog-1", vector: [0.95, 0.05, 0], metadata: { type: "dog" } },
+          { space: "default", vector: [
+            { id: "cat-1", vectors: { default: [1, 0, 0] } }, metadata: { type: "cat" } },
+            { id: "cat-2", vectors: { default: [0.9, 0.1, 0] }, metadata: { type: "cat" } },
+            { id: "cat-3", vectors: { default: [0.8, 0.2, 0] }, metadata: { type: "cat" } },
+            { id: "dog-1", vectors: { default: [0.95, 0.05, 0] }, metadata: { type: "dog" } },
           ],
         ],
       },
       {
         op: "search",
-        args: ["pets", [1, 0, 0], { where: { type: "cat" }, topK: 2 }],
+        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" }, topK: 2 }],
         expect: { ids: true },
       },
     ],
@@ -573,35 +601,36 @@ export const scenarios = [
       "where compares nested objects and arrays by exact JSON, key order included",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
         args: [
           "docs",
           {
             id: "a",
-            vector: [1, 0, 0],
+            vectors: { default: [1, 0, 0] },
             metadata: { spec: { a: 1, b: 2 }, tags: ["x", "y"] },
           },
         ],
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: { spec: { a: 1, b: 2 } } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { spec: { a: 1, b: 2 } } }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: { spec: { b: 2, a: 1 } } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { spec: { b: 2, a: 1 } } }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: { tags: ["y", "x"] } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { tags: ["y", "x"] } }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: { tags: "x" } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { tags: "x" } }],
         expect: { ids: true },
       },
     ],
@@ -612,7 +641,8 @@ export const scenarios = [
       "get preserves original vector magnitude rather than a normalized direction",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "raw", vector: [3, 4, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "raw", vectors: { default: [3, 4, 0] } }] },
       { op: "get", args: ["docs", "raw"], expect: { value: true } },
     ],
   }),
@@ -621,17 +651,18 @@ export const scenarios = [
     title: "finite float32 magnitude extremes retain their cosine direction",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
-        args: ["docs", { id: "large", vector: [1e30, 1e30, 0] }],
+        args: ["docs", { id: "large", vectors: { default: [1e30, 1e30, 0] } }],
       },
-      { op: "upsert", args: ["docs", { id: "small", vector: [1e-30, 0, 0] }] },
+      { op: "upsert", args: ["docs", { id: "small", vectors: { default: [1e-30, 0, 0] } }] },
       {
         op: "search",
-        args: ["docs", [1e30, 0, 0]],
+        args: ["docs", { space: "default", vector: [1e30, 0, 0] }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
-      { op: "search", args: ["docs", [1e-30, 0, 0]], expect: { ids: true } },
+      { op: "search", args: ["docs", { space: "default", vector: [1e-30, 0, 0] }], expect: { ids: true } },
     ],
   }),
   defineScenario({
@@ -640,19 +671,20 @@ export const scenarios = [
       "distinct float64 cosine scores determine topK and the inclusive score floor",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
-        args: ["docs", { id: "a-near", vector: [1, 0.0001, 0] }],
+        args: ["docs", { id: "a-near", vectors: { default: [1, 0.0001, 0] } }],
       },
-      { op: "upsert", args: ["docs", { id: "z-exact", vector: [1, 0, 0] }] },
+      { op: "upsert", args: ["docs", { id: "z-exact", vectors: { default: [1, 0, 0] } }] },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { topK: 1 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 1 }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { minScore: 1 }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 1 }],
         expect: { ids: true },
       },
     ],
@@ -663,31 +695,32 @@ export const scenarios = [
       "empty metadata and absent metadata have different empty-filter behavior",
     ports: ["vector"],
     steps: [
-      { op: "upsert", args: ["docs", { id: "absent", vector: [1, 0, 0] }] },
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
+      { op: "upsert", args: ["docs", { id: "absent", vectors: { default: [1, 0, 0] } }] },
       {
         op: "upsert",
-        args: ["docs", { id: "empty", vector: [1, 0, 0], metadata: {} }],
+        args: ["docs", { id: "empty", vectors: { default: [1, 0, 0] }, metadata: {} }],
       },
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "null", vector: [1, 0, 0], metadata: { value: null } },
+          { id: "null", vectors: { default: [1, 0, 0] }, metadata: { value: null } },
         ],
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: {} }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: {} }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { whereNot: {} }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { whereNot: {} }],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { where: { value: null } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { value: null } }],
         expect: { ids: true },
       },
     ],
@@ -697,23 +730,24 @@ export const scenarios = [
     title: "whereNot excludes a full conjunction and keeps partial matches",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "both", vector: [1, 0, 0], metadata: { a: 1, b: 2 } },
+          { id: "both", vectors: { default: [1, 0, 0] }, metadata: { a: 1, b: 2 } },
         ],
       },
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "partial", vector: [1, 0, 0], metadata: { a: 1, b: 3 } },
+          { id: "partial", vectors: { default: [1, 0, 0] }, metadata: { a: 1, b: 3 } },
         ],
       },
       {
         op: "search",
-        args: ["docs", [1, 0, 0], { whereNot: { a: 1, b: 2 } }],
+        args: ["docs", { space: "default", vector: [1, 0, 0] }, { whereNot: { a: 1, b: 2 } }],
         expect: { ids: true },
       },
     ],
@@ -724,13 +758,14 @@ export const scenarios = [
       "metadata filters preserve literal field names and JavaScript number spelling",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
         args: [
           "docs",
           {
             id: "a",
-            vector: [1, 0, 0],
+            vectors: { default: [1, 0, 0] },
             metadata: { "a.b": [1e-7, 1e21], "": { "2": 2, "1": 1 } },
           },
         ],
@@ -739,7 +774,7 @@ export const scenarios = [
         op: "search",
         args: [
           "docs",
-          [1, 0, 0],
+          { space: "default", vector: [1, 0, 0] },
           { where: { "a.b": [1e-7, 1e21], "": { "1": 1, "2": 2 } } },
         ],
         expect: { ids: true },
@@ -751,22 +786,43 @@ export const scenarios = [
     title: "zero-query cutoff uses the complete code-point-ordered tie set",
     ports: ["vector"],
     steps: [
+      { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsertMany",
         args: [
           "docs",
-          [
-            { id: "z", vector: [1, 0, 0] },
-            { id: "a", vector: [0, 1, 0] },
-            { id: "b", vector: [0, 0, 1] },
+          { space: "default", vector: [
+            { id: "z", vectors: { default: [1, 0, 0] } } },
+            { id: "a", vectors: { default: [0, 1, 0] } },
+            { id: "b", vectors: { default: [0, 0, 1] } },
           ],
         ],
       },
       {
         op: "search",
-        args: ["docs", [0, 0, 0], { topK: 1 }],
+        args: ["docs", { space: "default", vector: [0, 0, 0] }, { topK: 1 }],
         expect: { ids: true },
       },
+    ],
+  }),
+  defineScenario({
+    id: "vector/named-spaces-replacement", title: "spaces share document identity and replacement removes omitted embeddings", ports: ["vector"],
+    steps: [
+      {op:"ensureSpace",args:["text",{dimensions:2}]},
+      {op:"ensureSpace",args:["image",{dimensions:3}]},
+      {op:"ensureSpace",args:["text",{dimensions:2}]},
+      {op:"listSpaces",args:[],expect:{value:true}},
+      {op:"ensureSpace",args:["text",{dimensions:3}],expect:{throws:true}},
+      {op:"upsert",args:["assets",{id:"a",vectors:{text:[1,0],image:[0,1,0]},metadata:{kind:"art"}}]},
+      {op:"search",args:["assets",{space:"image",vector:[0,1,0]}],expect:{ids:true}},
+      {op:"upsert",args:["assets",{id:"a",vectors:{text:[0,1]}}]},
+      {op:"get",args:["assets","a"],expect:{value:true}},
+      {op:"search",args:["assets",{space:"image",vector:[0,1,0]}],expect:{ids:true}},
+      {op:"upsertMany",args:["assets",[{id:"a",vectors:{text:[1,0]}},{id:"b",vectors:{missing:[1]}}]],expect:{throws:true}},
+      {op:"get",args:["assets","a"],expect:{value:true}},
+      {op:"upsert",args:["assets",{id:"empty",vectors:{}}],expect:{throws:true}},
+      {op:"remove",args:["assets","a"],expect:{value:true}},
+      {op:"count",args:["assets"],expect:{value:true}},
     ],
   }),
 ];

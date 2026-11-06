@@ -15,7 +15,6 @@ from __future__ import annotations
 import math
 import struct
 from typing import (
-    TYPE_CHECKING,
     Any,
     Literal,
     Protocol,
@@ -27,17 +26,17 @@ from typing import (
 
 from .filter import dumps_json
 
-if TYPE_CHECKING:
-    from .sqlite_vector import SqliteVectorFacet
-
 __all__ = [
     "InMemoryVectorStore",
     "VectorDocument",
     "VectorInputError",
     "VectorInputErrorCode",
+    "VectorQuery",
     "VectorSearchOptions",
     "VectorSearchResult",
     "VectorSearchResultList",
+    "VectorSpace",
+    "VectorSpaceOptions",
     "VectorStore",
     "VectorStoreMeta",
     "assert_dimensions",
@@ -55,6 +54,7 @@ __all__ = [
     "sort_results",
     "to_float32",
     "top_k_of",
+    "validate_space",
     "vector_to_bytes",
 ]
 
@@ -65,7 +65,6 @@ class VectorStoreMeta(TypedDict):
     """What a store reports about itself. ``accelerated`` is informational."""
 
     backend: str
-    dimensions: int
     accelerated: bool
 
 
@@ -73,8 +72,24 @@ class VectorDocument(TypedDict, total=False):
     """A stored embedding. ``metadata`` is absent, never null, when unset."""
 
     id: Required[str]
-    vector: Required[list[float]]
+    vectors: Required[dict[str, list[float]]]
     metadata: dict[str, Any]
+
+
+class VectorSpace(TypedDict):
+    name: str
+    dimensions: int
+    metric: Literal["cosine"]
+    encoding: Literal["float32"]
+
+
+class VectorSpaceOptions(TypedDict):
+    dimensions: int
+
+
+class VectorQuery(TypedDict):
+    space: str
+    vector: list[float]
 
 
 class VectorSearchResult(TypedDict, total=False):
@@ -104,6 +119,9 @@ class VectorStore(Protocol):
     @property
     def meta(self) -> VectorStoreMeta: ...
 
+    def ensureSpace(self, name: str, options: VectorSpaceOptions) -> None: ...
+    def listSpaces(self) -> list[VectorSpace]: ...
+
     def upsert(self, collection: str, doc: VectorDocument) -> None: ...
     def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None: ...
     def get(self, collection: str, id: str) -> VectorDocument | None: ...
@@ -111,11 +129,15 @@ class VectorStore(Protocol):
     def remove(self, collection: str, id: str) -> bool: ...
     def count(self, collection: str) -> int: ...
     def search(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None = None
+        self, collection: str, query: VectorQuery, opts: VectorSearchOptions | None = None
     ) -> VectorSearchResultList: ...
 
 
 VectorInputErrorCode = Literal[
+    "unknown-space",
+    "space-definition-conflict",
+    "invalid-space",
+    "empty-vectors",
     "dimension-mismatch",
     "invalid-dimensions",
     "dimensions-changed",
@@ -296,34 +318,63 @@ def score_of(
 class InMemoryVectorStore:
     """Brute-force exact cosine search. The reference implementation."""
 
-    def __init__(self, dimensions: int) -> None:
-        self._dimensions = dimensions
+    def __init__(self) -> None:
+        self._spaces: dict[str, VectorSpace] = {}
         self._collections: dict[str, dict[str, VectorDocument]] = {}
 
     @property
     def meta(self) -> VectorStoreMeta:
-        return {"backend": "memory", "dimensions": self._dimensions, "accelerated": False}
+        return {"backend": "memory", "accelerated": False}
 
-    @property
-    def dimensions(self) -> int:
-        return self._dimensions
+    def ensureSpace(self, name: str, options: VectorSpaceOptions) -> None:
+        validate_space(name, options)
+        found = self._spaces.get(name)
+        if found is not None and found["dimensions"] != options["dimensions"]:
+            raise VectorInputError(
+                "space-definition-conflict",
+                f"Space {name} already has {found['dimensions']} dimensions",
+            )
+        self._spaces[name] = {
+            "name": name,
+            "dimensions": options["dimensions"],
+            "metric": "cosine",
+            "encoding": "float32",
+        }
+
+    def listSpaces(self) -> list[VectorSpace]:
+        return [cast(VectorSpace, dict(self._spaces[name])) for name in sorted(self._spaces)]
+
+    def _require_space(self, name: str) -> VectorSpace:
+        found = self._spaces.get(name)
+        if found is None:
+            raise VectorInputError("unknown-space", f"Unknown vector space: {name}")
+        return found
+
+    def _validate(self, doc: VectorDocument) -> None:
+        if not doc["vectors"]:
+            raise VectorInputError("empty-vectors", "A document needs at least one vector")
+        for name, vector in doc["vectors"].items():
+            assert_dimensions(vector, self._require_space(name)["dimensions"])
 
     def _store_doc(self, doc: VectorDocument) -> VectorDocument:
-        stored: VectorDocument = {"id": doc["id"], "vector": to_float32(doc["vector"])}
+        stored: VectorDocument = {
+            "id": doc["id"],
+            "vectors": {name: to_float32(vector) for name, vector in doc["vectors"].items()},
+        }
         metadata = _metadata_of(doc)
         if metadata is not None:
             stored["metadata"] = metadata
         return stored
 
     def upsert(self, collection: str, doc: VectorDocument) -> None:
-        assert_dimensions(doc["vector"], self._dimensions)
+        self._validate(doc)
         self._collections.setdefault(collection, {})[doc["id"]] = self._store_doc(doc)
 
     def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None:
         # Validate every vector before mutating: a mid-array mismatch must insert
         # nothing, matching the SQLite backend's one transaction.
         for doc in docs:
-            assert_dimensions(doc["vector"], self._dimensions)
+            self._validate(doc)
         target = self._collections.setdefault(collection, {})
         for doc in docs:
             target[doc["id"]] = self._store_doc(doc)
@@ -344,20 +395,23 @@ class InMemoryVectorStore:
         return len(self._collections.get(collection, {}))
 
     def search(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None = None
+        self, collection: str, query: VectorQuery, opts: VectorSearchOptions | None = None
     ) -> VectorSearchResultList:
-        assert_dimensions(query, self._dimensions)
+        assert_dimensions(query["vector"], self._require_space(query["space"])["dimensions"])
         collection_docs = self._collections.get(collection)
         if collection_docs is None:
             return []
         minimum = min_score_of(opts)
-        rounded_query = to_float32(query)
+        rounded_query = to_float32(query["vector"])
         scored: VectorSearchResultList = []
         for doc in collection_docs.values():
             metadata = _metadata_of(doc)
             if not keeps_metadata(metadata, opts):
                 continue
-            score = score_of(rounded_query, doc["vector"], minimum)
+            vector = doc["vectors"].get(query["space"])
+            if vector is None:
+                continue
+            score = score_of(rounded_query, vector, minimum)
             if score is None:
                 continue
             hit: VectorSearchResult = {"id": doc["id"], "score": score}
@@ -377,102 +431,22 @@ def is_vector_argument(value: Any) -> bool:
     return all(isinstance(item, int | float) and not isinstance(item, bool) for item in items)
 
 
-def _dimensions_in(args: tuple[Any, ...]) -> int | None:
-    """The length of the first vector-shaped argument, as the TypeScript harness reads it.
-
-    The generator sizes a scenario's store from the first vector argument in step
-    order; reading the first vector argument at call time finds the same one,
-    because steps run in the order the generator scanned them.
-    """
-    for arg in args:
-        if is_vector_argument(arg):
-            return len(cast(list[Any], arg))
-        candidates: list[Any] = cast(list[Any], arg) if isinstance(arg, list) else [arg]
-        for candidate in candidates:
-            if isinstance(candidate, dict):
-                vector: Any = cast(dict[str, Any], candidate).get("vector")
-                if is_vector_argument(vector):
-                    return len(cast(list[Any], vector))
-    return None
-
-
-class _ScenarioVectorTarget:
-    """Adopt the store's dimensions from the scenario, the way the generator does.
-
-    The corpus runner builds a target before it has seen a step, while the
-    TypeScript generator sizes its store from the scenario's first vector. This
-    target closes that gap: it configures dimensions from the first vector
-    argument it is handed and then delegates every call unchanged.
-    """
-
-    def __init__(self, backend: str, connection: object) -> None:
-        self._backend = backend
-        self._connection = connection
-        self._store: VectorStore | None = None
-        self._sqlite: SqliteVectorFacet | None = None
-        self._sized = False
-        if backend == "sqlite":
-            from .sqlite_vector import SqliteVectorFacet as Facet
-            from .sqlite_vector import connection_of
-
-            self._sqlite = Facet(connection_of(connection), path=":memory:")
-            self._store = self._sqlite
-        elif backend != "memory":
-            raise ValueError(f"unknown vector backend {backend!r}")
-
-    def _bind(self, *args: Any) -> VectorStore | None:
-        # Sizing happens once, from the scenario's first vector, exactly as the
-        # generator sizes its store. A later mismatched vector must reach the
-        # store and raise the mismatch, not be read as a second configuration.
-        if self._sized:
-            return self._store
-        dimensions = _dimensions_in(args)
-        if dimensions is None:
-            return self._store
-        self._sized = True
-        if self._sqlite is not None:
-            self._sqlite.configure_dimensions(dimensions)
-            return self._sqlite
-        self._store = InMemoryVectorStore(dimensions)
-        return self._store
-
-    @property
-    def meta(self) -> VectorStoreMeta:
-        if self._store is None:
-            return {"backend": self._backend, "dimensions": 0, "accelerated": False}
-        return self._store.meta
-
-    def upsert(self, collection: str, doc: VectorDocument) -> None:
-        store = self._bind(doc)
-        assert store is not None
-        store.upsert(collection, doc)
-
-    def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None:
-        store = self._bind(docs)
-        if store is None:
-            return
-        store.upsertMany(collection, docs)
-
-    def get(self, collection: str, id: str) -> VectorDocument | None:
-        return self._store.get(collection, id) if self._store else None
-
-    def has(self, collection: str, id: str) -> bool:
-        return self._store.has(collection, id) if self._store else False
-
-    def remove(self, collection: str, id: str) -> bool:
-        return self._store.remove(collection, id) if self._store else False
-
-    def count(self, collection: str) -> int:
-        return self._store.count(collection) if self._store else 0
-
-    def search(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None = None
-    ) -> VectorSearchResultList:
-        store = self._bind(query)
-        assert store is not None
-        return store.search(collection, query, opts)
+def validate_space(name: str, options: VectorSpaceOptions) -> None:
+    if not name:
+        raise VectorInputError("invalid-space", "Space name must be nonempty")
+    dimensions = options["dimensions"]
+    if isinstance(dimensions, bool) or dimensions <= 0:
+        raise VectorInputError(
+            "invalid-dimensions", f"Vector dimensions must be a positive integer; got {dimensions}."
+        )
 
 
 def conformance_target(backend: str, connection: object) -> object:
-    """Build the object the corpus runner dispatches ``vector/*`` steps onto."""
-    return _ScenarioVectorTarget(backend, connection)
+    if backend == "memory":
+        return InMemoryVectorStore()
+    if backend == "sqlite":
+        from .sqlite import connection_of
+        from .sqlite_vector import SqliteVectorFacet
+
+        return SqliteVectorFacet(connection_of(connection), path=":memory:")
+    raise ValueError(f"unknown vector backend {backend!r}")

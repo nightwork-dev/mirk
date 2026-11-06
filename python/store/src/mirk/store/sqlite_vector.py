@@ -1,14 +1,4 @@
-"""SQLite vector facet: the ``vectors`` table the TypeScript adapter writes.
-
-The facet shares one connection with :class:`~mirk.store.sqlite.SqliteStore`
-rather than opening a second handle on the same file, so a write and its
-metadata commit together.
-
-One search path: the base table is scanned and scored in float64 Python cosine.
-``meta["accelerated"]`` is therefore always False. A ``sqlite-vec`` (vec0) path
-used to sit beside this one, was shown never to execute, and was deleted. Legacy
-``vectors_vec_*`` shadow tables in older files are left in place; they are inert.
-"""
+"""Named vector spaces on the shared SQLite format."""
 
 from __future__ import annotations
 
@@ -16,16 +6,19 @@ import json
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from .filter import dumps_json
-from .sqlite import connection_of
+from .sqlite import connection_of, ensure_registry
 from .vector import (
     VectorDocument,
     VectorInputError,
+    VectorQuery,
     VectorSearchOptions,
     VectorSearchResult,
     VectorSearchResultList,
+    VectorSpace,
+    VectorSpaceOptions,
     VectorStoreMeta,
     assert_dimensions,
     bytes_to_vector,
@@ -34,212 +27,184 @@ from .vector import (
     min_score_of,
     score_of,
     to_float32,
+    validate_space,
     vector_to_bytes,
 )
 
-__all__ = [
-    "NO_DIMENSIONS_MESSAGE",
-    "SqliteVectorFacet",
-    "connection_of",
-    "dimensions_conflict_message",
-    "positive_dimensions_message",
-]
+if TYPE_CHECKING:
+    from .sqlite_vec import SqliteVectorEngine
 
-NO_DIMENSIONS_MESSAGE = (
-    "SqliteAdapter.vector has no dimensions yet"
-    " — pass { dimensions } when opening or upsert a vector first."
-)
-
-
-def positive_dimensions_message(dimensions: object) -> str:
-    return f"Vector dimensions must be a positive integer; got {dimensions}."
-
-
-def dimensions_conflict_message(path: str, stored: int, opened: object) -> str:
-    return f"Vector store at {path} was created with {stored} dimensions, opened with {opened}."
+__all__ = ["SqliteVectorFacet", "connection_of"]
 
 
 class SqliteVectorFacet:
-    """The ``VectorStore`` port over one SQLite connection."""
-
     def __init__(
-        self,
-        db: sqlite3.Connection,
-        *,
-        path: str = "",
-        dimensions: int | None = None,
+        self, db: sqlite3.Connection, *, path: str = "", namespace: str = "default", vector_engine: SqliteVectorEngine | None = None
     ) -> None:
         self._db = db
-        self._path = path
-        self._dimensions = -1
-        db.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS vectors (
-              collection TEXT NOT NULL,
-              id TEXT NOT NULL,
-              vec BLOB NOT NULL,
-              metadata TEXT,
-              PRIMARY KEY (collection, id)
-            );
-            CREATE INDEX IF NOT EXISTS vectors_collection ON vectors(collection);
-            CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-            """
-        )
-        row = db.execute("SELECT value FROM _vec_meta WHERE key = 'dimensions'").fetchone()
-        if row is not None:
-            self._dimensions = int(row[0])
-            if dimensions is not None and dimensions != self._dimensions:
-                raise VectorInputError(
-                    "dimensions-changed",
-                    dimensions_conflict_message(path, self._dimensions, dimensions),
-                )
-        elif dimensions is not None:
-            self.configure_dimensions(dimensions)
-
-    # ── Dimensions ───────────────────────────────────────────────────────
-    def configure_dimensions(self, dimensions: int) -> None:
-        """Establish dimensions, persisting them. A conflicting value raises."""
-        if dimensions <= 0 or dimensions != int(dimensions):
-            raise VectorInputError("invalid-dimensions", positive_dimensions_message(dimensions))
-        if self._dimensions >= 0:
-            if dimensions != self._dimensions:
-                raise VectorInputError(
-                    "dimensions-changed",
-                    dimensions_conflict_message(self._path, self._dimensions, dimensions),
-                )
-            return
-        self._dimensions = dimensions
-        self._db.execute(
-            "INSERT INTO _vec_meta (key, value) VALUES ('dimensions', ?)"
-            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (str(dimensions),),
-        )
+        self._namespace = namespace
+        ensure_registry(db)
+        self._engine = vector_engine
+        if vector_engine is not None:
+            vector_engine.initialize(db)
 
     @property
     def meta(self) -> VectorStoreMeta:
-        return {
-            "backend": "sqlite",
-            "dimensions": max(self._dimensions, 0),
-            "accelerated": False,
-        }
+        return {"backend": "sqlite", "accelerated": self._engine is not None}
 
-    @property
-    def dimensions(self) -> int:
-        """The configured dimensions, or 0 while none are known."""
-        return max(self._dimensions, 0)
-
-    def _require_known_dims(self, vector: list[float]) -> None:
-        if self._dimensions < 0:
-            raise VectorInputError("dimensions-unknown", NO_DIMENSIONS_MESSAGE)
-        assert_dimensions(vector, self._dimensions)
-
-    def _ensure_dims_for_write(self, vector: list[float]) -> None:
-        if self._dimensions < 0:
-            self.configure_dimensions(len(vector))
-        assert_dimensions(vector, self._dimensions)
-
-    # ── Transactions ─────────────────────────────────────────────────────
     @contextmanager
     def _write(self) -> Generator[None]:
-        """One outermost transaction; a nested call joins the open one."""
-        if self._db.in_transaction:
-            yield
-            return
-        self._db.execute("BEGIN IMMEDIATE")
+        nested = self._db.in_transaction
+        self._db.execute("SAVEPOINT mirk_vector" if nested else "BEGIN IMMEDIATE")
         try:
             yield
+            self._db.execute("RELEASE SAVEPOINT mirk_vector" if nested else "COMMIT")
         except BaseException:
-            self._db.execute("ROLLBACK")
+            self._db.execute("ROLLBACK TO SAVEPOINT mirk_vector" if nested else "ROLLBACK")
+            if nested:
+                self._db.execute("RELEASE SAVEPOINT mirk_vector")
             raise
-        else:
-            self._db.execute("COMMIT")
 
-    # ── Writes ───────────────────────────────────────────────────────────
-    def upsert(self, collection: str, doc: VectorDocument) -> None:
-        self._ensure_dims_for_write(doc["vector"])
-        rounded = to_float32(doc["vector"])
-        metadata = doc.get("metadata")
-        with self._write():
-            self._db.execute(
-                "INSERT INTO vectors(collection, id, vec, metadata) VALUES (?, ?, ?, ?)"
-                " ON CONFLICT(collection, id)"
-                " DO UPDATE SET vec = excluded.vec, metadata = excluded.metadata",
-                (
-                    collection,
-                    doc["id"],
-                    vector_to_bytes(rounded),
-                    None if metadata is None else dumps_json(metadata),
-                ),
-            )
-
-    def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None:
-        if not docs:
-            return
-        dimensions = self._dimensions if self._dimensions >= 0 else len(docs[0]["vector"])
-        if dimensions <= 0:
-            raise VectorInputError("invalid-dimensions", positive_dimensions_message(dimensions))
-        # Validate everything before establishing lazy dimensions, so a mid-array
-        # mismatch leaves neither rows nor a dimension behind.
-        for doc in docs:
-            assert_dimensions(doc["vector"], dimensions)
-        if self._dimensions < 0:
-            self.configure_dimensions(dimensions)
-        with self._write():
-            for doc in docs:
-                self.upsert(collection, doc)
-
-    def remove(self, collection: str, id: str) -> bool:
-        with self._write():
-            cursor = self._db.execute(
-                "DELETE FROM vectors WHERE collection = ? AND id = ?", (collection, id)
-            )
-            return cursor.rowcount > 0
-
-    # ── Reads ────────────────────────────────────────────────────────────
-    def get(self, collection: str, id: str) -> VectorDocument | None:
+    def _space(self, name: str) -> VectorSpace | None:
         row = self._db.execute(
-            "SELECT id, vec, metadata FROM vectors WHERE collection = ? AND id = ?",
-            (collection, id),
+            "SELECT dimensions,metric,encoding FROM _mirk_vector_spaces WHERE "
+            "namespace=? AND name=?",
+            (self._namespace, name),
         ).fetchone()
         if row is None:
             return None
-        doc: VectorDocument = {"id": str(row[0]), "vector": bytes_to_vector(bytes(row[1]))}
-        if row[2] is not None:
-            doc["metadata"] = cast(dict[str, Any], json.loads(row[2]))
+        return {"name": name, "dimensions": int(row[0]), "metric": "cosine", "encoding": "float32"}
+
+    def _require_space(self, name: str) -> VectorSpace:
+        space = self._space(name)
+        if space is None:
+            raise VectorInputError("unknown-space", f"Unknown vector space: {name}")
+        return space
+
+    def ensureSpace(self, name: str, options: VectorSpaceOptions) -> None:
+        validate_space(name, options)
+        with self._write():
+            space = self._space(name)
+            if space is not None and space["dimensions"] != options["dimensions"]:
+                raise VectorInputError(
+                    "space-definition-conflict",
+                    f"Space {name} already has {space['dimensions']} dimensions",
+                )
+            self._db.execute(
+                "INSERT OR IGNORE INTO _mirk_vector_spaces VALUES(?,?,?,'cosine','float32')",
+                (self._namespace, name, options["dimensions"]),
+            )
+
+    def listSpaces(self) -> list[VectorSpace]:
+        names = self._db.execute(
+            "SELECT name FROM _mirk_vector_spaces WHERE namespace=?", (self._namespace,)
+        ).fetchall()
+        return [self._require_space(row[0]) for row in sorted(names)]
+
+    def _validate(self, doc: VectorDocument) -> None:
+        if not doc["vectors"]:
+            raise VectorInputError("empty-vectors", "A document needs at least one vector")
+        for name, vector in doc["vectors"].items():
+            assert_dimensions(vector, self._require_space(name)["dimensions"])
+
+    def upsert(self, collection: str, doc: VectorDocument) -> None:
+        self.upsertMany(collection, [doc])
+
+    def upsertMany(self, collection: str, docs: list[VectorDocument]) -> None:
+        with self._write():
+            prepared: list[tuple[VectorDocument, str | None, dict[str, bytes]]] = []
+            for doc in docs:
+                self._validate(doc)
+                metadata = doc.get("metadata")
+                prepared.append(
+                    (
+                        doc,
+                        None if metadata is None else dumps_json(metadata),
+                        {name: vector_to_bytes(vector) for name, vector in doc["vectors"].items()},
+                    )
+                )
+            for doc, metadata_json, vectors in prepared:
+                self._db.execute(
+                    "INSERT INTO _mirk_vector_documents VALUES(?,?,?,?) ON "
+                    "CONFLICT(namespace,collection,id) DO UPDATE SET "
+                    "metadata=excluded.metadata",
+                    (self._namespace, collection, doc["id"], metadata_json),
+                )
+                self._db.execute(
+                    "DELETE FROM _mirk_vector_values WHERE namespace=? AND collection=? AND id=?",
+                    (self._namespace, collection, doc["id"]),
+                )
+                for name, blob in vectors.items():
+                    self._db.execute(
+                        "INSERT INTO _mirk_vector_values VALUES(?,?,?,?,?)",
+                        (self._namespace, collection, doc["id"], name, blob),
+                    )
+
+    def get(self, collection: str, id: str) -> VectorDocument | None:
+        row = self._db.execute(
+            "SELECT metadata FROM _mirk_vector_documents WHERE namespace=? AND"
+            " collection=? AND id=?",
+            (self._namespace, collection, id),
+        ).fetchone()
+        if row is None:
+            return None
+        values = self._db.execute(
+            "SELECT space,vec FROM _mirk_vector_values WHERE namespace=? AND collection=? AND id=?",
+            (self._namespace, collection, id),
+        ).fetchall()
+        doc: VectorDocument = {
+            "id": id,
+            "vectors": {str(value[0]): bytes_to_vector(bytes(value[1])) for value in values},
+        }
+        if row[0] is not None:
+            doc["metadata"] = cast(dict[str, Any], json.loads(row[0]))
         return doc
 
     def has(self, collection: str, id: str) -> bool:
-        row = self._db.execute(
-            "SELECT 1 FROM vectors WHERE collection = ? AND id = ?", (collection, id)
-        ).fetchone()
-        return row is not None
+        return self.get(collection, id) is not None
+
+    def remove(self, collection: str, id: str) -> bool:
+        with self._write():
+            self._db.execute(
+                "DELETE FROM _mirk_vector_values WHERE namespace=? AND collection=? AND id=?",
+                (self._namespace, collection, id),
+            )
+            return (
+                self._db.execute(
+                    "DELETE FROM _mirk_vector_documents WHERE namespace=? AND "
+                    "collection=? AND id=?",
+                    (self._namespace, collection, id),
+                ).rowcount
+                > 0
+            )
 
     def count(self, collection: str) -> int:
-        row = self._db.execute(
-            "SELECT COUNT(*) FROM vectors WHERE collection = ?", (collection,)
-        ).fetchone()
-        return int(row[0])
+        return int(
+            self._db.execute(
+                "SELECT COUNT(*) FROM _mirk_vector_documents WHERE namespace=? AND collection=?",
+                (self._namespace, collection),
+            ).fetchone()[0]
+        )
 
     def search(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None = None
+        self, collection: str, query: VectorQuery, opts: VectorSearchOptions | None = None
     ) -> VectorSearchResultList:
-        self._require_known_dims(query)
-        rounded = to_float32(query)
-        return self._search_js(collection, rounded, opts)
-
-    def _search_js(
-        self, collection: str, query: list[float], opts: VectorSearchOptions | None
-    ) -> VectorSearchResultList:
-        minimum = min_score_of(opts)
+        assert_dimensions(query["vector"], self._require_space(query["space"])["dimensions"])
+        vector = to_float32(query["vector"])
+        if self._engine is not None:
+            return self._engine.search(self._db, self._namespace, collection, query["space"], vector, opts)
         rows = self._db.execute(
-            "SELECT id, vec, metadata FROM vectors WHERE collection = ?", (collection,)
+            "SELECT v.id,v.vec,d.metadata FROM _mirk_vector_values v JOIN "
+            "_mirk_vector_documents d USING(namespace,collection,id) WHERE "
+            "v.namespace=? AND v.collection=? AND v.space=?",
+            (self._namespace, collection, query["space"]),
         ).fetchall()
         scored: VectorSearchResultList = []
         for row in rows:
             metadata = None if row[2] is None else cast(dict[str, Any], json.loads(row[2]))
             if not keeps_metadata(metadata, opts):
                 continue
-            score = score_of(query, bytes_to_vector(bytes(row[1])), minimum)
+            score = score_of(vector, bytes_to_vector(bytes(row[1])), min_score_of(opts))
             if score is None:
                 continue
             hit: VectorSearchResult = {"id": str(row[0]), "score": score}

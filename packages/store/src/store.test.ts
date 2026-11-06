@@ -507,14 +507,14 @@ describe('SqliteAdapter — one connection serves kv + vector', () => {
   });
 
   it('shares a single db across the kv and vector facets', () => {
-    const db = new SqliteAdapter({ path: ':memory:', dimensions: 3 });
+    const db = configuredSqliteAdapter({ path: ':memory:'}, 3 );
     try {
       db.kv.set('greeting', 'hi');
       db.kv.put('notes', { id: 'n1', text: 'a' });
-      db.vector.upsert('vecs', { id: 'v1', vector: Float32Array.from([1, 0, 0]) });
+      db.vector.upsert('vecs', { id: 'v1', vectors: { default: Float32Array.from([1, 0, 0])  }});
       expect(db.kv.get('greeting')).toBe('hi');
       expect(db.kv.getById<{ id: string; text: string }>('notes', 'n1')!.text).toBe('a');
-      expect(db.vector.search('vecs', Float32Array.from([1, 0, 0]), { topK: 1 })[0]!.id).toBe('v1');
+      expect(db.vector.search('vecs', { space: "default", vector: Float32Array.from([1, 0, 0]) }, { topK: 1 })[0]!.id).toBe('v1');
     } finally {
       db.close();
     }
@@ -524,12 +524,14 @@ describe('SqliteAdapter — one connection serves kv + vector', () => {
     const Database = (await import('better-sqlite3')).default;
     const raw = new Database(':memory:');
     // Seed dimensions=4 on the handle, then reopen the SAME handle as 3 -> throws.
-    new SqliteAdapter({ path: ':memory:', db: raw, dimensions: 4 });
-    expect(() => new SqliteAdapter({ path: ':memory:', db: raw, dimensions: 3 })).toThrow(
-      expect.objectContaining({ name: "VectorInputError", code: "dimensions-changed" }),
+    configuredSqliteAdapter({ path: ':memory:', db: raw}, 4 );
+    expect(() => configuredSqliteAdapter({ path: ':memory:', db: raw}, 3 )).toThrow(
+      expect.objectContaining({ name: "VectorInputError", code: "space-definition-conflict" }),
     );
     // The caller's handle must NOT have been closed by the failed construction.
     expect(() => raw.prepare('SELECT 1').get()).not.toThrow();
     raw.close();
   });
 });
+
+function configuredSqliteAdapter(options: ConstructorParameters<typeof SqliteAdapter>[0], dimensions: number) { const store = new SqliteAdapter(options); store.vector.ensureSpace("default", {dimensions}); return store; }

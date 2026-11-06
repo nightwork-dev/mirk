@@ -27,7 +27,6 @@ import { openMarkdownTarget } from "./markdown-target.js";
 import { neighbors, traverse, traverseFrontierBatched } from "../graph.js";
 import {
   targetKindFor,
-  vectorDimensionsFor,
   scenarioStoreSetup,
   type BackendName,
   type Target,
@@ -77,7 +76,7 @@ function hashApi(): Record<string, unknown> {
   };
 }
 
-const VECTOR_METHODS = ["upsert", "upsertMany", "get", "has", "remove", "count", "search"] as const;
+const VECTOR_METHODS = ["ensureSpace", "listSpaces", "upsert", "upsertMany", "get", "has", "remove", "count", "search"] as const;
 
 const SEARCH_METHODS = ["index", "indexMany", "remove", "search"] as const;
 
@@ -205,7 +204,7 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
       };
     }
     if (kind === "vector") {
-      const store = new InMemoryVectorStore({ dimensions: vectorDimensionsFor(scenario.steps) });
+      const store = new InMemoryVectorStore();
       return { target: { kind, api: methodApi(store, VECTOR_METHODS) }, dispose: () => {} };
     }
     if (kind === "search") {
@@ -238,7 +237,6 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
     kind === "vector"
       ? {
           path: ":memory:",
-          dimensions: vectorDimensionsFor(scenario.steps),
           versionIdentity: CONFORMANCE_VERSION_IDENTITY,
         }
       : { path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY, ...setup.options },

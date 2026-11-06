@@ -74,7 +74,9 @@ _UNSAFE_TABLE_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _LIKE_SPECIALS = re.compile(r"([\\%_])")
 _SAFE_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
-SqliteAdapterErrorCode = Literal["unsupported-schema-version", "invalid-busy-timeout"]
+SqliteAdapterErrorCode = Literal[
+    "unsupported-schema-version", "invalid-busy-timeout", "malformed-schema", "migration-required"
+]
 
 
 class SqliteAdapterError(ValueError):
@@ -87,7 +89,7 @@ class SqliteAdapterError(ValueError):
 
 REGISTRY_TABLE = "_mirk_tables"
 META_TABLE = "_mirk_meta"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SqlParam = str | int | float | None
 
@@ -339,42 +341,61 @@ def _stored_schema_version(connection: sqlite3.Connection) -> str | None:
 
 
 def ensure_registry(connection: sqlite3.Connection) -> None:
-    """Create the table registry and stamp the schema version, or refuse the file.
+    """Validate before writes, then recheck and migrate under the writer lock."""
 
-    A file written by a newer adapter may map logical names to physical tables by
-    rules this code does not know, so reading it by the rules below would return
-    the wrong rows rather than fail. Refuse instead.
-    """
-    with _registry_write(connection):
-        connection.execute(_REGISTRY_DDL[0])
+    def version() -> int | None:
+        if not table_exists(connection, META_TABLE):
+            return None
         found = _stored_schema_version(connection)
-        if found is not None:
-            parsed = _parse_version(found)
-            if parsed is not None and parsed > SCHEMA_VERSION:
-                raise SqliteAdapterError(
-                    "unsupported-schema-version",
-                    f"Mirk SQLite file schema version {found} is newer than this"
-                    f" adapter understands ({SCHEMA_VERSION}).",
-                )
-        connection.execute(_REGISTRY_DDL[1])
-        if found is None:
-            connection.execute(
-                f"INSERT OR IGNORE INTO {META_TABLE} (key, value) VALUES ('schema_version', ?)",
-                (str(SCHEMA_VERSION),),
+        if found is None or not re.fullmatch(r"[1-9][0-9]*", found):
+            raise SqliteAdapterError("malformed-schema", "Malformed Mirk schema version")
+        parsed = int(found)
+        if parsed > SCHEMA_VERSION:
+            raise SqliteAdapterError(
+                "unsupported-schema-version",
+                f"Mirk SQLite file schema version {found} is newer than this"
+                f" adapter understands ({SCHEMA_VERSION}).",
             )
+        return parsed
 
+    version()
+    with _registry_write(connection):
+        found = version()
+        if found == SCHEMA_VERSION:
+            for table in (
+                REGISTRY_TABLE,
+                "_mirk_vector_spaces",
+                "_mirk_vector_documents",
+                "_mirk_vector_values",
+            ):
+                if not table_exists(connection, table):
+                    raise SqliteAdapterError("malformed-schema", f"Missing Mirk table {table}")
+            return
+        names = [
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        ]
+        if (
+            found is None
+            and any(name.startswith("_mirk_") for name in names)
+            and not table_exists(connection, REGISTRY_TABLE)
+        ):
+            raise SqliteAdapterError("malformed-schema", "Unrecognized unversioned Mirk layout")
+        if found not in (None, 1, 2):
+            raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
+        for statement in _REGISTRY_DDL:
+            connection.execute(statement)
+        from .sqlite_format import migrate_vectors
 
-_LEADING_INT = re.compile(r"^\s*[+-]?[0-9]+")
-
-
-def _parse_version(value: str) -> int | None:
-    """Leading-integer parse, matching JavaScript ``Number.parseInt(value, 10)``.
-
-    A value that parses to nothing belongs to whichever adapter wrote it and is
-    not turned into a refusal to open.
-    """
-    match = _LEADING_INT.match(value)
-    return None if match is None else int(match.group(0))
+        try:
+            migrate_vectors(connection)
+        except ValueError as error:
+            raise SqliteAdapterError("malformed-schema", str(error)) from error
+        connection.execute(
+            "INSERT INTO _mirk_meta(key,value) VALUES('schema_version',?) ON "
+            "CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
 
 
 def lookup_table(connection: sqlite3.Connection, kind: str, name: str) -> str | None:
