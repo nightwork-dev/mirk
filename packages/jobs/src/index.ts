@@ -233,3 +233,6 @@ export class JobsStore {
     });
   }
 }
+
+export { runClaim } from './runner.js';
+export type { RunClaimOptions } from './runner.js';
