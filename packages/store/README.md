@@ -481,11 +481,39 @@ reported by `inspect()` as `walAutocheckpointPages`) still runs during ordinary 
 
 To back up a live database, take a consistent SQLite snapshot (better-sqlite3's `db.backup()` or
 `VACUUM INTO`), or stop the writers first. Copying the main file without its WAL is not a backup.
-The adapter has no backup or restore operation.
+Migration can request a pre-upgrade snapshot with `backupPath`; ordinary backup and restore remain connection-level operations.
+
+### Migration policy
+
+Both local adapters accept `migration: "auto" | "explicit" | "refuse"` (default `auto`),
+`backupPath?: string`, and `legacyVectorSpace?: string` (default `default`). An ordinary open
+with `explicit` rejects an older file with `migration-required`; `refuse` rejects it with
+`migration-refused`. New files initialize normally under all policies. Unsupported future and
+malformed formats always fail. Read-only connections never migrate.
+
+Use `SqliteAdapter.migrate(options)` or `NodeSqliteAdapter.migrate(options)` to migrate without
+opening application facets. The result is `{ fromVersion, toVersion, changed, backupPath? }`;
+`fromVersion` is null for unversioned/new files. Explicit invocation accepts policy `explicit`,
+but honors `refuse`; change a refusal pin deliberately before migration. Current files return
+`changed: false`, and do not create a backup or rename spaces.
+
+`backupPath` applies only to an actual upgrade of a local file. The source holds its SQLite
+writer lock while a separate read-only connection runs `VACUUM INTO`, so the snapshot includes
+committed WAL data and no competing writer can change the preimage before migration. An existing
+destination, unavailable directory, or snapshot failure raises `backup-failed` and prevents the
+upgrade. The destination is never overwritten. In-memory sources cannot create a migration
+backup (`unsupported-backup`). A snapshot remains available if a later migration step rolls back.
+
+`legacyVectorSpace` selects the old single-vector data's new name inside namespace `default`.
+The name must be nonempty. Existing named spaces are unchanged. Conflicting destination definitions
+or document identities abort the whole upgrade; migration never merges or discards records.
+Format 3 log streams receive generations in SQLite BINARY stream order, preserving sequences and
+records. Existing old receipt tables gain their missing `created_at` column before format 4 is
+stamped; a format 4 file missing that canonical column is malformed.
 
 ### Shared SQLite file format
 
-The shared SQLite format is **3**, recorded as a decimal string in
+The shared SQLite format is **4**, recorded as a decimal string in
 `_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
 are independent. Both Node drivers and Python use these tables and keys:
 
@@ -500,6 +528,8 @@ are independent. Both Node drivers and Python use these tables and keys:
 | `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
 | `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
 | `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
+| `_mirk_log_generation` | Singleton `id=1`, safe nonnegative `value` allocating generations |
+| `_mirk_log_streams` | `stream` primary key, unique positive safe integer `generation` |
 | `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
 | `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
 | `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
@@ -514,7 +544,7 @@ tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
 Open validates version metadata before schema changes. Malformed metadata and unsupported future
 versions fail. Recognized pre-registry or version-1/2 files migrate atomically under `BEGIN
 IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
-the `default` namespace and `default` space; raw BLOBs and nullable metadata are copied unchanged.
+the `default` namespace and the selected legacy space (default `default`); raw BLOBs and nullable metadata are copied unchanged.
 Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
 creates no space. Obsolete vector tables are dropped only after successful copying; the version
 is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
@@ -960,3 +990,5 @@ async only where a remote backend needs it.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.

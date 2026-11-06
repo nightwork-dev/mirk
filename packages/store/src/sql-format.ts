@@ -1,88 +1,34 @@
 import { logGenerationMigrationSql } from "./sql-log-format.js";
-/** The `_mirk_meta.schema_version` this build writes and understands. */
-export const MIRK_SCHEMA_VERSION = 4;
+import {
+  MIRK_SCHEMA_VERSION,
+  MIRK_REGISTRY_DDL,
+  VECTOR_FORMAT_DDL,
+  SqliteFormatError,
+  malformed,
+  query,
+  execute,
+  type Plan,
+  type SqliteMigrationOptions,
+  type SqliteMigrationResult,
+} from "./sql-format-types.js";
+export {
+  MIRK_SCHEMA_VERSION,
+  MIRK_REGISTRY_DDL,
+  VECTOR_FORMAT_DDL,
+  SqliteFormatError,
+} from "./sql-format-types.js";
+export type {
+  SqliteFormatRows,
+  SqliteFormatStep,
+  SqliteFormatErrorCode,
+  SqliteMigrationOptions,
+  SqliteMigrationResult,
+} from "./sql-format-types.js";
 
-export const MIRK_REGISTRY_DDL = `
-  CREATE TABLE IF NOT EXISTS _mirk_tables (
-    kind TEXT NOT NULL,
-    name TEXT NOT NULL,
-    table_name TEXT NOT NULL UNIQUE,
-    PRIMARY KEY (kind, name)
-  );
-  CREATE TABLE IF NOT EXISTS _mirk_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`;
-
-export const VECTOR_FORMAT_DDL = `
-CREATE TABLE IF NOT EXISTS _mirk_vector_spaces (
- namespace TEXT NOT NULL, name TEXT NOT NULL, dimensions INTEGER NOT NULL CHECK(dimensions>0),
- metric TEXT NOT NULL CHECK(metric='cosine'), encoding TEXT NOT NULL CHECK(encoding='float32'), PRIMARY KEY(namespace,name));
-CREATE TABLE IF NOT EXISTS _mirk_vector_documents (
- namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, metadata TEXT, PRIMARY KEY(namespace,collection,id));
-CREATE TABLE IF NOT EXISTS _mirk_vector_values (
- namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, space TEXT NOT NULL, vec BLOB NOT NULL,
- PRIMARY KEY(namespace,collection,id,space),
- FOREIGN KEY(namespace,collection,id) REFERENCES _mirk_vector_documents(namespace,collection,id) ON DELETE CASCADE,
- FOREIGN KEY(namespace,space) REFERENCES _mirk_vector_spaces(namespace,name));`;
-
-export type SqliteFormatRows = Record<string, unknown>[];
-export type SqliteFormatStep =
-  | {
-      kind: "query" | "execute";
-      sql: string;
-      args: readonly (string | number)[];
-    }
-  | { kind: "begin" }
-  | { kind: "commit" }
-  | { kind: "backup"; path: string };
-export type SqliteFormatErrorCode =
-  | "unsupported-schema-version"
-  | "malformed-schema"
-  | "migration-required"
-  | "migration-refused"
-  | "unsupported-backup"
-  | "backup-failed";
-export class SqliteFormatError extends Error {
-  constructor(
-    readonly code: SqliteFormatErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = "SqliteFormatError";
-  }
-}
-
-type Plan<T = void> = Generator<SqliteFormatStep, T, SqliteFormatRows>;
-const malformed = (message: string): never => {
-  throw new SqliteFormatError("malformed-schema", message);
-};
-function* query(
-  sql: string,
-  ...args: (string | number)[]
-): Plan<SqliteFormatRows> {
-  return yield { kind: "query", sql, args };
-}
-function* execute(sql: string, ...args: (string | number)[]): Plan {
-  yield { kind: "execute", sql, args };
-}
-
-/** One migration policy; drivers supply queries and writer admission, and roll back on failure. */
-export interface SqliteMigrationResult {
-  from: number | null;
-  to: number;
-  changed: boolean;
-  backupPath?: string;
-}
-export interface SqliteMigrationOptions {
-  migration?: "auto" | "explicit" | "refuse";
-  backupPath?: string;
-  legacyVectorSpace?: string;
-}
 export function* mirkFormatMigration(
   tablePrefix = "",
   options: SqliteMigrationOptions = {},
+  explicitInvocation = false,
 ): Plan<SqliteMigrationResult> {
   const policy = options.migration ?? "auto";
   const space = options.legacyVectorSpace ?? "default";
@@ -153,6 +99,25 @@ export function* mirkFormatMigration(
       if (!expected.every((column) => actual.includes(column)))
         malformed(`Malformed Mirk table ${table(name)}`);
     }
+    if (yield* exists("_mirk_atomic_receipts")) {
+      const actual = yield* query(
+        `PRAGMA table_info(${table("_mirk_atomic_receipts")})`,
+      );
+      if (
+        ![
+          "idempotency_key",
+          "request_digest",
+          "result_json",
+          "created_at",
+        ].every((name) => actual.some((column) => column.name === name)) ||
+        !actual.some(
+          (column) =>
+            column.name === "created_at" &&
+            String(column.type).toUpperCase() === "INTEGER",
+        )
+      )
+        malformed("Malformed Mirk table _mirk_atomic_receipts");
+    }
   }
   function* older(found: number | null): Plan<boolean> {
     if (found !== null) return true;
@@ -171,7 +136,12 @@ export function* mirkFormatMigration(
     });
   }
   function enforce(isOlder: boolean): void {
-    if (!isOlder || policy === "auto") return;
+    if (
+      !isOlder ||
+      policy === "auto" ||
+      (policy === "explicit" && explicitInvocation)
+    )
+      return;
     throw new SqliteFormatError(
       policy === "refuse" ? "migration-refused" : "migration-required",
       "Mirk SQLite file requires a format migration",
@@ -180,7 +150,11 @@ export function* mirkFormatMigration(
   const initial = yield* version();
   if (initial === MIRK_SCHEMA_VERSION) {
     yield* validateCurrent();
-    return { from: initial, to: MIRK_SCHEMA_VERSION, changed: false };
+    return {
+      fromVersion: initial,
+      toVersion: MIRK_SCHEMA_VERSION,
+      changed: false,
+    };
   }
   enforce(yield* older(initial));
   yield { kind: "begin" };
@@ -188,7 +162,11 @@ export function* mirkFormatMigration(
   if (found === MIRK_SCHEMA_VERSION) {
     yield* validateCurrent();
     yield { kind: "commit" };
-    return { from: found, to: MIRK_SCHEMA_VERSION, changed: false };
+    return {
+      fromVersion: found,
+      toVersion: MIRK_SCHEMA_VERSION,
+      changed: false,
+    };
   }
   const isOlder = yield* older(found);
   enforce(isOlder);
@@ -271,6 +249,30 @@ export function* mirkFormatMigration(
     if (lengths.some((row) => row.n !== dimensions! * 4))
       malformed("Legacy vector dimensions do not match BLOB lengths");
   }
+  if (isOlder && options.backupPath !== undefined) {
+    const candidates = yield* query(
+      "SELECT name FROM sqlite_master WHERE type='table'",
+    );
+    const owned = candidates.find((row) => {
+      const name = String(row.name);
+      return (
+        name === table("vectors") ||
+        name === table("_vec_meta") ||
+        name === table("_kv") ||
+        (name.startsWith(table("_mirk_")) &&
+          !name.startsWith(table("_mirk_coordination_")))
+      );
+    });
+    if (owned) {
+      const name = String(owned.name).slice(tablePrefix.length);
+      const column = (yield* columns(name))[0];
+      // SQLite may admit BEGIN on a read-only connection; zero-row DML checks write access without changing its preimage.
+      if (column)
+        yield* execute(
+          `UPDATE "${table(name).replaceAll('"', '""')}" SET "${column.replaceAll('"', '""')}"="${column.replaceAll('"', '""')}" WHERE 0`,
+        );
+    }
+  }
   if (isOlder && options.backupPath !== undefined)
     yield { kind: "backup", path: options.backupPath };
   const ddl = `${MIRK_REGISTRY_DDL}\n${VECTOR_FORMAT_DDL}`.replace(
@@ -315,8 +317,8 @@ export function* mirkFormatMigration(
   );
   yield { kind: "commit" };
   return {
-    from: found,
-    to: MIRK_SCHEMA_VERSION,
+    fromVersion: found,
+    toVersion: MIRK_SCHEMA_VERSION,
     changed: true,
     ...(isOlder && options.backupPath !== undefined
       ? { backupPath: options.backupPath }

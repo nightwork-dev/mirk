@@ -32,7 +32,14 @@ export class LibsqlAdapter extends LibsqlAdapterCore {
   static async migrate(
     opts: LibsqlAdapterOptions,
   ): Promise<SqliteMigrationResult> {
-    const adapter = await this.open({ ...opts, migration: "auto" });
+    const adapter = await openLibsqlAdapter(
+      opts,
+      createClient,
+      (client, ownsClient, options) =>
+        new LibsqlAdapter(client, ownsClient, options),
+      backupSqliteFile,
+      true,
+    );
     const result = adapter.migrationResult;
     adapter.close();
     return result;

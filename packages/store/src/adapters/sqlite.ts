@@ -48,13 +48,14 @@ export class SqliteAdapter extends SqliteAdapterCore {
       return ensureMirkFormat(
         driver,
         (code, message) => new SqliteAdapterError(code, message),
-        { ...opts, migration: "auto" },
+        opts,
         (path) =>
           sqliteSnapshot(
             driver,
             path,
             (source) => new BetterSqliteDatabase(source, { readonly: true }),
           ),
+        true,
       );
     } finally {
       if (!opts.db) db.close();

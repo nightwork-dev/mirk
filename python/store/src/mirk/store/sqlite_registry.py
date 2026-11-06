@@ -79,10 +79,10 @@ def _stored_schema_version(connection: sqlite3.Connection) -> str | None:
 
 
 class SqliteMigrationResult(TypedDict):
-    from_version: int | None
-    to_version: int
+    fromVersion: int | None
+    toVersion: int
     changed: bool
-    backup_path: NotRequired[str]
+    backupPath: NotRequired[str]
 
 
 def ensure_registry(
@@ -91,12 +91,13 @@ def ensure_registry(
     migration: str = "auto",
     backup_path: str | None = None,
     legacy_vector_space: str = "default",
+    _explicit_invocation: bool = False,
 ) -> SqliteMigrationResult:
     """Validate before writes, then recheck and migrate under the writer lock."""
 
     if migration not in ("auto", "explicit", "refuse"):
         raise ValueError("Invalid migration policy")
-    if not isinstance(legacy_vector_space, str) or not legacy_vector_space:
+    if not legacy_vector_space:
         raise ValueError("legacy_vector_space must be nonempty")
     if backup_path is not None and not backup_path:
         raise ValueError("backup_path must be nonempty")
@@ -115,7 +116,11 @@ def ensure_registry(
         )
 
     def enforce(is_older: bool) -> None:
-        if is_older and migration != "auto":
+        if (
+            is_older
+            and migration != "auto"
+            and not (migration == "explicit" and _explicit_invocation)
+        ):
             raise SqliteAdapterError(
                 "migration-refused" if migration == "refuse" else "migration-required",
                 "Mirk SQLite file requires a format migration",
@@ -153,17 +158,28 @@ def ensure_registry(
             if not set(expected).issubset(columns):
                 raise SqliteAdapterError("malformed-schema", f"Malformed Mirk table {table}")
 
+        if table_exists(connection, "_mirk_atomic_receipts"):
+            actual = connection.execute("PRAGMA table_info(_mirk_atomic_receipts)").fetchall()
+            if not {"idempotency_key", "request_digest", "result_json", "created_at"}.issubset(
+                {row[1] for row in actual}
+            ) or not any(
+                row[1] == "created_at" and str(row[2]).upper() == "INTEGER" for row in actual
+            ):
+                raise SqliteAdapterError(
+                    "malformed-schema", "Malformed Mirk table _mirk_atomic_receipts"
+                )
+
     initial = version()
     if initial == SCHEMA_VERSION:
         validate_current()
-        return {"from_version": initial, "to_version": SCHEMA_VERSION, "changed": False}
+        return {"fromVersion": initial, "toVersion": SCHEMA_VERSION, "changed": False}
     enforce(older(initial))
     try:
         with _registry_write(connection):
             found = version()
             if found == SCHEMA_VERSION:
                 validate_current()
-                return {"from_version": found, "to_version": SCHEMA_VERSION, "changed": False}
+                return {"fromVersion": found, "toVersion": SCHEMA_VERSION, "changed": False}
             is_older = older(found)
             enforce(is_older)
             names = [
@@ -196,6 +212,24 @@ def ensure_registry(
             if found not in (None, 1, 2, 3):
                 raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
             if is_older and backup_path is not None:
+                owned = next(
+                    (
+                        name
+                        for name in names
+                        if name in ("vectors", "_vec_meta", "_kv")
+                        or (
+                            name.startswith("_mirk_") and not name.startswith("_mirk_coordination_")
+                        )
+                    ),
+                    None,
+                )
+                if owned:
+                    column = connection.execute(f'PRAGMA table_info("{owned}")').fetchone()[1]
+                    quoted_name = owned.replace('"', '""')
+                    quoted_column = str(column).replace('"', '""')
+                    connection.execute(
+                        f'UPDATE "{quoted_name}" SET "{quoted_column}"="{quoted_column}" WHERE 0'
+                    )
                 snapshot(connection, backup_path)
             for statement in _REGISTRY_DDL:
                 connection.execute(statement)
@@ -214,7 +248,8 @@ def ensure_registry(
                         "ALTER TABLE _mirk_atomic_receipts ADD COLUMN created_at INTEGER"
                     )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at ON _mirk_atomic_receipts (created_at)"
+                    "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at "
+                    "ON _mirk_atomic_receipts (created_at)"
                 )
             from .sqlite_log_format import migrate_log_generations
 
@@ -225,12 +260,12 @@ def ensure_registry(
                 (str(SCHEMA_VERSION),),
             )
         result: SqliteMigrationResult = {
-            "from_version": found,
-            "to_version": SCHEMA_VERSION,
+            "fromVersion": found,
+            "toVersion": SCHEMA_VERSION,
             "changed": True,
         }
         if is_older and backup_path is not None:
-            result["backup_path"] = backup_path
+            result["backupPath"] = backup_path
         return result
     except sqlite3.OperationalError as error:
         if getattr(error, "sqlite_errorname", "").startswith("SQLITE_READONLY"):
@@ -266,12 +301,20 @@ def snapshot(connection: sqlite3.Connection, destination: str) -> None:
 
 
 def migrate_sqlite(
-    path: str, *, backup_path: str | None = None, legacy_vector_space: str = "default"
+    path: str,
+    *,
+    migration: str = "explicit",
+    backup_path: str | None = None,
+    legacy_vector_space: str = "default",
 ) -> SqliteMigrationResult:
     connection = sqlite3.connect(path, isolation_level=None)
     try:
         return ensure_registry(
-            connection, backup_path=backup_path, legacy_vector_space=legacy_vector_space
+            connection,
+            migration=migration,
+            backup_path=backup_path,
+            legacy_vector_space=legacy_vector_space,
+            _explicit_invocation=True,
         )
     finally:
         connection.close()

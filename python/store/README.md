@@ -187,6 +187,29 @@ connection = sqlite3.connect("data.db")
 store = SqliteStore("data.db", connection=connection)  # takes over autocommit
 ```
 
+## Migration policy
+
+`SqliteStore(path, migration="auto", backup_path=None, legacy_vector_space="default")` retains
+automatic upgrades by default. Ordinary opens with `migration="explicit"` raise
+`migration-required` for older files; `"refuse"` raises `migration-refused`. New files initialize
+under either policy. Future/malformed formats fail and read-only connections never migrate.
+
+`migrate_sqlite(path, migration="explicit", backup_path=None, legacy_vector_space="default")`
+from `mirk.store.sqlite` performs only the explicit format operation. It returns
+`{"fromVersion": old_or_none, "toVersion": 4, "changed": bool, "backupPath": path_if_created}`.
+Explicit operations honor a `"refuse"` policy too. Current files are unchanged, create no backup,
+and do not rename existing spaces.
+
+For an actual upgrade, `backup_path` creates a consistent SQLite snapshot including committed WAL
+records. Writer admission is held from snapshot through migration. The implementation uses a
+separate read-only connection and `VACUUM INTO`; an existing destination or backup failure raises
+`backup-failed` before migration, without overwriting the destination. Memory databases raise
+`unsupported-backup`. A successful snapshot remains if a later migration fails.
+`legacy_vector_space` must be nonempty and maps old vectors into that name in namespace `default`.
+Destination conflicts abort atomically, without lossy merging. Format 4 assigns old log streams
+generations in SQLite BINARY order and repairs the historical missing receipt `created_at` column
+before stamping the version. A current-format file missing that column is malformed.
+
 ## File layout and schema version
 
 A SQLite file carries a table registry, `_mirk_tables(kind, name, table_name)`,
@@ -204,7 +227,7 @@ A file written before the registry existed keeps working. The first open records
 the table it already has under its logical name, in place, with no rewrite.
 
 
-The shared SQLite format is **3**, recorded as a decimal string in
+The shared SQLite format is **4**, recorded as a decimal string in
 `_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
 are independent. Both Node drivers and Python use these tables and keys:
 
@@ -219,6 +242,8 @@ are independent. Both Node drivers and Python use these tables and keys:
 | `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
 | `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
 | `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
+| `_mirk_log_generation` | Singleton `id=1`, safe nonnegative `value` allocating generations |
+| `_mirk_log_streams` | `stream` primary key, unique positive safe integer `generation` |
 | `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
 | `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
 | `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
@@ -233,7 +258,7 @@ tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
 Open validates version metadata before schema changes. Malformed metadata and unsupported future
 versions fail. Recognized pre-registry or version-1/2 files migrate atomically under `BEGIN
 IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
-the `default` namespace and `default` space; raw BLOBs and nullable metadata are copied unchanged.
+the `default` namespace and the selected legacy space (default `default`); raw BLOBs and nullable metadata are copied unchanged.
 Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
 creates no space. Obsolete vector tables are dropped only after successful copying; the version
 is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
@@ -376,3 +401,5 @@ last_generation INTEGER NOT NULL)` retains history after release, with primary k
 `expires_at_ms INTEGER NOT NULL`, and `updated_at_ms INTEGER NOT NULL`. Times are epoch milliseconds;
 expiry is inclusive at `expires_at_ms <= now`. The default namespace is `default`.
 These are the same tables used by the TypeScript source; they can coexist with store tables.
+
+Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.

@@ -14,8 +14,9 @@ export function ensureMirkFormat(
   failure: Failure,
   options: SqliteMigrationOptions = {},
   backup?: (path: string) => void,
+  explicitInvocation = false,
 ): SqliteMigrationResult {
-  const plan = mirkFormatMigration("", options);
+  const plan = mirkFormatMigration("", options, explicitInvocation);
   let next = plan.next();
   const drain = (): void => {
     while (!next.done) {
@@ -56,8 +57,8 @@ export function ensureMirkFormat(
     if (
       error &&
       typeof error === "object" &&
-      "code" in error &&
-      String(error.code).startsWith("SQLITE_READONLY")
+      (("code" in error && String(error.code).startsWith("SQLITE_READONLY")) ||
+        ("errcode" in error && (Number(error.errcode) & 255) === 8))
     )
       throw failure(
         "migration-required",

@@ -246,6 +246,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     versionIdentity: string,
     options: LibsqlAdapterOptions,
     backup?: (source: string, destination: string) => void,
+    explicitInvocation = false,
   ): Promise<void> {
     await this.transaction(async () => {
       this.migrationResult = await ensureMirkRegistry(
@@ -254,8 +255,10 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
         (code, message) => new LibsqlAdapterError(code, message),
         options,
         backup,
+        explicitInvocation,
       );
-      await (this.kv as LibsqlKvFacet).init(versionIdentity);
+      if (!explicitInvocation)
+        await (this.kv as LibsqlKvFacet).init(versionIdentity);
     });
   }
 }
@@ -272,6 +275,7 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
     opts: LibsqlAdapterOptions,
   ) => T,
   backup?: (source: string, destination: string) => void,
+  explicitInvocation = false,
 ): Promise<T> {
   validateOptions(opts);
   if (
@@ -297,6 +301,7 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
       opts.versionIdentity ?? crypto.randomUUID(),
       opts,
       backup,
+      explicitInvocation,
     );
     return adapter;
   } catch (err) {
