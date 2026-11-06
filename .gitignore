@@ -44,3 +44,11 @@ test-results/
 
 # Vitest browser-mode failure captures
 __screenshots__/
+
+# Prepared optional native companion source and compiler output
+python/sqlite-vec-native/src/mirk_sqlite_vec_native/_native/
+python/sqlite-vec-native/build/
+python/sqlite-vec-native/*.egg-info/
+python/sqlite-vec-native/src/*.egg-info/
+python/sqlite-vec-native/src/mirk_sqlite_vec_native/*.so
+python/sqlite-vec-native/src/mirk_sqlite_vec_native/*.dll

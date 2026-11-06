@@ -169,6 +169,15 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.19.21)(@vitest/browser-playwright@4.1.12)(vite@7.3.7(@types/node@22.19.21)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/sqlite-vec-native:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.19.2
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/statements:
     dependencies:
       '@mirk/store':
@@ -196,6 +205,9 @@ importers:
       '@mirk/fixtures':
         specifier: workspace:^
         version: link:../fixtures
+      '@mirk/sqlite-vec-native':
+        specifier: workspace:^
+        version: link:../sqlite-vec-native
       '@types/better-sqlite3':
         specifier: ^7.6.0
         version: 7.6.13
@@ -205,9 +217,6 @@ importers:
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
-      sqlite-vec:
-        specifier: 0.1.6
-        version: 0.1.6
       tsup:
         specifier: ^9.0.0
         version: 9.0.0(postcss@8.5.23)(tsx@4.23.13)(typescript@5.9.3)(yaml@2.9.0)
@@ -1003,6 +1012,9 @@ packages:
   '@types/node@22.19.21':
     resolution: {integrity: sha512-VMeFBSCKQKmm2swI2kW51SFusDqekC6q9trBCvJ/JliDchFSuoYYKN7yVNjPthP1HKZcx3U1gI/wTcEBjEFKTA==}
 
+  '@types/node@24.19.2':
+    resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
+
   '@types/node@25.9.3':
     resolution: {integrity: sha512-603BddQMv3pUcr4U2dhujk83N2tTDVr/34wII2B6bJy6g+8WD6yUb11jszNs0gdi4PesVWl7ABt8nYMVpnLUcg==}
 
@@ -1505,29 +1517,6 @@ packages:
   split2@4.2.0:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
-
-  sqlite-vec-darwin-arm64@0.1.6:
-    resolution: {integrity: sha512-5duw/xhM3xE6BCQd//eAkyHgBp9FIwK6veldRhPG96dT6Zpjov3bG02RuE7JAQj0SVJYRW8bJwZ4LxqW0+Q7Dw==}
-    cpu: [arm64]
-    os: [darwin]
-
-  sqlite-vec-darwin-x64@0.1.6:
-    resolution: {integrity: sha512-MFkKjNfJ5pamFHhyTsrqdxALrjuvpSEZdu6Q/0vMxFa6sr5YlfabeT5xGqEbuH0iobsT1Hca5EZxLhLy0jHYkw==}
-    cpu: [x64]
-    os: [darwin]
-
-  sqlite-vec-linux-x64@0.1.6:
-    resolution: {integrity: sha512-411tWPswywIzdkp+zsAUav4A03f0FjnNfpZFlOw8fBebFR74RSFkwM8Xryf18gLHiYAXUBI4mjY9+/xjwBjKpg==}
-    cpu: [x64]
-    os: [linux]
-
-  sqlite-vec-windows-x64@0.1.6:
-    resolution: {integrity: sha512-Dy9/KlKJDrjuQ/RRkBqGkMZuSh5bTJDMMOFZft9VJZaXzpYxb5alpgdvD4bbKegpDdfPi2BT4+PBivsNJSlMoQ==}
-    cpu: [x64]
-    os: [win32]
-
-  sqlite-vec@0.1.6:
-    resolution: {integrity: sha512-hQZU700TU2vWPXZYDULODjKXeMio6rKX7UpPN7Tq9qjPW671IEgURGrcC5LDBMl0q9rBvAuzmcmJmImMqVibYQ==}
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
@@ -2246,6 +2235,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/node@24.19.2':
+    dependencies:
+      undici-types: 7.24.6
+
   '@types/node@25.9.3':
     dependencies:
       undici-types: 7.24.6
@@ -2805,25 +2798,6 @@ snapshots:
 
   split2@4.2.0: {}
 
-  sqlite-vec-darwin-arm64@0.1.6:
-    optional: true
-
-  sqlite-vec-darwin-x64@0.1.6:
-    optional: true
-
-  sqlite-vec-linux-x64@0.1.6:
-    optional: true
-
-  sqlite-vec-windows-x64@0.1.6:
-    optional: true
-
-  sqlite-vec@0.1.6:
-    optionalDependencies:
-      sqlite-vec-darwin-arm64: 0.1.6
-      sqlite-vec-darwin-x64: 0.1.6
-      sqlite-vec-linux-x64: 0.1.6
-      sqlite-vec-windows-x64: 0.1.6
-
   stackback@0.0.2: {}
 
   std-env@4.3.0: {}
@@ -2914,8 +2888,7 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  undici-types@7.24.6:
-    optional: true
+  undici-types@7.24.6: {}
 
   undici@6.29.1: {}
 
