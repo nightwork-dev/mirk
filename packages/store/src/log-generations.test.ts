@@ -1,3 +1,6 @@
+import { DatabaseSync } from "node:sqlite";
+import { InMemoryKv } from "./kv.js";
+import { createMemoryTransactions } from "./transaction.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,4 +86,39 @@ it("a real competing SQLite process cannot return replacement entries for an old
     expect(await exited, errors).toBe(0);
     expect(() => reader.log.list("s", { after: cursor })).toThrow("missing or replaced");
   } finally { writer.kill(); reader.close(); }
+});
+
+it("shared memory savepoints restore the stream epoch and allocation counter", async () => {
+  const kv = new InMemoryKv(); const log = new InMemoryLogStore();
+  const tx = createMemoryTransactions({ kv, log });
+  log.append("s", "original"); const cursor = log.lastCursor("s")!;
+  await expect(tx.transaction(async () => {
+    kv.set("outer", true);
+    await expect(tx.transaction(() => {
+      log.deleteStream("s"); log.append("s", "inner replacement"); log.append("inner", "temporary");
+      throw new Error("inner");
+    })).rejects.toThrow("inner");
+    expect(log.lastCursor("s")).toEqual(cursor);
+    expect(log.lastCursor("inner")).toBeNull();
+    log.append("outer-new", "temporary");
+    throw new Error("outer");
+  })).rejects.toThrow("outer");
+  expect(kv.has("outer")).toBe(false);
+  expect(log.lastCursor("s")).toEqual(cursor);
+  expect(log.lastCursor("outer-new")).toBeNull();
+  log.append("after", "committed");
+  expect(log.lastCursor("after")!.generation).toBe(2);
+});
+
+it("refuses exhausted generation allocation without wrapping or leaving a live stream", () => {
+  const raw = new DatabaseSync(":memory:");
+  const db = new NodeSqliteAdapter({ path: ":memory:", db: raw });
+  try {
+    db.log.append("existing", "one");
+    raw.exec("UPDATE _mirk_log_generation SET value = 9007199254740991 WHERE id = 1");
+    expect(() => db.log.append("new", "refused")).toThrow("generation counter exhausted");
+    expect(db.log.lastCursor("new")).toBeNull();
+    expect(db.log.append("existing", "two")).toBe(2);
+    expect(raw.prepare("SELECT COUNT(*) AS n FROM _mirk_log_streams").get()).toEqual({ n: 1 });
+  } finally { db.close(); raw.close(); }
 });

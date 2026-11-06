@@ -118,6 +118,7 @@ describe.each(adapters)("SQLite log facet (%s)", (_name, Adapter) => {
     const adapter = new Adapter({ path: tempFile() });
     try {
       await adapter.asyncLog.append("s", "first");
+      expect(await adapter.asyncLog.lastCursor("s")).toEqual({ generation: 1, sequence: 1 });
       await expect(
         adapter.asyncTransaction(async () => {
           expect(await adapter.asyncLog.append("s", "rolled back")).toBe(2);
