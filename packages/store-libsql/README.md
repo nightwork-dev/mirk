@@ -32,7 +32,7 @@ import { LibsqlAdapter } from "@mirk/store-libsql";
 
 const adapter = await LibsqlAdapter.open({
   url: "file:./data.db", // or "libsql://your-db.turso.io" with an authToken, or ":memory:"
-  dimensions: 4,         // the size of your embeddings; only needed for .vector
+  namespace: "default", // optional vector namespace
 });
 
 // .kv is an AsyncStore: key-values and collections
@@ -41,12 +41,13 @@ await adapter.kv.put("tasks", { id: "t1", title: "Send invoice", status: "open" 
 const open = await adapter.kv.list("tasks", { where: { status: "open" } });
 
 // .vector is an AsyncVectorStore: similarity search
+await adapter.vector.ensureSpace("text", { dimensions: 4 });
 await adapter.vector.upsert("docs", {
   id: "a",
-  vector: Float32Array.from([1, 0, 0, 0]),
+  vectors: { text: Float32Array.from([1, 0, 0, 0]) },
   metadata: { type: "document" },
 });
-const hits = await adapter.vector.search("docs", Float32Array.from([1, 0, 0, 0]), {
+const hits = await adapter.vector.search("docs", { space: "text", vector: Float32Array.from([1, 0, 0, 0]) }, {
   topK: 5,
   where: { type: "document" }, // the filter applies before the top-K cut
 });
@@ -70,7 +71,7 @@ For a hosted database, use a remote URL and a token:
 const adapter = await LibsqlAdapter.open({
   url: "libsql://your-db.turso.io",
   authToken: process.env.TURSO_AUTH_TOKEN,
-  dimensions: 1536,
+  namespace: "default",
 });
 ```
 
@@ -89,7 +90,7 @@ ESM-only (there is no CommonJS build).
 | --- | --- | --- |
 | Key-values | yes | `adapter.kv` (`AsyncStore`) |
 | Collections | yes | `adapter.kv` (`AsyncStore`), plus `listWhereIn` (`AsyncStoreInQuery`) and `ensureIndex` (`AsyncStoreIndexes`) |
-| Vectors | yes | `adapter.vector` (`AsyncVectorStore`), needs `dimensions` |
+| Vectors | yes | `adapter.vector` (`AsyncVectorStore`), declared named spaces |
 | Atomic writes | yes | `adapter.kv` (`AsyncAtomicMutationStore`): `getVersioned`, `mutateAtomically` |
 | Transactions | yes | the adapter implements `AsyncStoreTransactions`: `transaction()` and `afterCommit()` |
 | Full-text search | no | use `@mirk/store/sqlite` or another `AsyncSearchStore` backend |
@@ -144,7 +145,7 @@ For the remote export, create supplied clients with `createClient` from `@libsql
 ```ts
 import { createClient } from "@libsql/client";
 const client = createClient({ url: "file:./data.db" });
-const adapter = await LibsqlAdapter.open({ url: "file:./data.db", client, dimensions: 4 });
+const adapter = await LibsqlAdapter.open({ url: "file:./data.db", client });
 // adapter.close() will NOT close `client`.
 ```
 
@@ -159,7 +160,7 @@ const adapter = await LibsqlAdapter.open({ url: "file:./data.db", client, dimens
 | `url` | `string` | `libsql://…`, `file:…`, or `:memory:` |
 | `authToken` | `string?` | for remote/Turso databases |
 | `client` | `Client?` | reuse an existing `@libsql/client` (not closed on `close()`) |
-| `dimensions` | `number?` | required for the `.vector` facet; persisted and enforced across reopens |
+| `namespace` | `string?` | logical vector namespace; default `default` |
 | `forceJsCosine` | `boolean?` | force the exact JS-cosine search path (parity testing) |
 | `tablePrefix` | `string?` | prefix for every table the adapter creates, so several stores share one database; letters, digits, and underscores, starting with a letter |
 | `atomicLimits` | `Partial<AtomicMutationLimits>?` | override the atomic request bounds |
@@ -170,7 +171,7 @@ const adapter = await LibsqlAdapter.open({ url: "file:./data.db", client, dimens
 
 The adapter exposes `readonly kv: AsyncStore & AsyncAtomicMutationStore & AsyncReceiptPruning`,
 `readonly vector: AsyncVectorStore`, `transaction(work)`, `afterCommit(notify)`, and
-`close(): void`. Key-values work without `dimensions`.
+`close(): void`. Call `vector.ensureSpace(name, { dimensions })` before vector writes.
 
 Without a `tablePrefix`, a local file uses the same tables as `@mirk/store/sqlite`, including its
 version and receipt tables, so the two adapters read each other's data and tokens.
@@ -256,23 +257,32 @@ then fails with `transaction-expired`, and its writes are rolled back.
 A store call that outlives its transaction's `work` fails with `TransactionScopeError`
 (`transaction-ended`), even while the commit is still in flight.
 
-### Search semantics
+### Named vector spaces and search
 
-- **No filters, a usable query, and acceleration available:** native `vector_top_k` plus
-  `vector_distance_cos` (`score = 1 − distance`), with `minScore` applied.
-- **Any `where` or `whereNot`:** the exact JS path. Rows for the collection are fetched,
-  **filtered first**, then scored and cut to `topK`. This guarantees `topK` is the true nearest
-  **within the filtered set**, the same semantics as `@mirk/store`'s in-memory and SQLite backends.
+`vector.ensureSpace(name, { dimensions })` persists an immutable definition shared by every
+collection in the namespace. `listSpaces()` returns names in code-point order with dimensions,
+cosine metric and float32 encoding. Conflicting definitions raise `space-definition-conflict`.
+Upserts require nonempty maps of declared, correctly sized vectors; they replace the complete map
+and metadata. Batch validation and every write occur in one transaction. Counts are documents;
+removal deletes every embedding. Search takes `{ space, vector }`; missing selected spaces omit
+documents and unknown spaces error.
 
-Native search errors propagate to the caller. They do not trigger a full collection scan. Use
-`forceJsCosine` to select JavaScript scoring explicitly.
+With a usable query and no metadata filters, search computes `vector_distance_cos` natively in SQL
+over the selected namespace, collection and space, then orders and limits in SQL. It uses canonical
+float32 BLOBs in the shared format-three tables. Different spaces can have different dimensions;
+there is no fixed-dimension ANN index or `vector_top_k` path. Native computation does not imply
+sublinear search. Native errors remain visible and do not select JavaScript scoring automatically.
 
-The native path uses libSQL's own vector support: `F32_BLOB(N)` columns, `vector32()`,
-`vector_distance_cos()`, and the `vector_top_k('idx', vec, k)` function over a `libsql_vector_idx`
-index. No extension to load; it works everywhere libSQL runs.
+The existing exact JavaScript scoring path handles `where`/`whereNot`, unusable queries, and an
+explicit `forceJsCosine`. Filters apply before scoring. This retains the adapter's prior numerical
+scope: native libSQL scores may differ from the float64 reference near cutoffs. It does not claim
+full native float64 corpus parity. `meta.accelerated` identifies the configured native computation
+path; there is no global dimensions field.
 
-Dimensionality is persisted in a `_vec_meta` row and enforced on reopen. Opening a store at a
-different dimension than it was created with throws.
+Opening a recognized format-two file migrates vectors atomically into space `default` in namespace
+`default`, preserving raw bytes, absent metadata and application tables. Format-three files share
+the ordinary SQLite vector layout documented by `@mirk/store`; older implicit vector tables are
+removed only after their data has been copied. Unsupported newer or malformed formats fail.
 
 ### Native SQLite security scope
 
@@ -280,8 +290,7 @@ The local libSQL engine currently lacks published SQLite FTS5 and WAL fixes. The
 libSQL native release also lacks these fixes; an SDK upgrade alone does not resolve them. See the
 [upstream report](https://github.com/tursodatabase/libsql/issues/2271) and
 [SQLite release notes](https://sqlite.org/releaselog/3_53_2.html). For local storage, use
-`@mirk/store/node-sqlite` or the better-sqlite3 13 adapter. Existing libSQL vector tables require a
-separate migration before switching adapters. Remote server operators remain responsible for their
+`@mirk/store/node-sqlite` or the better-sqlite3 13 adapter. Format-three vector tables use the shared SQLite layout. Remote server operators remain responsible for their
 server's SQLite build.
 
 ### Remote integration check

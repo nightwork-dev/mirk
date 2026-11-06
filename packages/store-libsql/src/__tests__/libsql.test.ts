@@ -148,19 +148,20 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
   let adapter: LibsqlAdapter;
 
   beforeEach(async () => {
-    adapter = await LibsqlAdapter.open({ url: ":memory:", dimensions: DIMS });
+    adapter = await LibsqlAdapter.open({ url: ":memory:", });
+    await adapter.vector.ensureSpace("default", { dimensions: DIMS });
   });
   afterEach(() => adapter.close());
 
   it("upsert + get round-trips vector and metadata", async () => {
     await adapter.vector.upsert("docs", {
       id: "a",
-      vector: v(1, 0, 0, 0),
+      vectors: { default: v(1, 0, 0, 0) },
       metadata: { tag: "x" },
     });
     const got = await adapter.vector.get("docs", "a");
     expect(got).not.toBeNull();
-    expect(Array.from(got!.vector)).toEqual([1, 0, 0, 0]);
+    expect(Array.from(got!.vectors.default!)).toEqual([1, 0, 0, 0]);
     expect(got!.metadata).toEqual({ tag: "x" });
   });
 
@@ -169,20 +170,20 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
   });
 
   it("has returns true for present, false for absent", async () => {
-    await adapter.vector.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+    await adapter.vector.upsert("docs", { id: "a", vectors: { default: v(1, 0, 0, 0) } });
     expect(await adapter.vector.has("docs", "a")).toBe(true);
     expect(await adapter.vector.has("docs", "z")).toBe(false);
   });
 
   it("upsert replaces existing (count stays 1)", async () => {
-    await adapter.vector.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
-    await adapter.vector.upsert("docs", { id: "a", vector: v(0, 1, 0, 0) });
+    await adapter.vector.upsert("docs", { id: "a", vectors: { default: v(1, 0, 0, 0) } });
+    await adapter.vector.upsert("docs", { id: "a", vectors: { default: v(0, 1, 0, 0) } });
     expect(await adapter.vector.count("docs")).toBe(1);
-    expect(Array.from((await adapter.vector.get("docs", "a"))!.vector)).toEqual([0, 1, 0, 0]);
+    expect(Array.from((await adapter.vector.get("docs", "a"))!.vectors.default!)).toEqual([0, 1, 0, 0]);
   });
 
   it("remove returns true then false; count tracks it", async () => {
-    await adapter.vector.upsert("docs", { id: "a", vector: v(1, 0, 0, 0) });
+    await adapter.vector.upsert("docs", { id: "a", vectors: { default: v(1, 0, 0, 0) } });
     expect(await adapter.vector.count("docs")).toBe(1);
     expect(await adapter.vector.remove("docs", "a")).toBe(true);
     expect(await adapter.vector.remove("docs", "a")).toBe(false);
@@ -191,25 +192,26 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
 
   it("upsertMany + search returns nearest before far", async () => {
     await adapter.vector.upsertMany("docs", [
-      { id: "near", vector: v(1, 0, 0, 0) },
-      { id: "mid", vector: v(0.7, 0.7, 0, 0) },
-      { id: "far", vector: v(0, 0, 1, 0) },
+      { id: "near", vectors: { default: v(1, 0, 0, 0) } },
+      { id: "mid", vectors: { default: v(0.7, 0.7, 0, 0) } },
+      { id: "far", vectors: { default: v(0, 0, 1, 0) } },
     ]);
-    const res = await adapter.vector.search("docs", v(1, 0, 0, 0), { topK: 3 });
+    const res = await adapter.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) }, { topK: 3 });
     expect(res.map((r) => r.id)).toEqual(["near", "mid", "far"]);
     expect(res[0]!.score).toBeGreaterThan(res[1]!.score);
     expect(res[1]!.score).toBeGreaterThan(res[2]!.score);
   });
 
-  it("surfaces native index failures instead of silently scanning the collection", async () => {
+  it("surfaces native vector failures instead of silently scanning the collection", async () => {
     const client = createClient({ url: ":memory:" });
-    const native = await LibsqlAdapter.open({ url: ":memory:", client, dimensions: DIMS });
+    const native = await LibsqlAdapter.open({ url: ":memory:", client, });
+    await native.vector.ensureSpace("default", { dimensions: DIMS });
     try {
-      await native.vector.upsert("docs", { id: "near", vector: v(1, 0, 0, 0) });
-      expect((await native.vector.search("docs", v(1, 0, 0, 0))).map((hit) => hit.id)).toEqual(["near"]);
-      await client.execute("DROP INDEX vectors_vec_idx");
-      await expect(native.vector.search("docs", v(1, 0, 0, 0))).rejects.toThrow(/index/i);
-      expect(await native.vector.search("docs", v(1, 0, 0, 0), { where: { kind: "missing" } })).toEqual([]);
+      await native.vector.upsert("docs", { id: "near", vectors: { default: v(1, 0, 0, 0) } });
+      expect((await native.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) })).map((hit) => hit.id)).toEqual(["near"]);
+      await client.execute("UPDATE _mirk_vector_values SET vec = x'00'");
+      await expect(native.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) })).rejects.toThrow();
+      expect(await native.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) }, { where: { kind: "missing" } })).toEqual([]);
     } finally {
       native.close();
       client.close();
@@ -218,20 +220,21 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
 
   it("minScore floors out weak matches", async () => {
     await adapter.vector.upsertMany("docs", [
-      { id: "near", vector: v(1, 0, 0, 0) },
-      { id: "ortho", vector: v(0, 1, 0, 0) },
+      { id: "near", vectors: { default: v(1, 0, 0, 0) } },
+      { id: "ortho", vectors: { default: v(0, 1, 0, 0) } },
     ]);
-    const res = await adapter.vector.search("docs", v(1, 0, 0, 0), { topK: 10, minScore: 0.5 });
+    const res = await adapter.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) }, { topK: 10, minScore: 0.5 });
     expect(res.map((r) => r.id)).toEqual(["near"]);
   });
 
   it.each([false, true])(
     "breaks score ties by code point, not locale collation or UTF-16 code unit (forceJsCosine: %s)",
     async (forceJsCosine) => {
-      const tied = await LibsqlAdapter.open({ url: ":memory:", dimensions: DIMS, forceJsCosine });
+      const tied = await LibsqlAdapter.open({ url: ":memory:",  forceJsCosine });
+    await tied.vector.ensureSpace("default", { dimensions: DIMS });
       const ids = ["a", "B", "_", "é", "Z", "\u{1F600}", "\uFFFD"];
-      await tied.vector.upsertMany("docs", ids.map((id) => ({ id, vector: v(1, 0, 0, 0) })));
-      const res = await tied.vector.search("docs", v(1, 0, 0, 0), { topK: ids.length });
+      await tied.vector.upsertMany("docs", ids.map((id) => ({ id, vectors: { default: v(1, 0, 0, 0) } })));
+      const res = await tied.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) }, { topK: ids.length });
       expect(res.map((r) => r.id)).toEqual(["B", "Z", "_", "a", "é", "\uFFFD", "\u{1F600}"]);
       tied.close();
     },
@@ -239,30 +242,33 @@ describe("LibsqlVectorFacet (AsyncVectorStore)", () => {
 
   it("vectors persist across close + reopen (file: db)", async () => {
     const { url } = fileUrl();
-    const a1 = await LibsqlAdapter.open({ url, dimensions: DIMS });
+    const a1 = await LibsqlAdapter.open({ url, });
+    await a1.vector.ensureSpace("default", { dimensions: DIMS });
     await a1.vector.upsertMany("docs", [
-      { id: "a", vector: v(1, 0, 0, 0), metadata: { k: 1 } },
-      { id: "b", vector: v(0, 1, 0, 0), metadata: { k: 2 } },
+      { id: "a", vectors: { default: v(1, 0, 0, 0) }, metadata: { k: 1 } },
+      { id: "b", vectors: { default: v(0, 1, 0, 0) }, metadata: { k: 2 } },
     ]);
     a1.close();
 
-    const a2 = await LibsqlAdapter.open({ url, dimensions: DIMS });
+    const a2 = await LibsqlAdapter.open({ url, });
+    await a2.vector.ensureSpace("default", { dimensions: DIMS });
     expect(await a2.vector.count("docs")).toBe(2);
     const got = await a2.vector.get("docs", "a");
-    expect(Array.from(got!.vector)).toEqual([1, 0, 0, 0]);
+    expect(Array.from(got!.vectors.default!)).toEqual([1, 0, 0, 0]);
     expect(got!.metadata).toEqual({ k: 1 });
-    const res = await a2.vector.search("docs", v(1, 0, 0, 0), { topK: 1 });
+    const res = await a2.vector.search("docs", { space: "default", vector: v(1, 0, 0, 0) }, { topK: 1 });
     expect(res[0]!.id).toBe("a");
     a2.close();
   });
 
   it("reopening at a different dimension throws", async () => {
     const { url } = fileUrl();
-    const a1 = await LibsqlAdapter.open({ url, dimensions: DIMS });
+    const a1 = await LibsqlAdapter.open({ url, });
+    await a1.vector.ensureSpace("default", { dimensions: DIMS });
     a1.close();
-    await expect(LibsqlAdapter.open({ url, dimensions: DIMS + 1 })).rejects.toThrow(
-      expect.objectContaining({ name: "LibsqlAdapterError", code: "dimensions-changed" }),
-    );
+    const a2 = await LibsqlAdapter.open({ url });
+    await expect(a2.vector.ensureSpace("default", { dimensions: DIMS + 1 })).rejects.toMatchObject({ code: "space-definition-conflict" });
+    a2.close();
   });
 });
 
@@ -276,21 +282,22 @@ describe("filter-before-KNN (load-bearing correctness)", () => {
   let adapter: LibsqlAdapter;
 
   beforeEach(async () => {
-    adapter = await LibsqlAdapter.open({ url: ":memory:", dimensions: DIMS });
+    adapter = await LibsqlAdapter.open({ url: ":memory:", });
+    await adapter.vector.ensureSpace("default", { dimensions: DIMS });
     // Arrange so the global nearest are mostly `element`, but the `document` set
     // has its own clear top-2. Distances to query v(1,0,0,0) increase down the list.
     await adapter.vector.upsertMany("mix", [
-      { id: "el-1", vector: v(1, 0, 0, 0), metadata: { type: "element" } }, // closest overall
-      { id: "el-2", vector: v(0.98, 0.02, 0, 0), metadata: { type: "element" } },
-      { id: "doc-1", vector: v(0.9, 0.1, 0, 0), metadata: { type: "document" } }, // doc top-1
-      { id: "doc-2", vector: v(0.8, 0.2, 0, 0), metadata: { type: "document" } }, // doc top-2
-      { id: "doc-3", vector: v(0, 1, 0, 0), metadata: { type: "document" } }, // doc, far
+      { id: "el-1", vectors: { default: v(1, 0, 0, 0) }, metadata: { type: "element" } }, // closest overall
+      { id: "el-2", vectors: { default: v(0.98, 0.02, 0, 0) }, metadata: { type: "element" } },
+      { id: "doc-1", vectors: { default: v(0.9, 0.1, 0, 0) }, metadata: { type: "document" } }, // doc top-1
+      { id: "doc-2", vectors: { default: v(0.8, 0.2, 0, 0) }, metadata: { type: "document" } }, // doc top-2
+      { id: "doc-3", vectors: { default: v(0, 1, 0, 0) }, metadata: { type: "document" } }, // doc, far
     ]);
   });
   afterEach(() => adapter.close());
 
   it("where:{type:document} topK:2 returns the true nearest TWO documents", async () => {
-    const res = await adapter.vector.search<{ type: string }>("mix", v(1, 0, 0, 0), {
+    const res = await adapter.vector.search<{ type: string }>("mix", { space: "default", vector: v(1, 0, 0, 0) }, {
       topK: 2,
       where: { type: "document" },
     });
@@ -301,7 +308,7 @@ describe("filter-before-KNN (load-bearing correctness)", () => {
   });
 
   it("whereNot:{type:element} topK:2 excludes elements and returns doc top-2", async () => {
-    const res = await adapter.vector.search<{ type: string }>("mix", v(1, 0, 0, 0), {
+    const res = await adapter.vector.search<{ type: string }>("mix", { space: "default", vector: v(1, 0, 0, 0) }, {
       topK: 2,
       whereNot: { type: "element" },
     });
@@ -317,36 +324,37 @@ describe("filter-before-KNN (load-bearing correctness)", () => {
 
 describe("parity with InMemoryVectorStore", () => {
   const docs = [
-    { id: "a", vector: v(1, 0, 0, 0), metadata: { g: "x" } },
-    { id: "b", vector: v(0.6, 0.8, 0, 0), metadata: { g: "y" } },
-    { id: "c", vector: v(0, 1, 0, 0), metadata: { g: "x" } },
-    { id: "d", vector: v(0.5, 0.5, 0.5, 0.5), metadata: { g: "y" } },
-    { id: "e", vector: v(0.2, 0.1, 0.9, 0), metadata: { g: "x" } },
+    { id: "a", vectors: { default: v(1, 0, 0, 0) }, metadata: { g: "x" } },
+    { id: "b", vectors: { default: v(0.6, 0.8, 0, 0) }, metadata: { g: "y" } },
+    { id: "c", vectors: { default: v(0, 1, 0, 0) }, metadata: { g: "x" } },
+    { id: "d", vectors: { default: v(0.5, 0.5, 0.5, 0.5) }, metadata: { g: "y" } },
+    { id: "e", vectors: { default: v(0.2, 0.1, 0.9, 0) }, metadata: { g: "x" } },
   ];
   const query = v(0.9, 0.2, 0.1, 0);
 
   async function compare(forceJsCosine: boolean): Promise<void> {
-    const mem = new InMemoryVectorStore({ dimensions: DIMS });
+    const mem = new InMemoryVectorStore();
+    mem.ensureSpace("default", { dimensions: DIMS });
     mem.upsertMany("docs", docs);
 
     const adapter = await LibsqlAdapter.open({
       url: ":memory:",
-      dimensions: DIMS,
       forceJsCosine,
     });
+    await adapter.vector.ensureSpace("default", { dimensions: DIMS });
     try {
       await adapter.vector.upsertMany("docs", docs);
 
-      const memRes = mem.search("docs", query, { topK: 5 });
-      const libRes = await adapter.vector.search("docs", query, { topK: 5 });
+      const memRes = mem.search("docs", { space: "default", vector: query }, { topK: 5 });
+      const libRes = await adapter.vector.search("docs", { space: "default", vector: query }, { topK: 5 });
       expect(libRes.map((r) => r.id)).toEqual(memRes.map((r) => r.id));
       for (let i = 0; i < memRes.length; i++) {
         expect(libRes[i]!.score).toBeCloseTo(memRes[i]!.score, 5);
       }
 
       // With a filter (forces the JS path on the lib side either way).
-      const memFiltered = mem.search("docs", query, { topK: 5, where: { g: "x" } });
-      const libFiltered = await adapter.vector.search("docs", query, {
+      const memFiltered = mem.search("docs", { space: "default", vector: query }, { topK: 5, where: { g: "x" } });
+      const libFiltered = await adapter.vector.search("docs", { space: "default", vector: query }, {
         topK: 5,
         where: { g: "x" },
       });
@@ -435,14 +443,14 @@ describe("collision-safe collection tables", () => {
       ["collection", A, LEGACY_TABLE],
       ["collection", B, `${LEGACY_TABLE}_2`],
     ]);
-    expect(version.rows[0]?.value).toBe("2");
+    expect(version.rows[0]?.value).toBe("3");
   });
 
   it("refuses to open a file written by a newer adapter", async () => {
     const { url } = fileUrl();
     (await LibsqlAdapter.open({ url })).close();
     const bump = createClient({ url });
-    await bump.execute("UPDATE _mirk_meta SET value = '3' WHERE key = 'schema_version'");
+    await bump.execute("UPDATE _mirk_meta SET value = '4' WHERE key = 'schema_version'");
     bump.close();
 
     await expect(LibsqlAdapter.open({ url })).rejects.toThrow(

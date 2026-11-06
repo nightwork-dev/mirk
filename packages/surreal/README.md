@@ -240,3 +240,27 @@ re-exported from the root. The store adapter does not implement `@mirk/store/ato
 Adapters open on the same `SurrealConnection`. `SurrealStoreAdapter` and `SurrealObjectStore` can
 share one connection as the backing for `@mirk/artifact`'s `StoreArtifactRepository` and
 `ArtifactCoordinator`: the record lives in the store, the bytes in the object store.
+
+## Named vectors
+
+`SurrealVectorAdapter` from `@mirk/surreal/vector` extends the same shared connection. Open with
+`{ namespace: "default" }` (optional), declare spaces with `ensureSpace("text", { dimensions: 768 })`,
+and write `{ id, vectors: { text: embedding }, metadata? }`. Search takes
+`search(collection, { space: "text", vector: query }, options)`.
+
+Space definitions are immutable and shared across collections within the vector namespace.
+`listSpaces()` returns cosine/float32 definitions in code-point order. Unknown spaces, dimension
+mismatches and empty vector maps fail before writes. Batch replacements run in one SurrealDB
+transaction. Upserts replace every vector and metadata; counts count documents and removal deletes
+the complete document. Missing selected spaces are excluded from search.
+
+SurrealDB computes cosine, metadata filters, ordering and limit. `minScore` is inclusive.
+`whereNot` excludes its complete conjunction. This adapter retains its prior finite, nonzero vector
+requirement and non-negative integer `topK`; it does not claim full shared vector corpus parity.
+Absent metadata round-trips distinctly from `{}`. `meta` has no global dimensions field.
+
+Legacy inferred collection dimensions migrate to the shared `default` space in namespace `default`.
+If legacy collections disagree on dimensions, opening raises `migration-conflict` and preserves
+their data; applications must separate those legacy collections into distinct namespaces before
+combining them under one shared space definition. Table names remain configurable through
+`documentsTable`, `spacesTable`, and the migration source `dimensionsTable`.
