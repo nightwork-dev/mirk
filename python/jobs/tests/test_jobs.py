@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from mirk.store.log import InMemoryLogStore
+from mirk.store.log import InMemoryLogStore, LogInputError
 from mirk.store.memory import InMemoryStore
 from mirk.store.sqlite import SqliteStore
 from mirk.store.sqlite_log import SqliteLogFacet
@@ -170,7 +170,11 @@ def test_log_cleanup_failure_rolls_back(fixture: Any) -> None:
     fresh = log.list('["mirk-jobs","job",2]')
     assert len(fresh) == 1
     assert fresh[0]["sequence"] == 1
-    assert log.list(stream, {"after": before[-1]["sequence"]}) == []
+    with pytest.raises(LogInputError) as stale:
+        log.list(stream, {"after": {
+            "generation": before[-1]["generation"], "sequence": before[-1]["sequence"],
+        }})
+    assert stale.value.code == "stale-cursor"
 
 
 def test_cancel_after_expiry(fixture: Any) -> None:
