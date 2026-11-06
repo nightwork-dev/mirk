@@ -55,7 +55,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       { op: "get", args: ["docs", "ghost"], expect: { value: true } },
     ],
   }),
@@ -66,7 +69,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
     ],
   }),
@@ -79,11 +85,17 @@ export const scenarios = [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       {
         op: "upsert",
-        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] }, metadata: { v: 1 } }],
+        args: [
+          "docs",
+          { id: "a", vectors: { default: [1, 0, 0] }, metadata: { v: 1 } },
+        ],
       },
       {
         op: "upsert",
-        args: ["docs", { id: "a", vectors: { default: [0, 1, 0] }, metadata: { v: 2 } }],
+        args: [
+          "docs",
+          { id: "a", vectors: { default: [0, 1, 0] }, metadata: { v: 2 } },
+        ],
       },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
       { op: "count", args: ["docs"], expect: { value: true } },
@@ -96,7 +108,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       { op: "has", args: ["one", "a"], expect: { value: true } },
       { op: "has", args: ["one", "b"], expect: { value: true } },
       { op: "has", args: ["two", "a"], expect: { value: true } },
@@ -109,7 +124,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       { op: "remove", args: ["docs", "a"], expect: { value: true } },
       { op: "remove", args: ["docs", "a"], expect: { value: true } },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
@@ -124,9 +142,18 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["one", { id: "b", vectors: { default: [0, 1, 0] } }] },
-      { op: "upsert", args: ["two", { id: "a", vectors: { default: [0, 0, 1] } }] },
+      {
+        op: "upsert",
+        args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["one", { id: "b", vectors: { default: [0, 1, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["two", { id: "a", vectors: { default: [0, 0, 1] } }],
+      },
       { op: "count", args: ["one"], expect: { value: true } },
       { op: "count", args: ["two"], expect: { value: true } },
       { op: "count", args: ["nothing"], expect: { value: true } },
@@ -139,7 +166,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [0.1, 0.2, 0.3] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [0.1, 0.2, 0.3] } }],
+      },
       { op: "get", args: ["docs", "a"], expect: { value: true } },
     ],
   }),
@@ -152,7 +182,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       {
         op: "upsert",
         args: ["docs", { id: "b", vectors: { default: [1, 0, 0, 0] } }],
@@ -169,8 +202,15 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0, 0] }], expect: { throws: true } },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "search",
+        args: ["docs", { space: "default", vector: [1, 0, 0, 0] }],
+        expect: { throws: true },
+      },
     ],
   }),
 
@@ -180,7 +220,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "keep", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "keep", vectors: { default: [1, 0, 0] } }],
+      },
       {
         op: "upsertMany",
         args: [
@@ -227,9 +270,18 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }],
+      },
       {
         op: "search",
         args: ["docs", { space: "default", vector: [1, 0, 0] }],
@@ -246,7 +298,11 @@ export const scenarios = [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       { op: "upsertMany", args: ["docs", LADDER] },
       { op: "count", args: ["docs"], expect: { value: true } },
-      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["docs", { space: "default", vector: [1, 0, 0] }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -256,9 +312,18 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "near", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "mid", vectors: { default: [1, 1, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "far", vectors: { default: [0, 1, 0] } }],
+      },
       {
         op: "search",
         args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 2 }],
@@ -273,16 +338,30 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "same", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "orthogonal", vectors: { default: [0, 1, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "same", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "orthogonal", vectors: { default: [0, 1, 0] } }],
+      },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 1 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: 1 },
+        ],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: 0 },
+        ],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
     ],
@@ -297,24 +376,40 @@ export const scenarios = [
       { op: "upsertMany", args: ["docs", LADDER] },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 3, minScore: 0.99 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { topK: 3, minScore: 0.99 },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0.99 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: 0.99 },
+        ],
         expect: { ids: true },
       },
       // More documents clear the floor than topK admits, so the accelerated
       // path has to filter the whole candidate set and slice afterwards.
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.9 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { topK: 2, minScore: 0.9 },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 0.9 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: 0.9 },
+        ],
         expect: { ids: true },
       },
     ],
@@ -326,8 +421,15 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "search", args: ["other", { space: "default", vector: [1, 0, 0] }], expect: { value: true } },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "search",
+        args: ["other", { space: "default", vector: [1, 0, 0] }],
+        expect: { value: true },
+      },
     ],
   }),
 
@@ -337,10 +439,24 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["two", { id: "b", vectors: { default: [1, 0, 0] } }] },
-      { op: "search", args: ["one", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
-      { op: "search", args: ["two", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
+      {
+        op: "upsert",
+        args: ["one", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["two", { id: "b", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "search",
+        args: ["one", { space: "default", vector: [1, 0, 0] }],
+        expect: { ids: true },
+      },
+      {
+        op: "search",
+        args: ["two", { space: "default", vector: [1, 0, 0] }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -351,10 +467,23 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "b", vectors: { default: [1, 0, 0] } }] },
-      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
+      {
+        op: "upsert",
+        args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "b", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "search",
+        args: ["docs", { space: "default", vector: [1, 0, 0] }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -370,12 +499,30 @@ export const scenarios = [
       // sort what it was given, so which ids come back depends on insertion
       // order. Both collections hold the same three tied vectors and must
       // answer identically; only the insertion order differs.
-      { op: "upsert", args: ["asc", { id: "a", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["asc", { id: "b", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["asc", { id: "c", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["desc", { id: "c", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["desc", { id: "b", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["desc", { id: "a", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["asc", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["asc", { id: "b", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["asc", { id: "c", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["desc", { id: "c", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["desc", { id: "b", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["desc", { id: "a", vectors: { default: [1, 0, 0] } }],
+      },
       {
         op: "search",
         args: ["asc", { space: "default", vector: [1, 0, 0] }, { topK: 2 }],
@@ -398,12 +545,20 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["asc", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.5 }],
+        args: [
+          "asc",
+          { space: "default", vector: [1, 0, 0] },
+          { topK: 2, minScore: 0.5 },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["desc", { space: "default", vector: [1, 0, 0] }, { topK: 2, minScore: 0.5 }],
+        args: [
+          "desc",
+          { space: "default", vector: [1, 0, 0] },
+          { topK: 2, minScore: 0.5 },
+        ],
         expect: { ids: true },
       },
     ],
@@ -418,10 +573,23 @@ export const scenarios = [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
       // U+1F600 is one code point above U+E000, but its UTF-16 surrogate
       // (U+D83D) is BELOW it — a code-unit sort puts the emoji first.
-      { op: "upsert", args: ["docs", { id: "\u{1F600}", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "\uE000", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "z", vectors: { default: [1, 0, 0] } }] },
-      { op: "search", args: ["docs", { space: "default", vector: [1, 0, 0] }], expect: { ids: true } },
+      {
+        op: "upsert",
+        args: ["docs", { id: "\u{1F600}", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "\uE000", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "z", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "search",
+        args: ["docs", { space: "default", vector: [1, 0, 0] }],
+        expect: { ids: true },
+      },
     ],
   }),
 
@@ -432,14 +600,24 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "unit", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "unit", vectors: { default: [1, 0, 0] } }],
+      },
       { op: "count", args: ["docs"], expect: { value: true } },
       { op: "has", args: ["docs", "zero"], expect: { value: true } },
       { op: "get", args: ["docs", "zero"], expect: { value: true } },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: -1 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: -1 },
+        ],
         expect: { ids: true },
       },
     ],
@@ -451,10 +629,22 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "a", vectors: { default: [0, 1, 0] } }] },
-      { op: "upsert", args: ["docs", { id: "b", vectors: { default: [0, 0, 1] } }] },
-      { op: "upsert", args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "c", vectors: { default: [1, 0, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "a", vectors: { default: [0, 1, 0] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "b", vectors: { default: [0, 0, 1] } }],
+      },
+      {
+        op: "upsert",
+        args: ["docs", { id: "zero", vectors: { default: [0, 0, 0] } }],
+      },
       {
         op: "search",
         args: ["docs", { space: "default", vector: [0, 0, 0] }],
@@ -495,7 +685,11 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" } }],
+        args: [
+          "pets",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { type: "cat" } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -532,7 +726,11 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["pets", { space: "default", vector: [1, 0, 0] }, { whereNot: { type: "cat" } }],
+        args: [
+          "pets",
+          { space: "default", vector: [1, 0, 0] },
+          { whereNot: { type: "cat" } },
+        ],
         expect: { ids: true },
       },
       {
@@ -557,13 +755,24 @@ export const scenarios = [
         op: "upsert",
         args: [
           "pets",
-          { id: "tagged", vectors: { default: [1, 0, 0] }, metadata: { type: "cat" } },
+          {
+            id: "tagged",
+            vectors: { default: [1, 0, 0] },
+            metadata: { type: "cat" },
+          },
         ],
       },
-      { op: "upsert", args: ["pets", { id: "bare", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["pets", { id: "bare", vectors: { default: [1, 0, 0] } }],
+      },
       {
         op: "search",
-        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" } }],
+        args: [
+          "pets",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { type: "cat" } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -580,16 +789,36 @@ export const scenarios = [
         args: [
           "pets",
           [
-            { id: "cat-1", vectors: { default: [1, 0, 0] }, metadata: { type: "cat" } },
-            { id: "cat-2", vectors: { default: [0.9, 0.1, 0] }, metadata: { type: "cat" } },
-            { id: "cat-3", vectors: { default: [0.8, 0.2, 0] }, metadata: { type: "cat" } },
-            { id: "dog-1", vectors: { default: [0.95, 0.05, 0] }, metadata: { type: "dog" } },
+            {
+              id: "cat-1",
+              vectors: { default: [1, 0, 0] },
+              metadata: { type: "cat" },
+            },
+            {
+              id: "cat-2",
+              vectors: { default: [0.9, 0.1, 0] },
+              metadata: { type: "cat" },
+            },
+            {
+              id: "cat-3",
+              vectors: { default: [0.8, 0.2, 0] },
+              metadata: { type: "cat" },
+            },
+            {
+              id: "dog-1",
+              vectors: { default: [0.95, 0.05, 0] },
+              metadata: { type: "dog" },
+            },
           ],
         ],
       },
       {
         op: "search",
-        args: ["pets", { space: "default", vector: [1, 0, 0] }, { where: { type: "cat" }, topK: 2 }],
+        args: [
+          "pets",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { type: "cat" }, topK: 2 },
+        ],
         expect: { ids: true },
       },
     ],
@@ -615,22 +844,38 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { spec: { a: 1, b: 2 } } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { spec: { a: 1, b: 2 } } },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { spec: { b: 2, a: 1 } } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { spec: { b: 2, a: 1 } } },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { tags: ["y", "x"] } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { tags: ["y", "x"] } },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { tags: "x" } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { tags: "x" } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -642,7 +887,10 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "raw", vectors: { default: [3, 4, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "raw", vectors: { default: [3, 4, 0] } }],
+      },
       { op: "get", args: ["docs", "raw"], expect: { value: true } },
     ],
   }),
@@ -656,13 +904,20 @@ export const scenarios = [
         op: "upsert",
         args: ["docs", { id: "large", vectors: { default: [1e30, 1e30, 0] } }],
       },
-      { op: "upsert", args: ["docs", { id: "small", vectors: { default: [1e-30, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "small", vectors: { default: [1e-30, 0, 0] } }],
+      },
       {
         op: "search",
         args: ["docs", { space: "default", vector: [1e30, 0, 0] }],
         expect: { approxFields: ["score"], tol: 1e-6 },
       },
-      { op: "search", args: ["docs", { space: "default", vector: [1e-30, 0, 0] }], expect: { ids: true } },
+      {
+        op: "search",
+        args: ["docs", { space: "default", vector: [1e-30, 0, 0] }],
+        expect: { ids: true },
+      },
     ],
   }),
   defineScenario({
@@ -676,7 +931,10 @@ export const scenarios = [
         op: "upsert",
         args: ["docs", { id: "a-near", vectors: { default: [1, 0.0001, 0] } }],
       },
-      { op: "upsert", args: ["docs", { id: "z-exact", vectors: { default: [1, 0, 0] } }] },
+      {
+        op: "upsert",
+        args: ["docs", { id: "z-exact", vectors: { default: [1, 0, 0] } }],
+      },
       {
         op: "search",
         args: ["docs", { space: "default", vector: [1, 0, 0] }, { topK: 1 }],
@@ -684,7 +942,11 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { minScore: 1 }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { minScore: 1 },
+        ],
         expect: { ids: true },
       },
     ],
@@ -696,16 +958,26 @@ export const scenarios = [
     ports: ["vector"],
     steps: [
       { op: "ensureSpace", args: ["default", { dimensions: 3 }] },
-      { op: "upsert", args: ["docs", { id: "absent", vectors: { default: [1, 0, 0] } }] },
       {
         op: "upsert",
-        args: ["docs", { id: "empty", vectors: { default: [1, 0, 0] }, metadata: {} }],
+        args: ["docs", { id: "absent", vectors: { default: [1, 0, 0] } }],
       },
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "null", vectors: { default: [1, 0, 0] }, metadata: { value: null } },
+          { id: "empty", vectors: { default: [1, 0, 0] }, metadata: {} },
+        ],
+      },
+      {
+        op: "upsert",
+        args: [
+          "docs",
+          {
+            id: "null",
+            vectors: { default: [1, 0, 0] },
+            metadata: { value: null },
+          },
         ],
       },
       {
@@ -715,12 +987,20 @@ export const scenarios = [
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { whereNot: {} }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { whereNot: {} },
+        ],
         expect: { ids: true },
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { where: { value: null } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { where: { value: null } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -735,19 +1015,31 @@ export const scenarios = [
         op: "upsert",
         args: [
           "docs",
-          { id: "both", vectors: { default: [1, 0, 0] }, metadata: { a: 1, b: 2 } },
+          {
+            id: "both",
+            vectors: { default: [1, 0, 0] },
+            metadata: { a: 1, b: 2 },
+          },
         ],
       },
       {
         op: "upsert",
         args: [
           "docs",
-          { id: "partial", vectors: { default: [1, 0, 0] }, metadata: { a: 1, b: 3 } },
+          {
+            id: "partial",
+            vectors: { default: [1, 0, 0] },
+            metadata: { a: 1, b: 3 },
+          },
         ],
       },
       {
         op: "search",
-        args: ["docs", { space: "default", vector: [1, 0, 0] }, { whereNot: { a: 1, b: 2 } }],
+        args: [
+          "docs",
+          { space: "default", vector: [1, 0, 0] },
+          { whereNot: { a: 1, b: 2 } },
+        ],
         expect: { ids: true },
       },
     ],
@@ -806,23 +1098,65 @@ export const scenarios = [
     ],
   }),
   defineScenario({
-    id: "vector/named-spaces-replacement", title: "spaces share document identity and replacement removes omitted embeddings", ports: ["vector"],
+    id: "vector/named-spaces-replacement",
+    title:
+      "spaces share document identity and replacement removes omitted embeddings",
+    ports: ["vector"],
     steps: [
-      {op:"ensureSpace",args:["text",{dimensions:2}]},
-      {op:"ensureSpace",args:["image",{dimensions:3}]},
-      {op:"ensureSpace",args:["text",{dimensions:2}]},
-      {op:"listSpaces",args:[],expect:{value:true}},
-      {op:"ensureSpace",args:["text",{dimensions:3}],expect:{throws:true}},
-      {op:"upsert",args:["assets",{id:"a",vectors:{text:[1,0],image:[0,1,0]},metadata:{kind:"art"}}]},
-      {op:"search",args:["assets",{space:"image",vector:[0,1,0]}],expect:{ids:true}},
-      {op:"upsert",args:["assets",{id:"a",vectors:{text:[0,1]}}]},
-      {op:"get",args:["assets","a"],expect:{value:true}},
-      {op:"search",args:["assets",{space:"image",vector:[0,1,0]}],expect:{ids:true}},
-      {op:"upsertMany",args:["assets",[{id:"a",vectors:{text:[1,0]}},{id:"b",vectors:{missing:[1]}}]],expect:{throws:true}},
-      {op:"get",args:["assets","a"],expect:{value:true}},
-      {op:"upsert",args:["assets",{id:"empty",vectors:{}}],expect:{throws:true}},
-      {op:"remove",args:["assets","a"],expect:{value:true}},
-      {op:"count",args:["assets"],expect:{value:true}},
+      { op: "ensureSpace", args: ["text", { dimensions: 2 }] },
+      { op: "ensureSpace", args: ["image", { dimensions: 3 }] },
+      { op: "ensureSpace", args: ["text", { dimensions: 2 }] },
+      { op: "listSpaces", args: [], expect: { value: true } },
+      {
+        op: "ensureSpace",
+        args: ["text", { dimensions: 3 }],
+        expect: { throws: true },
+      },
+      {
+        op: "upsert",
+        args: [
+          "assets",
+          {
+            id: "a",
+            vectors: { text: [1, 0], image: [0, 1, 0] },
+            metadata: { kind: "art" },
+          },
+        ],
+      },
+      {
+        op: "search",
+        args: ["assets", { space: "image", vector: [0, 1, 0] }],
+        expect: { ids: true },
+      },
+      {
+        op: "upsert",
+        args: ["assets", { id: "a", vectors: { text: [0, 1] } }],
+      },
+      { op: "get", args: ["assets", "a"], expect: { value: true } },
+      {
+        op: "search",
+        args: ["assets", { space: "image", vector: [0, 1, 0] }],
+        expect: { ids: true },
+      },
+      {
+        op: "upsertMany",
+        args: [
+          "assets",
+          [
+            { id: "a", vectors: { text: [1, 0] } },
+            { id: "b", vectors: { missing: [1] } },
+          ],
+        ],
+        expect: { throws: true },
+      },
+      { op: "get", args: ["assets", "a"], expect: { value: true } },
+      {
+        op: "upsert",
+        args: ["assets", { id: "empty", vectors: {} }],
+        expect: { throws: true },
+      },
+      { op: "remove", args: ["assets", "a"], expect: { value: true } },
+      { op: "count", args: ["assets"], expect: { value: true } },
     ],
   }),
 ];
