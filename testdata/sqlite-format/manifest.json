@@ -1,0 +1,1024 @@
+{
+  "generator": "scripts/generate-sqlite-format-goldens.py",
+  "sqliteVersion": "3.51.0",
+  "files": [
+    {
+      "file": "legacy.sqlite",
+      "coreVersion": null,
+      "sha256": "46116c05710824d36b514490749e3decd94c1d00ad66edbef3b8cff59e8aa53e",
+      "schemaSha256": "5fcc0adc0948ca307c9880e45257fec04866cbce32fbd5905ec279f039e09949",
+      "sourceRevision": "5aa4088e536e5d525632fd1d5b0a946652b058f9",
+      "logical": {
+        "version": null,
+        "unicode": {
+          "text": "caf\u00e9 \u96ea \ud83c\udf31",
+          "lone": "\ud800",
+          "n": 9007199254740991,
+          "fraction": 0.125,
+          "boolean": true,
+          "null": null
+        },
+        "unicodeRawHex": "7b2274657874223a226361665c7530306539205c7539366561205c75643833635c7564663331222c226c6f6e65223a225c7564383030222c226e223a393030373139393235343734303939312c226672616374696f6e223a302e3132352c22626f6f6c65616e223a747275652c226e756c6c223a6e756c6c7d",
+        "kvRows": [
+          {
+            "key": "receipt-demo",
+            "value": {
+              "demo": true
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          },
+          {
+            "key": "unicode",
+            "value": {
+              "text": "caf\u00e9 \u96ea \ud83c\udf31",
+              "lone": "\ud800",
+              "n": 9007199254740991,
+              "fraction": 0.125,
+              "boolean": true,
+              "null": null
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          }
+        ],
+        "registry": [],
+        "collectionRows": [
+          {
+            "id": "b",
+            "rank": 2
+          },
+          {
+            "id": "a",
+            "rank": 1
+          }
+        ],
+        "spaces": [
+          {
+            "namespace": "default",
+            "name": "default",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ],
+        "vectors": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "default",
+            "hex": "0000803f000000c00000003f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "space": "default",
+            "hex": "000000000000803f00000000"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "space": "default",
+            "hex": "000080bf000000000000803f"
+          }
+        ],
+        "vectorMetadata": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "metadata": "{}"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "metadata": "{\"label\":\"caf\\u00e9 \\ud83c\\udf31\"}"
+          }
+        ],
+        "logs": [],
+        "logStreams": [],
+        "logGeneration": [],
+        "atomicIdentity": "golden-store",
+        "atomicSequence": 7,
+        "versions": [
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "receipt-demo",
+            "version": "golden-store-v6"
+          },
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "unicode",
+            "version": "golden-store-v7"
+          }
+        ],
+        "receipts": [
+          {
+            "idempotency_key": "golden-command",
+            "request_digest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+            "result_json": {
+              "status": "applied",
+              "requestDigest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+              "versions": [
+                {
+                  "target": {
+                    "kind": "key",
+                    "key": "receipt-demo"
+                  },
+                  "version": "golden-store-v6"
+                }
+              ],
+              "outcome": {
+                "copied": true
+              }
+            },
+            "created_at": null
+          }
+        ],
+        "hasReceiptTime": false,
+        "searchDocuments": [
+          {
+            "id": "note",
+            "text": "caf\u00e9 golden search",
+            "meta_json": null
+          }
+        ],
+        "searchMatches": [
+          "note"
+        ],
+        "applicationRows": [
+          {
+            "id": 1,
+            "note": "preserved"
+          }
+        ],
+        "declaredIndexes": []
+      }
+    },
+    {
+      "file": "v2-early.sqlite",
+      "coreVersion": 2,
+      "sha256": "0996966df5d5d72bba665aba7e88708c2ec6aec01e5c977c4f0ba0afefd5d049",
+      "schemaSha256": "ee216ddd9356c0f8ee02eff0326df3320e6a0ed887b22ddd63dbef809cd98f5a",
+      "sourceRevision": "36f0c9b8210026a990a48ec04800d593b9e1f1ca",
+      "logical": {
+        "version": 2,
+        "unicode": {
+          "text": "caf\u00e9 \u96ea \ud83c\udf31",
+          "lone": "\ud800",
+          "n": 9007199254740991,
+          "fraction": 0.125,
+          "boolean": true,
+          "null": null
+        },
+        "unicodeRawHex": "7b2274657874223a226361665c7530306539205c7539366561205c75643833635c7564663331222c226c6f6e65223a225c7564383030222c226e223a393030373139393235343734303939312c226672616374696f6e223a302e3132352c22626f6f6c65616e223a747275652c226e756c6c223a6e756c6c7d",
+        "kvRows": [
+          {
+            "key": "receipt-demo",
+            "value": {
+              "demo": true
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          },
+          {
+            "key": "unicode",
+            "value": {
+              "text": "caf\u00e9 \u96ea \ud83c\udf31",
+              "lone": "\ud800",
+              "n": 9007199254740991,
+              "fraction": 0.125,
+              "boolean": true,
+              "null": null
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          }
+        ],
+        "registry": [
+          {
+            "kind": "collection",
+            "name": "items",
+            "table_name": "c_items_g82p3j"
+          },
+          {
+            "kind": "search",
+            "name": "notes",
+            "table_name": "search_docs_notes_10hkj4a"
+          }
+        ],
+        "collectionRows": [
+          {
+            "id": "b",
+            "rank": 2
+          },
+          {
+            "id": "a",
+            "rank": 1
+          }
+        ],
+        "spaces": [
+          {
+            "namespace": "default",
+            "name": "default",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ],
+        "vectors": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "default",
+            "hex": "0000803f000000c00000003f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "space": "default",
+            "hex": "000000000000803f00000000"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "space": "default",
+            "hex": "000080bf000000000000803f"
+          }
+        ],
+        "vectorMetadata": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "metadata": "{}"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "metadata": "{\"label\":\"caf\\u00e9 \\ud83c\\udf31\"}"
+          }
+        ],
+        "logs": [],
+        "logStreams": [],
+        "logGeneration": [],
+        "atomicIdentity": "golden-store",
+        "atomicSequence": 7,
+        "versions": [
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "receipt-demo",
+            "version": "golden-store-v6"
+          },
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "unicode",
+            "version": "golden-store-v7"
+          }
+        ],
+        "receipts": [
+          {
+            "idempotency_key": "golden-command",
+            "request_digest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+            "result_json": {
+              "status": "applied",
+              "requestDigest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+              "versions": [
+                {
+                  "target": {
+                    "kind": "key",
+                    "key": "receipt-demo"
+                  },
+                  "version": "golden-store-v6"
+                }
+              ],
+              "outcome": {
+                "copied": true
+              }
+            },
+            "created_at": null
+          }
+        ],
+        "hasReceiptTime": false,
+        "searchDocuments": [
+          {
+            "id": "note",
+            "text": "caf\u00e9 golden search",
+            "meta_json": null
+          }
+        ],
+        "searchMatches": [
+          "note"
+        ],
+        "applicationRows": [
+          {
+            "id": 1,
+            "note": "preserved"
+          }
+        ],
+        "declaredIndexes": []
+      }
+    },
+    {
+      "file": "v2.sqlite",
+      "coreVersion": 2,
+      "sha256": "83d526594f6e3e98b2d43a6221cf172368f7e5003b4032b575e825e06050327b",
+      "schemaSha256": "0202b646718195295dfacbce22f5e253de86e36b93e6ac5aa8ab5db871bc9345",
+      "sourceRevision": "e746b39269b85e905611377391f94601d20a0e9c",
+      "logical": {
+        "version": 2,
+        "unicode": {
+          "text": "caf\u00e9 \u96ea \ud83c\udf31",
+          "lone": "\ud800",
+          "n": 9007199254740991,
+          "fraction": 0.125,
+          "boolean": true,
+          "null": null
+        },
+        "unicodeRawHex": "7b2274657874223a226361665c7530306539205c7539366561205c75643833635c7564663331222c226c6f6e65223a225c7564383030222c226e223a393030373139393235343734303939312c226672616374696f6e223a302e3132352c22626f6f6c65616e223a747275652c226e756c6c223a6e756c6c7d",
+        "kvRows": [
+          {
+            "key": "receipt-demo",
+            "value": {
+              "demo": true
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          },
+          {
+            "key": "unicode",
+            "value": {
+              "text": "caf\u00e9 \u96ea \ud83c\udf31",
+              "lone": "\ud800",
+              "n": 9007199254740991,
+              "fraction": 0.125,
+              "boolean": true,
+              "null": null
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          }
+        ],
+        "registry": [
+          {
+            "kind": "collection",
+            "name": "items",
+            "table_name": "c_items_g82p3j"
+          },
+          {
+            "kind": "search",
+            "name": "notes",
+            "table_name": "search_docs_notes_10hkj4a"
+          }
+        ],
+        "collectionRows": [
+          {
+            "id": "b",
+            "rank": 2
+          },
+          {
+            "id": "a",
+            "rank": 1
+          }
+        ],
+        "spaces": [
+          {
+            "namespace": "default",
+            "name": "default",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ],
+        "vectors": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "default",
+            "hex": "0000803f000000c00000003f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "space": "default",
+            "hex": "000000000000803f00000000"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "space": "default",
+            "hex": "000080bf000000000000803f"
+          }
+        ],
+        "vectorMetadata": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "metadata": "{}"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "metadata": "{\"label\":\"caf\\u00e9 \\ud83c\\udf31\"}"
+          }
+        ],
+        "logs": [
+          {
+            "stream": "asset/a",
+            "sequence": 1,
+            "record": "{\"type\":\"created\"}"
+          },
+          {
+            "stream": "asset/a",
+            "sequence": 2,
+            "record": "{\"type\":\"ready\",\"text\":\"\\u96ea\"}"
+          }
+        ],
+        "logStreams": [],
+        "logGeneration": [],
+        "atomicIdentity": "golden-store",
+        "atomicSequence": 7,
+        "versions": [
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "receipt-demo",
+            "version": "golden-store-v6"
+          },
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "unicode",
+            "version": "golden-store-v7"
+          }
+        ],
+        "receipts": [
+          {
+            "idempotency_key": "golden-command",
+            "request_digest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+            "result_json": {
+              "status": "applied",
+              "requestDigest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+              "versions": [
+                {
+                  "target": {
+                    "kind": "key",
+                    "key": "receipt-demo"
+                  },
+                  "version": "golden-store-v6"
+                }
+              ],
+              "outcome": {
+                "copied": true
+              }
+            },
+            "created_at": 1793923200000
+          }
+        ],
+        "hasReceiptTime": true,
+        "searchDocuments": [
+          {
+            "id": "note",
+            "text": "caf\u00e9 golden search",
+            "meta_json": null
+          }
+        ],
+        "searchMatches": [
+          "note"
+        ],
+        "applicationRows": [
+          {
+            "id": 1,
+            "note": "preserved"
+          }
+        ],
+        "declaredIndexes": [
+          {
+            "name": "ix_c_items_g82p3j_72616e6b",
+            "sql": "CREATE INDEX ix_c_items_g82p3j_72616e6b ON c_items_g82p3j(json_extract(data,'$.\"rank\"'))"
+          }
+        ]
+      }
+    },
+    {
+      "file": "v3.sqlite",
+      "coreVersion": 3,
+      "sha256": "1a55d370f14a951d5cdbdb155e5332d2a9379d0e9957a4856709bf6a9c67ebf3",
+      "schemaSha256": "beb884250a451919f4c152fbbc3349f3e4ce96f6fbd340b4d8e0c9775c9e90ac",
+      "sourceRevision": "ddeeac88663eda7b54e9bfb7c38ccbb3251ab81f",
+      "logical": {
+        "version": 3,
+        "unicode": {
+          "text": "caf\u00e9 \u96ea \ud83c\udf31",
+          "lone": "\ud800",
+          "n": 9007199254740991,
+          "fraction": 0.125,
+          "boolean": true,
+          "null": null
+        },
+        "unicodeRawHex": "7b2274657874223a226361665c7530306539205c7539366561205c75643833635c7564663331222c226c6f6e65223a225c7564383030222c226e223a393030373139393235343734303939312c226672616374696f6e223a302e3132352c22626f6f6c65616e223a747275652c226e756c6c223a6e756c6c7d",
+        "kvRows": [
+          {
+            "key": "receipt-demo",
+            "value": {
+              "demo": true
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          },
+          {
+            "key": "unicode",
+            "value": {
+              "text": "caf\u00e9 \u96ea \ud83c\udf31",
+              "lone": "\ud800",
+              "n": 9007199254740991,
+              "fraction": 0.125,
+              "boolean": true,
+              "null": null
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          }
+        ],
+        "registry": [
+          {
+            "kind": "collection",
+            "name": "items",
+            "table_name": "c_items_g82p3j"
+          },
+          {
+            "kind": "search",
+            "name": "notes",
+            "table_name": "search_docs_notes_10hkj4a"
+          }
+        ],
+        "collectionRows": [
+          {
+            "id": "b",
+            "rank": 2
+          },
+          {
+            "id": "a",
+            "rank": 1
+          }
+        ],
+        "spaces": [
+          {
+            "namespace": "default",
+            "name": "image",
+            "dimensions": 2,
+            "metric": "cosine",
+            "encoding": "float32"
+          },
+          {
+            "namespace": "default",
+            "name": "text",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          },
+          {
+            "namespace": "other",
+            "name": "text",
+            "dimensions": 4,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ],
+        "vectors": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "image",
+            "hex": "0000803e0000403f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "text",
+            "hex": "0000803f000000c00000003f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "space": "text",
+            "hex": "000000000000803f00000000"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "space": "text",
+            "hex": "000080bf000000000000803f"
+          },
+          {
+            "namespace": "other",
+            "collection": "assets",
+            "id": "a",
+            "space": "text",
+            "hex": "0000803f000000000000000000000000"
+          }
+        ],
+        "vectorMetadata": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "metadata": "{}"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "metadata": "{\"label\":\"caf\\u00e9 \\ud83c\\udf31\"}"
+          },
+          {
+            "namespace": "other",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          }
+        ],
+        "logs": [
+          {
+            "stream": "asset/a",
+            "sequence": 1,
+            "record": "{\"type\":\"created\"}"
+          },
+          {
+            "stream": "asset/a",
+            "sequence": 2,
+            "record": "{\"type\":\"ready\",\"text\":\"\\u96ea\"}"
+          }
+        ],
+        "logStreams": [],
+        "logGeneration": [],
+        "atomicIdentity": "golden-store",
+        "atomicSequence": 7,
+        "versions": [
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "receipt-demo",
+            "version": "golden-store-v6"
+          },
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "unicode",
+            "version": "golden-store-v7"
+          }
+        ],
+        "receipts": [
+          {
+            "idempotency_key": "golden-command",
+            "request_digest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+            "result_json": {
+              "status": "applied",
+              "requestDigest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+              "versions": [
+                {
+                  "target": {
+                    "kind": "key",
+                    "key": "receipt-demo"
+                  },
+                  "version": "golden-store-v6"
+                }
+              ],
+              "outcome": {
+                "copied": true
+              }
+            },
+            "created_at": 1793923200000
+          }
+        ],
+        "hasReceiptTime": true,
+        "searchDocuments": [
+          {
+            "id": "note",
+            "text": "caf\u00e9 golden search",
+            "meta_json": null
+          }
+        ],
+        "searchMatches": [
+          "note"
+        ],
+        "applicationRows": [
+          {
+            "id": 1,
+            "note": "preserved"
+          }
+        ],
+        "declaredIndexes": [
+          {
+            "name": "ix_c_items_g82p3j_72616e6b",
+            "sql": "CREATE INDEX ix_c_items_g82p3j_72616e6b ON c_items_g82p3j(json_extract(data,'$.\"rank\"'))"
+          }
+        ]
+      }
+    },
+    {
+      "file": "v4.sqlite",
+      "coreVersion": 4,
+      "sha256": "b983c6c7c448d4ba5e15a6ee0cf4457f25e453c188acc577c82f760fffe81147",
+      "schemaSha256": "3cddbf5e5cd89e387231e6bc7d5c475bb6617f552556b54f615bf448b5aa9c93",
+      "sourceRevision": "441f6ff271a01b70d2ce90b039ad885611f5ec7a",
+      "logical": {
+        "version": 4,
+        "unicode": {
+          "text": "caf\u00e9 \u96ea \ud83c\udf31",
+          "lone": "\ud800",
+          "n": 9007199254740991,
+          "fraction": 0.125,
+          "boolean": true,
+          "null": null
+        },
+        "unicodeRawHex": "7b2274657874223a226361665c7530306539205c7539366561205c75643833635c7564663331222c226c6f6e65223a225c7564383030222c226e223a393030373139393235343734303939312c226672616374696f6e223a302e3132352c22626f6f6c65616e223a747275652c226e756c6c223a6e756c6c7d",
+        "kvRows": [
+          {
+            "key": "receipt-demo",
+            "value": {
+              "demo": true
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          },
+          {
+            "key": "unicode",
+            "value": {
+              "text": "caf\u00e9 \u96ea \ud83c\udf31",
+              "lone": "\ud800",
+              "n": 9007199254740991,
+              "fraction": 0.125,
+              "boolean": true,
+              "null": null
+            },
+            "created_at": "2026-11-06 00:00:00",
+            "updated_at": "2026-11-06 00:00:00"
+          }
+        ],
+        "registry": [
+          {
+            "kind": "collection",
+            "name": "items",
+            "table_name": "c_items_g82p3j"
+          },
+          {
+            "kind": "search",
+            "name": "notes",
+            "table_name": "search_docs_notes_10hkj4a"
+          }
+        ],
+        "collectionRows": [
+          {
+            "id": "b",
+            "rank": 2
+          },
+          {
+            "id": "a",
+            "rank": 1
+          }
+        ],
+        "spaces": [
+          {
+            "namespace": "default",
+            "name": "image",
+            "dimensions": 2,
+            "metric": "cosine",
+            "encoding": "float32"
+          },
+          {
+            "namespace": "default",
+            "name": "text",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          },
+          {
+            "namespace": "other",
+            "name": "text",
+            "dimensions": 4,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ],
+        "vectors": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "image",
+            "hex": "0000803e0000403f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "space": "text",
+            "hex": "0000803f000000c00000003f"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "space": "text",
+            "hex": "000000000000803f00000000"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "space": "text",
+            "hex": "000080bf000000000000803f"
+          },
+          {
+            "namespace": "other",
+            "collection": "assets",
+            "id": "a",
+            "space": "text",
+            "hex": "0000803f000000000000000000000000"
+          }
+        ],
+        "vectorMetadata": [
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "b",
+            "metadata": "{}"
+          },
+          {
+            "namespace": "default",
+            "collection": "assets",
+            "id": "\u96ea",
+            "metadata": "{\"label\":\"caf\\u00e9 \\ud83c\\udf31\"}"
+          },
+          {
+            "namespace": "other",
+            "collection": "assets",
+            "id": "a",
+            "metadata": null
+          }
+        ],
+        "logs": [
+          {
+            "stream": "asset/a",
+            "sequence": 1,
+            "record": "{\"type\":\"created\"}"
+          },
+          {
+            "stream": "asset/a",
+            "sequence": 2,
+            "record": "{\"type\":\"ready\",\"text\":\"\\u96ea\"}"
+          }
+        ],
+        "logStreams": [
+          {
+            "stream": "asset/a",
+            "generation": 8
+          }
+        ],
+        "logGeneration": [
+          {
+            "id": 1,
+            "value": 8
+          }
+        ],
+        "atomicIdentity": "golden-store",
+        "atomicSequence": 7,
+        "versions": [
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "receipt-demo",
+            "version": "golden-store-v6"
+          },
+          {
+            "kind": "key",
+            "collection": "",
+            "target_key": "unicode",
+            "version": "golden-store-v7"
+          }
+        ],
+        "receipts": [
+          {
+            "idempotency_key": "golden-command",
+            "request_digest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+            "result_json": {
+              "status": "applied",
+              "requestDigest": "efec1bc1bc17a8fbb0ce93665460af825a7e6dcbdadc3eb6d364d5df32e0a884",
+              "versions": [
+                {
+                  "target": {
+                    "kind": "key",
+                    "key": "receipt-demo"
+                  },
+                  "version": "golden-store-v6"
+                }
+              ],
+              "outcome": {
+                "copied": true
+              }
+            },
+            "created_at": 1793923200000
+          }
+        ],
+        "hasReceiptTime": true,
+        "searchDocuments": [
+          {
+            "id": "note",
+            "text": "caf\u00e9 golden search",
+            "meta_json": null
+          }
+        ],
+        "searchMatches": [
+          "note"
+        ],
+        "applicationRows": [
+          {
+            "id": 1,
+            "note": "preserved"
+          }
+        ],
+        "declaredIndexes": [
+          {
+            "name": "ix_c_items_g82p3j_72616e6b",
+            "sql": "CREATE INDEX ix_c_items_g82p3j_72616e6b ON c_items_g82p3j(json_extract(data,'$.\"rank\"'))"
+          }
+        ]
+      }
+    }
+  ],
+  "expected": {
+    "unicode": {
+      "text": "caf\u00e9 \u96ea \ud83c\udf31",
+      "lone": "\ud800",
+      "n": 9007199254740991,
+      "fraction": 0.125,
+      "boolean": true,
+      "null": null
+    },
+    "collectionOrder": [
+      "b",
+      "a"
+    ],
+    "knownVectorHex": "0000803f000000c00000003f",
+    "knownVector": [
+      1.0,
+      -2.0,
+      0.5
+    ],
+    "atomicIdentity": "golden-store",
+    "atomicSequence": 7,
+    "atomicVersion": "golden-store-v7"
+  }
+}

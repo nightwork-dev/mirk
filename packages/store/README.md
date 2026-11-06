@@ -513,6 +513,9 @@ stamped; a format 4 file missing that canonical column is malformed.
 
 ### Shared SQLite file format
 
+The normative [SQLite format specification](../../docs/format.md) documents historical layouts,
+independent-reader requirements, and immutable golden files.
+
 The shared SQLite format is **4**, recorded as a decimal string in
 `_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
 are independent. Both Node drivers and Python use these tables and keys:
