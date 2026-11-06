@@ -548,6 +548,7 @@ export class SqliteAdapterCore {
       get: (stream, sequence) => run(() => lifted.get(stream, sequence)),
       list: (stream, options) => run(() => lifted.list(stream, options)),
       lastSequence: (stream) => run(() => lifted.lastSequence(stream)),
+      lastCursor: (stream) => run(() => lifted.lastCursor(stream)),
       deleteStream: (stream) => run(() => lifted.deleteStream(stream)),
     };
   }
