@@ -62,3 +62,20 @@ def test_initialization_failure_is_visible() -> None:
     db.close()
     with pytest.raises(SqliteVecError, match="initialization failed"):
         sqlite_vec_engine().initialize(db)
+
+
+def test_shared_vector_corpus_through_extension() -> None:
+    from mirk.store.conformance import corpus_dir, load_scenarios, run_scenario
+    from mirk.store.sqlite_vector import SqliteVectorFacet
+
+    scenarios = [scenario for scenario in load_scenarios(corpus_dir())
+                 if "vector" in scenario.ports]
+    assert scenarios
+    for scenario in scenarios:
+        db = sqlite3.connect(":memory:")
+        try:
+            facet = SqliteVectorFacet(db, vector_engine=sqlite_vec_engine())
+            assert facet.meta["accelerated"]
+            assert not run_scenario(facet, scenario), scenario.id
+        finally:
+            db.close()
