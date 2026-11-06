@@ -89,7 +89,33 @@
               "path": "themes/dark.json",
               "kind": "patch"
             }
-          ]
+          ],
+          "fields": {
+            "/name": {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": "/name"
+            },
+            "/mid": {
+              "sourceId": "mid",
+              "layer": "mid",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "patch",
+              "fieldPath": "/mid"
+            },
+            "/step": {
+              "sourceId": "top",
+              "layer": "top",
+              "priority": 2,
+              "path": "themes/dark.json",
+              "kind": "patch",
+              "fieldPath": "/step"
+            }
+          }
         }
       }
     }

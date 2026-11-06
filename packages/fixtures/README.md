@@ -627,3 +627,16 @@ it does not validate or repair malformed input.
 
 `test/authored-data-cases.json` is shared with the Python adapter's tests. A host can
 run `test/authored-data.gd` headlessly with that fixture's absolute path after `--`.
+
+### Field origins
+
+`loadRaw(ref).provenance.fields` maps JSON pointers in the resolved record to the
+winning `FixtureProvenanceLayer` plus `fieldPath`, a JSON pointer in that layer's
+source document. Map documents include the escaped entry key in `fieldPath`;
+`path` keeps the existing `file#key` form. Writes replace origins even when the
+value is unchanged. Replacing an array replaces every element's origin.
+Containers whose children come from several writes have no single origin.
+Injected map ids have no authored field origin. Custom merge outputs and schema
+transformations clear field origins: the loader cannot prove their source.
+Materialization and domain composition must map their own output fields to raw
+fixture pointers.

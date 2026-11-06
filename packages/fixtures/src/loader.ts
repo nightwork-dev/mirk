@@ -1,3 +1,5 @@
+import { fieldRecorder, fieldSnapshot } from "./field-provenance.js";
+import { pointerPart } from "./layering.js";
 import { compareCodePoints } from "./order.js";
 import { FixtureError, FixtureValidationError, diagnosticsFromError } from "./errors.js";
 import { isPatchDocument, mergeWithStrategy, normalizeLayers, patchBody, provenanceCtx } from "./layering.js";
@@ -9,6 +11,7 @@ import type {
   FixtureLoader,
   FixtureLoaderOptions,
   FixtureProvenanceLayer,
+  FixtureFieldProvenance,
   FixtureSourceEntry,
   FixtureTypeDefinition,
   SourceRange,
@@ -38,6 +41,7 @@ interface ParsedLayer extends FileCandidate {
   id: string;
   parsed: unknown;
   sourcePath: string;
+  injectedId?: string;
 }
 
 /** Skip sets hold whole source ids and, for a file that failed to read or
@@ -287,6 +291,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
         id,
         parsed: value,
         sourcePath: `${candidate.entry.relativePath}#${id}`,
+        injectedId: idField && typeof rawValue === "object" && rawValue !== null && !(idField in rawValue) ? idField : undefined,
       });
     }
     return layers;
@@ -509,6 +514,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
     const baseLayer = parsedLayers[baseIdx];
     if (!baseLayer) throw new Error("unreachable: base layer missing");
 
+    const baseSnapshot = fieldSnapshot(baseLayer.parsed);
     let current = await validateAgainstSchema(
       ref,
       baseLayer.layered.source.id,
@@ -539,6 +545,15 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       kind: "base",
     });
 
+    const fields: Record<string, FixtureFieldProvenance> = {};
+    const prefix = (layer: ParsedLayer) => def.document ? `/${pointerPart(layer.id)}` : "";
+    fieldRecorder(fields, provenance[provenance.length - 1]!, prefix(baseLayer))("", baseLayer.parsed);
+    if (baseLayer.injectedId) {
+      delete fields[`/${pointerPart(baseLayer.injectedId)}`];
+      delete fields[""];
+    }
+    if (baseSnapshot === undefined || fieldSnapshot(current) !== baseSnapshot) Object.keys(fields).forEach((key) => delete fields[key]);
+
     for (let i = baseIdx + 1; i < parsedLayers.length; i++) {
       const layer = parsedLayers[i];
       if (!layer) continue;
@@ -556,11 +571,18 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       }
 
       const body = patchBody(layer.parsed);
+      const origin: FixtureProvenanceLayer = {
+        sourceId: layer.layered.source.id, layer: layer.layered.layer,
+        priority: layer.layered.priority, path: layer.sourcePath, kind: "patch",
+      };
+      if (typeof def.mergeStrategy === "function") Object.keys(fields).forEach((key) => delete fields[key]);
       const merged = mergeWithStrategy(def.mergeStrategy, current, body, {
         fixture: ref,
         layers: provenanceCtx(provenance),
-      });
+      }, fieldRecorder(fields, origin, prefix(layer)));
+      const mergedSnapshot = fieldSnapshot(merged);
       current = await validateAgainstSchema(ref, layer.layered.source.id, layer.sourcePath, merged, def);
+      if (mergedSnapshot === undefined || fieldSnapshot(current) !== mergedSnapshot) Object.keys(fields).forEach((key) => delete fields[key]);
       provenance.push({
         sourceId: layer.layered.source.id,
         layer: layer.layered.layer,
@@ -575,7 +597,7 @@ export function createFixtureLoader(opts: FixtureLoaderOptions): FixtureLoader {
       type,
       id,
       value: current as T,
-      provenance: { finalRef: ref, layers: provenance },
+      provenance: { finalRef: ref, layers: provenance, fields },
     };
     if (canUseCache) rawCache.set(ref, loaded);
     return loaded;

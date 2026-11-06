@@ -65,7 +65,25 @@
               "path": "themes/overrides.json#dark",
               "kind": "patch"
             }
-          ]
+          ],
+          "fields": {
+            "/name": {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 0,
+              "path": "themes/core.json#dark",
+              "kind": "base",
+              "fieldPath": "/dark/name"
+            },
+            "/accent": {
+              "sourceId": "overrides",
+              "layer": "overrides",
+              "priority": 1,
+              "path": "themes/overrides.json#dark",
+              "kind": "patch",
+              "fieldPath": "/dark/accent"
+            }
+          }
         }
       }
     }

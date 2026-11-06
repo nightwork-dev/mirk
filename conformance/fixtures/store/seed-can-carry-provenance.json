@@ -92,7 +92,25 @@
                 "path": "themes/dark.json",
                 "kind": "patch"
               }
-            ]
+            ],
+            "fields": {
+              "/name": {
+                "sourceId": "base",
+                "layer": "base",
+                "priority": 0,
+                "path": "themes/dark.json",
+                "kind": "base",
+                "fieldPath": "/name"
+              },
+              "/accent": {
+                "sourceId": "overrides",
+                "layer": "overrides",
+                "priority": 1,
+                "path": "themes/dark.json",
+                "kind": "patch",
+                "fieldPath": "/accent"
+              }
+            }
           }
         }
       }

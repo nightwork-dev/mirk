@@ -178,9 +178,15 @@ export interface FixtureProvenanceLayer {
   kind: FixtureProvenanceLayerKind;
 }
 
+export interface FixtureFieldProvenance extends FixtureProvenanceLayer {
+  /** JSON pointer within the source document; map entries include their key. */
+  fieldPath: string;
+}
+
 export interface FixtureProvenance {
   finalRef: string;
   layers: FixtureProvenanceLayer[];
+  fields: Record<string, FixtureFieldProvenance>;
 }
 
 export interface LoadedFixture<T = unknown> {

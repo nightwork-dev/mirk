@@ -72,7 +72,25 @@
               "path": "themes/dark.json",
               "kind": "base"
             }
-          ]
+          ],
+          "fields": {
+            "": {
+              "sourceId": "override",
+              "layer": "override",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": ""
+            },
+            "/name": {
+              "sourceId": "override",
+              "layer": "override",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": "/name"
+            }
+          }
         }
       }
     }

@@ -105,6 +105,19 @@ const THEME_SCHEMA = {
 };
 
 export const scenarios = [
+  ...(["replace", "deep", "array-replace"] as const).map((mergeStrategy) => scenario(
+    `provenance/field-writes-${mergeStrategy}`,
+    "winning fields track writes, equal values, array replacement, and shadowed records",
+    {
+      types: [type("thing", "things", { jsonSchema: true, mergeStrategy, document: { kind: "map", idField: "id" } })],
+      sources: [
+        memory("old", 0, { "things/all.json": { a: { gone: 1 } } }),
+        memory("base", 1, { "things/all.json": { a: { same: 1, nested: { keep: 2, set: 3 }, list: [1, 2], "x/y~": 5 } } }),
+        memory("edit", 2, { "things/all.json": { a: { $patch: "thing:a", same: 1, nested: { set: 4 }, list: [1] } } }),
+      ],
+    },
+    [{ op: "explain", args: ["thing:a"], expect: value }],
+  )),
   // ── Registry ──────────────
   scenario(
     "registry/types-sorted-by-code-point",
