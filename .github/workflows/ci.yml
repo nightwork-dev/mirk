@@ -96,7 +96,7 @@ jobs:
       # produced in this job.
       - name: Install Python workspace
         working-directory: python
-        run: uv sync --all-packages --locked --group dev
+        run: uv sync --all-packages --locked --group dev --extra vec
 
       # The Python port replays the same corpus. Running only the TypeScript
       # suite would let the two implementations drift apart between commits,
@@ -104,6 +104,12 @@ jobs:
       - name: Python tests (store)
         working-directory: python/store
         run: uv run pytest -q
+
+      - name: Python tests (jobs and native companion)
+        working-directory: python
+        run: |
+          (cd jobs && uv run pytest -q)
+          (cd sqlite-vec-native && uv run pytest -q)
 
       - name: Python tests (fixtures)
         working-directory: python/fixtures
@@ -125,6 +131,12 @@ jobs:
         working-directory: python/store
         run: uv run pyright
 
+      - name: Python typecheck (jobs and native companion)
+        working-directory: python
+        run: |
+          (cd jobs && uv run pyright)
+          (cd sqlite-vec-native && uv run pyright)
+
       - name: Python typecheck (fixtures)
         working-directory: python/fixtures
         run: uv run pyright
@@ -143,7 +155,7 @@ jobs:
 
       - name: Python lint
         working-directory: python
-        run: uv run ruff check store fixtures artifact store-markdown artifact-opendal
+        run: uv run ruff check store fixtures artifact store-markdown artifact-opendal jobs sqlite-vec-native
 
       - name: Verify packed package releases
         run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --skip-conformance --receipt-dir .mirk-release
