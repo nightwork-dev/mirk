@@ -32,22 +32,9 @@ import type {
   StoreVersion,
   VersionedStoreValue,
 } from "@mirk/store";
-import type {
-  AsyncVectorStore,
-  VectorStoreMeta,
-  VectorDocument,
-  VectorSearchResult,
-  VectorSearchOptions,
-  Vector,
-} from "@mirk/store";
-import {
-  compareCodePoints,
-  cosineSimilarity,
-  bufferToVector,
-  assertDimensions,
-  isUsableVector,
-  matchesWhere,
-} from "@mirk/store";
+import type { AsyncVectorStore } from "@mirk/store/vector";
+import { ensureMirkRegistry } from "./libsql-format.js";
+import { LibsqlVectorFacet } from "./libsql-vector.js";
 import {
   AtomicMutationBackendError,
   AtomicMutationIndeterminateError,
@@ -70,14 +57,8 @@ import {
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
   INSERT_REGISTERED_TABLE_SQL,
-  INSERT_SCHEMA_VERSION_SQL,
-  isSchemaVersionTooNew,
   isTableRegistryConflict,
-  MIRK_REGISTRY_DDL,
-  MIRK_SCHEMA_VERSION,
-  schemaVersionTooNewMessage,
   SELECT_REGISTERED_TABLE_SQL,
-  SELECT_SCHEMA_VERSION_SQL,
   SELECT_TABLE_CLAIM_SQL,
   SELECT_TABLE_EXISTS_SQL,
   tableResolution,
@@ -85,11 +66,10 @@ import {
 } from "@mirk/store/sql";
 
 export type LibsqlAdapterErrorCode =
+  | "malformed-schema"
   | "unsupported-schema-version"
   | "invalid-collection-name"
   | "invalid-option"
-  | "dimensions-changed"
-  | "dimensions-unknown"
   | "adapter-closed"
   | "busy"
   | "transaction-expired"
@@ -136,8 +116,8 @@ export interface LibsqlAdapterOptions {
   /** Existing @libsql/client to reuse (shares one connection). When passed, the
    *  adapter never closes it on `close()` — ownership stays with the caller. */
   client?: Client;
-  /** Embedding dimensions. Required to use the `.vector` facet; KV works without it. */
-  dimensions?: number;
+  /** Logical vector namespace, shared by collections. */
+  namespace?: string;
   /** Force the exact JS-cosine search path even when native vector search is
    *  available. Mainly for parity testing; production should leave this off. */
   forceJsCosine?: boolean;
@@ -199,7 +179,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
       resolveReceiptRetention(opts.receiptRetentionMs),
       opts.now,
     );
-    this.vector = new LibsqlVectorFacet(this.database, names, opts.url, opts.dimensions, opts.forceJsCosine);
+    this.vector = new LibsqlVectorFacet(this.database, opts.tablePrefix ?? "", opts.namespace ?? "default", opts.forceJsCosine);
   }
 
   /** Run short, database-only work in one write transaction. Every `.kv` and
@@ -226,7 +206,6 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
   async initialize(versionIdentity: string): Promise<void> {
     await this.transaction(async () => {
       await (this.kv as LibsqlKvFacet).init(versionIdentity);
-      await (this.vector as LibsqlVectorFacet).init();
     });
   }
 }
@@ -293,7 +272,6 @@ interface TableNames {
   identity: string;
   vecMeta: string;
   vectors: string;
-  vectorIndex: string;
   collectionPrefix: string;
   /** Rewrites a shared registry statement onto the prefixed registry tables. */
   registrySql(sql: string): string;
@@ -312,7 +290,6 @@ function tableNames(prefix: string): TableNames {
     identity: `${prefix}_mirk_atomic_identity`,
     vecMeta: `${prefix}_vec_meta`,
     vectors: `${prefix}vectors`,
-    vectorIndex: `${prefix}vectors_vec_idx`,
     collectionPrefix: `${prefix}${COLLECTION_TABLE_PREFIX}`,
     registrySql: (sql) =>
       prefix === "" ? sql : sql.replaceAll("_mirk_tables", registry).replaceAll("_mirk_meta", meta),
@@ -717,31 +694,6 @@ interface Executor {
   execute(stmt: InStatement): Promise<ResultSet>;
 }
 
-/** Create `_mirk_tables` / `_mirk_meta` and pin `schema_version`, refusing a
- *  file written by a newer adapter. Same procedure as @mirk/store/sqlite: the
- *  two adapters read and write each other's files. */
-async function ensureMirkRegistry(db: Executor, names: TableNames): Promise<void> {
-  const meta = await db.execute({
-    sql: "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-    args: [names.meta],
-  });
-  if (meta.rows.length > 0) {
-    const rs = await db.execute(names.registrySql(SELECT_SCHEMA_VERSION_SQL));
-    const found = rs.rows[0]?.value as string | undefined;
-    if (found !== undefined && isSchemaVersionTooNew(found)) {
-      throw new LibsqlAdapterError("unsupported-schema-version", schemaVersionTooNewMessage(found, MIRK_SCHEMA_VERSION));
-    }
-  }
-  // `execute` is one statement per call; the shared DDL holds two.
-  for (const statement of names.registrySql(MIRK_REGISTRY_DDL).split(";")) {
-    if (statement.trim().length > 0) await db.execute(statement);
-  }
-  await db.execute({
-    sql: names.registrySql(INSERT_SCHEMA_VERSION_SQL),
-    args: [String(MIRK_SCHEMA_VERSION)],
-  });
-}
-
 /** Async driver for the shared `tableResolution` procedure in @mirk/store/sql —
  *  the same three steps @mirk/store/sqlite runs synchronously. */
 async function runTableResolution(
@@ -862,7 +814,7 @@ class LibsqlKvFacet implements LibsqlKvStore {
   /** Runs inside the adapter's opening transaction. */
   async init(versionIdentity: string): Promise<void> {
     const n = this.names;
-    await ensureMirkRegistry(this.db, n);
+    await ensureMirkRegistry(this.db, n, (code, message) => new LibsqlAdapterError(code, message));
     await this.db.execute(`
       CREATE TABLE IF NOT EXISTS ${n.kv} (
         key TEXT PRIMARY KEY,
@@ -1457,301 +1409,4 @@ class LibsqlKvFacet implements LibsqlKvStore {
     if (!row) return null;
     return { value: row.value, version: row.version ?? (await this.mint(target, [])) };
   }
-}
-
-// ─── Vector facet (AsyncVectorStore) — libSQL NATIVE vector search ─────────────
-
-class LibsqlVectorFacet implements AsyncVectorStore {
-  meta!: VectorStoreMeta;
-  private dimensions: number;
-  /** True when the native vector_top_k path is used; false to force exact JS cosine. */
-  private accelerated: boolean;
-  private readonly forceJsCosine: boolean;
-  private readonly url: string;
-  private initialized = false;
-
-  constructor(
-    private readonly db: LibsqlDatabase,
-    private readonly names: TableNames,
-    url: string,
-    dimensions?: number,
-    forceJsCosine?: boolean,
-  ) {
-    this.url = url;
-    // Provisional; finalized in init() once persisted dims are known.
-    this.dimensions = dimensions ?? -1;
-    this.forceJsCosine = forceJsCosine ?? false;
-    this.accelerated = false;
-  }
-
-  /** Memoized async schema init. Creates the vectors table (F32_BLOB column sized
-   *  to the configured dimensions) + persists/enforces dimensionality + builds the
-   *  native libsql_vector_idx so vector_top_k() can use it. */
-  async init(): Promise<void> {
-    if (this.initialized) return;
-    const n = this.names;
-    await this.db.execute(
-      `CREATE TABLE IF NOT EXISTS ${n.vecMeta} (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
-    );
-    // Persist + enforce dimensionality so a store created at N dims can't be reopened
-    // at M (which would let stale-length rows score a silent 0).
-    const metaRs = await this.db.execute(
-      `SELECT value FROM ${n.vecMeta} WHERE key = 'dimensions'`,
-    );
-    const stored = metaRs.rows[0];
-    if (stored) {
-      const persisted = Number(stored.value as string);
-      if (this.dimensions >= 0 && this.dimensions !== persisted) {
-        throw new LibsqlAdapterError("dimensions-changed",
-          `Vector store at ${this.url} was created with ${persisted} dimensions, opened with ${this.dimensions}.`,
-        );
-      }
-      this.dimensions = persisted;
-    } else if (this.dimensions >= 0) {
-      await this.db.execute({
-        sql: `INSERT INTO ${n.vecMeta} (key, value) VALUES ('dimensions', ?)`,
-        args: [String(this.dimensions)],
-      });
-    }
-    // Create the vectors table + native index only once dimensions are known —
-    // F32_BLOB requires a fixed N. KV-only adapters never touch the vector facet,
-    // so a dimensionless open is valid until a vector method is called.
-    if (this.dimensions >= 0) {
-      await this.db.execute(
-        `CREATE TABLE IF NOT EXISTS ${n.vectors} (
-           collection TEXT NOT NULL,
-           id TEXT NOT NULL,
-           vec F32_BLOB(${this.dimensions}) NOT NULL,
-           metadata TEXT,
-           PRIMARY KEY (collection, id)
-         )`,
-      );
-      // Native ANN index. vector_top_k() requires a libsql_vector_idx over the column.
-      await this.db.execute(
-        `CREATE INDEX IF NOT EXISTS ${n.vectorIndex}
-           ON ${n.vectors} (libsql_vector_idx(vec))`,
-      );
-    }
-    this.accelerated = !this.forceJsCosine;
-    this.meta = {
-      backend: "libsql",
-      dimensions: Math.max(this.dimensions, 0),
-      accelerated: this.accelerated,
-    };
-    this.initialized = true;
-  }
-
-  private assertReady(v: Vector): void {
-    if (this.dimensions < 0) {
-      throw new LibsqlAdapterError("dimensions-unknown",
-        "LibsqlAdapter.vector requires `dimensions` — pass { dimensions } when opening.",
-      );
-    }
-    assertDimensions(v, this.dimensions);
-  }
-
-  private upsertStatement<M extends Record<string, unknown>>(
-    collection: string,
-    doc: VectorDocument<M>,
-  ): InStatement {
-    // Bind the vector through vector32(?) — libSQL converts a JSON-array string (or
-    // an f32 blob) into its native F32_BLOB on write. We pass the JSON text form so
-    // there is one canonical encoding path.
-    return {
-      sql: `INSERT INTO ${this.names.vectors}(collection, id, vec, metadata) VALUES (?, ?, vector32(?), ?)
-            ON CONFLICT(collection, id) DO UPDATE SET vec = excluded.vec, metadata = excluded.metadata`,
-      args: [
-        collection,
-        doc.id,
-        vectorToJson(doc.vector),
-        doc.metadata === undefined ? null : JSON.stringify(doc.metadata),
-      ],
-    };
-  }
-
-  async upsert<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    doc: VectorDocument<M>,
-  ): Promise<void> {
-    this.assertReady(doc.vector);
-    await this.db.transactions.transaction(() => this.db.execute(this.upsertStatement(collection, doc)));
-  }
-
-  async upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    docs: ReadonlyArray<VectorDocument<M>>,
-  ): Promise<void> {
-    // Validate every vector before mutating, so a mid-array mismatch writes nothing
-    // (matching the in-memory + sqlite backends' atomic upsertMany).
-    for (const doc of docs) this.assertReady(doc.vector);
-    if (docs.length === 0) return;
-    await this.db.transactions.transaction(() =>
-      this.db.inTransaction((open) => guard(open.batch(docs.map((doc) => this.upsertStatement(collection, doc))))),
-    );
-  }
-
-  async get<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    id: string,
-  ): Promise<VectorDocument<M> | null> {
-    const rs = await this.db.execute({
-      sql: `SELECT id, vec, metadata FROM ${this.names.vectors} WHERE collection = ? AND id = ?`,
-      args: [collection, id],
-    });
-    const row = rs.rows[0];
-    if (!row) return null;
-    return {
-      id: row.id as string,
-      vector: blobValueToVector(row.vec),
-      metadata: row.metadata === null ? undefined : (JSON.parse(row.metadata as string) as M),
-    };
-  }
-
-  async has(collection: string, id: string): Promise<boolean> {
-    const rs = await this.db.execute({
-      sql: `SELECT 1 FROM ${this.names.vectors} WHERE collection = ? AND id = ?`,
-      args: [collection, id],
-    });
-    return rs.rows.length > 0;
-  }
-
-  async remove(collection: string, id: string): Promise<boolean> {
-    const rs = await this.db.transactions.transaction(() =>
-      this.db.execute({
-        sql: `DELETE FROM ${this.names.vectors} WHERE collection = ? AND id = ?`,
-        args: [collection, id],
-      }),
-    );
-    return rs.rowsAffected > 0;
-  }
-
-  async count(collection: string): Promise<number> {
-    const rs = await this.db.execute({
-      sql: `SELECT COUNT(*) AS n FROM ${this.names.vectors} WHERE collection = ?`,
-      args: [collection],
-    });
-    return Number(rs.rows[0]!.n);
-  }
-
-  async search<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    opts?: VectorSearchOptions,
-  ): Promise<VectorSearchResult<M>[]> {
-    this.assertReady(query);
-    const topK = opts?.topK ?? 10;
-    const minScore = opts?.minScore;
-    const hasFilters = !!(opts?.where || opts?.whereNot);
-    // When pre-KNN filters are present, FORCE the JS path: vector_top_k() ranks over
-    // the whole index and cannot apply metadata predicates BEFORE the KNN cut, so a
-    // native query would compute topK from the unfiltered set and then filter —
-    // wrong semantics. The JS path fetches the collection's rows, filters FIRST, then
-    // scores — so topK is out of the passing set only. This is the load-bearing
-    // correctness point and matches the in-memory + sqlite backends exactly.
-    // A zero / non-finite query has no cosine direction — also use the deterministic
-    // JS path there.
-    if (this.accelerated && isUsableVector(query) && !hasFilters) {
-      return this.searchNative<M>(collection, query, topK, minScore);
-    }
-    return this.searchJs<M>(collection, query, topK, minScore, opts?.where, opts?.whereNot);
-  }
-
-  private async searchNative<M extends Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    topK: number,
-    minScore: number | undefined,
-  ): Promise<VectorSearchResult<M>[]> {
-    // vector_top_k('index_name', query, k) returns rowids (as an `id` column) of the
-    // k nearest rows by the index's metric. Join back to `vectors` to recover the
-    // (collection, id, metadata) and compute the exact cosine score. The index spans
-    // every collection, so over-fetch (k scaled) and filter to this collection, then
-    // re-cut to topK — keeps results correct when the global top-k spills into other
-    // collections.
-    const overFetch = Math.max(topK * 4, topK + 16);
-    const rs = await this.db.execute({
-      sql: `SELECT v.id AS id,
-                   v.metadata AS metadata,
-                   vector_distance_cos(v.vec, vector32(?)) AS distance
-            FROM vector_top_k('${this.names.vectorIndex}', vector32(?), CAST(? AS INTEGER)) AS t
-            JOIN ${this.names.vectors} v ON v.rowid = t.id
-            WHERE v.collection = ?`,
-      args: [vectorToJson(query), vectorToJson(query), overFetch, collection],
-    });
-    const out: VectorSearchResult<M>[] = [];
-    for (const r of rs.rows) {
-      if (r.distance === null) continue;
-      const score = 1 - Number(r.distance); // cosine distance → similarity
-      if (!Number.isFinite(score)) continue;
-      if (minScore !== undefined && score < minScore) continue;
-      out.push({
-        id: r.id as string,
-        score,
-        metadata: r.metadata === null ? undefined : (JSON.parse(r.metadata as string) as M),
-      });
-    }
-    out.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
-    return out.slice(0, topK);
-  }
-
-  private async searchJs<M extends Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    topK: number,
-    minScore: number | undefined,
-    where?: Record<string, unknown>,
-    whereNot?: Record<string, unknown>,
-  ): Promise<VectorSearchResult<M>[]> {
-    const rs = await this.db.execute({
-      sql: `SELECT id, vec, metadata FROM ${this.names.vectors} WHERE collection = ?`,
-      args: [collection],
-    });
-    const scored: VectorSearchResult<M>[] = [];
-    for (const row of rs.rows) {
-      const meta =
-        row.metadata === null ? undefined : (JSON.parse(row.metadata as string) as M);
-      // Pre-KNN metadata filters — applied before scoring.
-      if (where && !matchesWhere(meta, where)) continue;
-      if (whereNot && matchesWhere(meta, whereNot)) continue;
-      const vec = blobValueToVector(row.vec);
-      if (!isUsableVector(vec)) continue; // directionless — excluded (matches every backend)
-      const score = cosineSimilarity(query, vec);
-      if (!Number.isFinite(score)) continue;
-      if (minScore !== undefined && score < minScore) continue;
-      scored.push({ id: row.id as string, score, metadata: meta });
-    }
-    scored.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
-    return scored.slice(0, topK);
-  }
-}
-
-// ─── Vector encoding helpers ─────────────────────────────────────────────────
-
-/** Encode a vector as a JSON array string for libSQL's vector32() constructor.
- *  Non-finite components serialize to JSON `null`; libSQL rejects those, so a
- *  non-finite vector is never persisted (assertReady + isUsableVector keep them
- *  out of search anyway). */
-function vectorToJson(vec: Vector): string {
-  return JSON.stringify(Array.from(vec, (x) => (Number.isFinite(x) ? x : 0)));
-}
-
-/** Decode a libSQL F32_BLOB column Value into a Vector. libSQL returns BLOB columns
- *  as an ArrayBuffer (not a Node Buffer), so normalize to a Uint8Array first and
- *  reuse @mirk/store's little-endian float32 decoder. */
-function blobValueToVector(value: unknown): Vector {
-  if (value instanceof ArrayBuffer) {
-    return bufferToVector(new Uint8Array(value));
-  }
-  if (value instanceof Uint8Array) {
-    return bufferToVector(value);
-  }
-  if (typeof Buffer !== "undefined" && Buffer.isBuffer(value)) {
-    return bufferToVector(value);
-  }
-  // Defensive: some drivers may hand back a typed-array view.
-  if (ArrayBuffer.isView(value)) {
-    const view = value as ArrayBufferView;
-    return bufferToVector(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-  }
-  throw new Error(`Unexpected vec column type: ${Object.prototype.toString.call(value)}`);
 }

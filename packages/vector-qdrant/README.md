@@ -1,60 +1,87 @@
 # @mirk/vector-qdrant
 
-> **Mirk's vector search, on a Qdrant server.** The same interface as the SQLite vector store, with
-> exact cosine scores and metadata filters, for when your vectors outgrow a local file.
-
-## Why
-
-Mirk's SQLite stores rank vectors by exact cosine similarity, and that is plenty for many apps. At
-some size you may want a dedicated vector database that lives on its own server, is shared by
-several services, or is already part of your infrastructure.
-
-The risk in switching is that "nearest neighbours" quietly changes meaning. Approximate indexes
-return slightly different results. Ties come back in a different order. A filter treats a missing
-field differently. Code that worked on SQLite gives different answers on the new backend.
-
-`@mirk/vector-qdrant` implements Mirk's `AsyncVectorStore` over a [Qdrant](https://qdrant.tech)
-client you provide. It asks Qdrant for exact candidates, then recomputes every score itself with
-Mirk's cosine function. Results, order, and filters match the other Mirk vector stores. The same
-shared vector scenarios that check the SQLite stores check this one when a Qdrant server is
-available to the tests.
-
-**Reach for it when** you already run Qdrant, or want vectors on a separate server. **Stay on
-SQLite when** one local file is enough: it is simpler and needs nothing running.
-
-## A first look
+Mirk's named-vector storage on a host-owned Qdrant client. Requires Qdrant 1.18 or later and
+`@qdrant/js-client-rest` 1.19 or later. The adapter owns one dedicated physical collection;
+logical collections and vector namespaces share it without sharing document identities.
 
 ```ts
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { QdrantVectorStore } from "@mirk/vector-qdrant";
 
-const client = new QdrantClient({ url: "https://qdrant.example.com" });
+const client = new QdrantClient({ url: "http://127.0.0.1:6333" });
 const vectors = await QdrantVectorStore.open(client, {
-  collectionName: "my_app_vectors",
-  dimensions: 3,
+  collectionName: "app_vectors",
+  namespace: "default", // optional
 });
-
-await vectors.upsert("articles", {
-  id: "article-1",
-  vector: Float32Array.from([1, 0, 0]),
-  metadata: { kind: "article" },
+await vectors.ensureSpace("text", { dimensions: 3 });
+await vectors.ensureSpace("image", { dimensions: 2 });
+await vectors.upsert("assets", {
+  id: "one",
+  vectors: { text: Float32Array.from([1, 0, 0]), image: Float32Array.from([0, 1]) },
+  metadata: { kind: "illustration" },
 });
-
-const matches = await vectors.search("articles", Float32Array.from([1, 0, 0]));
+const hits = await vectors.search("assets", {
+  space: "image", vector: Float32Array.from([0, 1]),
+}, { topK: 10, where: { kind: "illustration" } });
 ```
 
-`matches` is a list of `{ id, score, metadata? }`, best first. The first call to `open` creates the
-Qdrant collection if it is missing.
+## Contract
+
+`ensureSpace(name, { dimensions })` persists an immutable positive dimension definition. Conflicts
+raise `space-definition-conflict`. `listSpaces()` returns `{ name, dimensions, metric: "cosine",
+encoding: "float32" }` in Unicode code-point name order. Definitions are shared by logical
+collections in the same namespace. The namespace defaults to `default`.
+
+`upsert` replaces the complete vector map and metadata. Omitted vectors disappear. A document must
+contain at least one declared space, and each vector must match its dimensions. `upsertMany`
+validates the entire batch before issuing one Qdrant upsert request. `get` returns all raw vectors;
+`count` counts documents, and `remove` removes the whole point. The old single-vector API is removed.
+
+Each Mirk space maps to one native Qdrant named float32 `Dot` vector. The adapter indexes normalized
+copies and keeps original little-endian float32 bytes in the payload. Search uses native exact
+candidate prefixes, then Mirk's float64 cosine scoring. Candidate prefixes grow when rounding or
+ties can affect membership; `pageSize` (default 256) sets the initial prefix, without capping results.
+Zero queries score usable vectors at zero. Stored zero and non-finite vectors round-trip but do not
+participate as candidates. A document missing the selected space is omitted. Unknown spaces error.
+
+Results sort by descending score, then Unicode code-point ID. `minScore` is inclusive. Metadata
+filters run before native ranking and compare exact JSON text, including object key order.
+`where` requires its complete conjunction; `whereNot` excludes its complete conjunction. Absent
+metadata differs from `{}`. `meta` reports `{ backend: "qdrant", accelerated: true }`; it has no
+global dimension field. Client transport and backend failures propagate unchanged.
+
+Opening creates a missing collection and required payload indexes. An incompatible schema or index
+raises `QdrantCollectionError`; malformed points raise `QdrantProtocolError`. It never recreates a
+collection. The host owns the client's lifecycle and collection deletion.
+
+## Migrating an unnamed legacy collection
+
+Stop legacy writers first. Qdrant cannot atomically migrate schema and every point in place. Copy
+to a new physical collection, then switch the application's configured collection after success:
+
+```ts
+import { migrateLegacyQdrantVectors } from "@mirk/vector-qdrant";
+const vectors = await migrateLegacyQdrantVectors(client, {
+  sourceCollectionName: "old_vectors",
+  collectionName: "named_vectors",
+  pageSize: 256,
+  onProgress: ({ copied, total, complete }) => console.log({ copied, total, complete }),
+});
+```
+
+The source remains untouched. Legacy embeddings become space `default` in namespace `default`.
+The destination carries a persisted completion marker. An interrupted destination cannot be opened
+as an ordinary store; call the same migration again to resume by idempotent replacement. Completion
+checks source and destination document counts before marking it ready. Reserve the destination for
+this migration until completion, and keep source writers stopped throughout copy and resume.
+Neither adapter deletes or swaps collections automatically. TypeScript and Python share the format
+and migration marker, so either language can resume the other's interrupted copy.
 
 ## Install
 
-```bash
-npm install @mirk/vector-qdrant @qdrant/js-client-rest
+```sh
+pnpm add @mirk/vector-qdrant @qdrant/js-client-rest
 ```
-
-The Qdrant client is an optional peer dependency. Install a compatible `@qdrant/js-client-rest`
-version (`^1.19.0`) and pass the configured client to `open`. The host owns the client and its
-lifecycle. Use Node 22.23.4+, 24.22.1+, or 26.12.1+.
 
 ### Security: override Undici
 
@@ -81,87 +108,11 @@ For Yarn, use a resolution:
 {"resolutions":{"@qdrant/js-client-rest/undici":"^7.30.1"}}
 ```
 
-## How it uses Qdrant
+## Exports and verification
 
-You pick **one dedicated Qdrant collection** for each adapter instance (`collectionName`). The
-`collection` argument on each vector call, such as `"articles"` above, is a logical scope stored in
-each point's payload, so several scopes can share the one physical collection. `count(collection)`
-counts one scope.
+Exports the named vector port types, `QdrantVectorStore`, collection/protocol errors,
+`migrateLegacyQdrantVectors`, migration option/progress types, `candidateScoreBound(dimensions)`,
+and `pointIdFor(collection, id)` (the UUID helper for an encoded physical scope).
 
-On `open`, the adapter:
-
-- creates the physical collection if it is missing, with an unnamed `Dot` vector of the configured
-  size;
-- validates an existing collection before using it, and throws `QdrantCollectionError` if it has
-  named vectors, a different size or distance, a datatype other than float32, or a multivector
-  configuration;
-- creates the payload indexes that scoped metadata filtering needs, and throws
-  `QdrantCollectionError` if an index already exists with the wrong type;
-- never recreates or deletes a physical collection.
-
-Writes and deletes wait for Qdrant to finish. Transport, authentication, and backend errors from
-the client propagate unchanged.
-
-## Search
-
-```ts
-await vectors.search("articles", query, {
-  topK: 5,                      // default 10
-  minScore: 0.8,                // inclusive; applied after exact scoring
-  where: { kind: "article" },   // keep only documents whose metadata matches all of these
-  whereNot: { draft: true },    // drop documents whose metadata matches any of these
-});
-```
-
-- **Exact scores.** Vectors are stored as their original little-endian float32 bytes in payload and
-  indexed as rounded float32 unit vectors. Public scores are recomputed with Mirk's cosine helper,
-  so values and ordering match the other Mirk vector stores.
-- **Order.** Highest score first. Equal scores order by document id in Unicode code point order.
-- **Filters** are exact matches on JSON text, so object key order and array order matter:
-  `{ nested: { b: 2, a: 1 } }` does not match metadata stored as `{ nested: { a: 1, b: 2 } }`.
-  Filters apply before ranking, so `topK` is taken from the documents that pass.
-- **Unusable vectors.** A stored vector with a non-finite component (`NaN` or infinity) is kept and
-  returned by `get`, but never appears in search results.
-- **Zero query.** A zero query has score `0` for every usable stored vector. That is one exact
-  score tie, so the adapter may read the whole matching set even when `topK` is small.
-- **`pageSize`** is the initial native prefix size and defaults to 256. The adapter grows that
-  prefix when exact completion needs more candidates, such as for ties beyond the prefix, so it does
-  not cap the public result set.
-
-## Reference
-
-### `QdrantVectorStore.open(client, options)`
-
-| Option           | Default  | Meaning                                                              |
-| ---------------- | -------- | -------------------------------------------------------------------- |
-| `collectionName` | required | The physical Qdrant collection this adapter owns.                    |
-| `dimensions`     | required | Positive integer. Every vector and query must have this length.      |
-| `pageSize`       | 256      | Positive integer. Initial native prefix size for search.             |
-
-Invalid `dimensions` throws `VectorInputError` and an invalid `pageSize` throws
-`QdrantCollectionError`, both before any call to Qdrant.
-
-### Methods
-
-`upsert`, `upsertMany`, `get`, `has`, `remove`, `count`, and `search`, as defined by
-`AsyncVectorStore` in `@mirk/store/vector`. `upsertMany` checks every document's dimensions before
-writing any, and an empty batch does nothing. `meta` reports `{ backend: "qdrant", dimensions,
-accelerated: true }`.
-
-### Errors
-
-- `QdrantCollectionError` — the physical collection or an option does not satisfy the contract.
-- `QdrantProtocolError` — a point in the collection is not a valid Mirk record, for example a
-  payload written by something else.
-
-### Exports
-
-`QdrantVectorStore`, `QdrantCollectionError`, `QdrantProtocolError`, `pointIdFor(collection, id)`
-(the deterministic UUID for a scope and id), `candidateScoreBound(dimensions)`, and the vector port
-types `AsyncVectorStore`, `Vector`, `VectorDocument`, `VectorSearchOptions`, `VectorSearchResult`,
-and `VectorStoreMeta`.
-
-### Shared with Python
-
-The stored point format is the same as `mirk-vector-qdrant`, so a collection written from
-TypeScript can be read from Python, and the other way round.
+Run `python3 scripts/run-qdrant-tests.py` from the repository root for the isolated native-server
+TypeScript/Python tests and cross-language exchange. Direct tests skip when `MIRK_QDRANT_URL` is unset.
