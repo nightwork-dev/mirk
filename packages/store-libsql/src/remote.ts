@@ -1,3 +1,4 @@
+import type { SqliteMigrationResult } from "@mirk/store/sql";
 // Engine-free remote entry point for @mirk/store-libsql. Importing this module
 // reaches @libsql/client/web only; local SQLite engine code is never loaded.
 
@@ -28,16 +29,31 @@ function assertRemoteUrl(opts: LibsqlAdapterOptions): void {
 }
 
 function remoteUrlMessage(): string {
-  return "@mirk/store-libsql/remote only accepts remote libSQL URLs (libsql://, https://, http://, wss://, or ws://). "
-    + "Use @mirk/store-libsql for file: or :memory: storage.";
+  return (
+    "@mirk/store-libsql/remote only accepts remote libSQL URLs (libsql://, https://, http://, wss://, or ws://). " +
+    "Use @mirk/store-libsql for file: or :memory: storage."
+  );
 }
 
 /** Engine-free remote libSQL source adapter. The public API matches the Node
  * entry point, but local file: and :memory: URLs are rejected before a client
  * is created. */
 export class LibsqlAdapter extends LibsqlAdapterCore {
-  private constructor(client: LibsqlClient, ownsClient: boolean, opts: LibsqlAdapterOptions) {
+  private constructor(
+    client: LibsqlClient,
+    ownsClient: boolean,
+    opts: LibsqlAdapterOptions,
+  ) {
     super(client, ownsClient, opts);
+  }
+
+  static async migrate(
+    opts: LibsqlAdapterOptions,
+  ): Promise<SqliteMigrationResult> {
+    const adapter = await this.open({ ...opts, migration: "auto" });
+    const result = adapter.migrationResult;
+    adapter.close();
+    return result;
   }
 
   static async open(opts: LibsqlAdapterOptions): Promise<LibsqlAdapter> {
@@ -45,8 +61,8 @@ export class LibsqlAdapter extends LibsqlAdapterCore {
     return openLibsqlAdapter(
       opts,
       createClient,
-      (client, ownsClient, options) => new LibsqlAdapter(client, ownsClient, options),
+      (client, ownsClient, options) =>
+        new LibsqlAdapter(client, ownsClient, options),
     );
   }
 }
-

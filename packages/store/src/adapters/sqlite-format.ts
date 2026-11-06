@@ -3,12 +3,19 @@ import {
   SqliteFormatError,
   type SqliteFormatErrorCode,
   type SqliteFormatRows,
+  type SqliteMigrationOptions,
+  type SqliteMigrationResult,
 } from "../sql.js";
 import type { SqliteDb } from "./sqlite-driver.js";
 
 type Failure = (code: SqliteFormatErrorCode, message: string) => Error;
-export function ensureMirkFormat(db: SqliteDb, failure: Failure): void {
-  const plan = mirkFormatMigration();
+export function ensureMirkFormat(
+  db: SqliteDb,
+  failure: Failure,
+  options: SqliteMigrationOptions = {},
+  backup?: (path: string) => void,
+): SqliteMigrationResult {
+  const plan = mirkFormatMigration("", options);
   let next = plan.next();
   const drain = (): void => {
     while (!next.done) {
@@ -22,6 +29,16 @@ export function ensureMirkFormat(db: SqliteDb, failure: Failure): void {
         next = plan.next([]);
         return;
       }
+      if (step.kind === "backup") {
+        if (!backup)
+          throw new SqliteFormatError(
+            "unsupported-backup",
+            "Migration backups require a local file adapter",
+          );
+        backup(step.path);
+        next = plan.next([]);
+        continue;
+      }
       const rows =
         step.kind === "query"
           ? (db.prepare(step.sql).all(...step.args) as SqliteFormatRows)
@@ -31,6 +48,8 @@ export function ensureMirkFormat(db: SqliteDb, failure: Failure): void {
   };
   try {
     drain();
+    if (!next.done) throw new Error("Incomplete migration plan");
+    return next.value;
   } catch (error) {
     if (error instanceof SqliteFormatError)
       throw failure(error.code, error.message);

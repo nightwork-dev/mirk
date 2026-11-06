@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from types import TracebackType
-from typing import Any, Literal
+from typing import Any
 
 from .atomic import (
     IN_PROCESS_ATOMIC_LIMITS,
@@ -43,6 +43,17 @@ from .filter import (
     validate_in_values,
     where_range,
 )
+from .sqlite_registry import (
+    META_TABLE,
+    REGISTRY_TABLE,
+    SCHEMA_VERSION,
+    SqliteAdapterError,
+    SqliteAdapterErrorCode,
+    SqliteMigrationResult,
+    ensure_registry,
+    migrate_sqlite,
+    table_exists,
+)
 from .types import JsonObject, StoreFilter, StoreMeta
 
 __all__ = [
@@ -52,6 +63,7 @@ __all__ = [
     "TABLE_RESOLUTION_ATTEMPTS",
     "SqliteAdapterError",
     "SqliteAdapterErrorCode",
+    "SqliteMigrationResult",
     "SqliteStore",
     "build_ensure_index_sql",
     "build_limit_offset",
@@ -65,6 +77,7 @@ __all__ = [
     "json_path_literal",
     "legacy_collection_table",
     "lookup_table",
+    "migrate_sqlite",
     "resolve_table",
     "table_exists",
 ]
@@ -73,23 +86,6 @@ _BASE36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 _UNSAFE_TABLE_CHARS = re.compile(r"[^a-zA-Z0-9_]")
 _LIKE_SPECIALS = re.compile(r"([\\%_])")
 _SAFE_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
-
-SqliteAdapterErrorCode = Literal[
-    "unsupported-schema-version", "invalid-busy-timeout", "malformed-schema", "migration-required"
-]
-
-
-class SqliteAdapterError(ValueError):
-    """Raised when a SQLite file or adapter option cannot be used."""
-
-    def __init__(self, code: SqliteAdapterErrorCode, message: str) -> None:
-        super().__init__(message)
-        self.code: SqliteAdapterErrorCode = code
-
-
-REGISTRY_TABLE = "_mirk_tables"
-META_TABLE = "_mirk_meta"
-SCHEMA_VERSION = 3
 
 SqlParam = str | int | float | None
 
@@ -295,142 +291,6 @@ def _build_in_clause(
     return (f"{keyword} {condition}", params)
 
 
-_REGISTRY_DDL = (
-    f"""CREATE TABLE IF NOT EXISTS {META_TABLE} (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )""",
-    f"""CREATE TABLE IF NOT EXISTS {REGISTRY_TABLE} (
-      kind TEXT NOT NULL,
-      name TEXT NOT NULL,
-      table_name TEXT NOT NULL UNIQUE,
-      PRIMARY KEY (kind, name)
-    )""",
-)
-
-
-@contextmanager
-def _registry_write(connection: sqlite3.Connection) -> Generator[sqlite3.Connection]:
-    """A write transaction, unless the caller already opened one."""
-    if connection.in_transaction:
-        yield connection
-        return
-    connection.execute("BEGIN IMMEDIATE")
-    try:
-        yield connection
-    except BaseException:
-        connection.execute("ROLLBACK")
-        raise
-    else:
-        connection.execute("COMMIT")
-
-
-def table_exists(connection: sqlite3.Connection, table: str) -> bool:
-    row = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
-        (table,),
-    ).fetchone()
-    return row is not None
-
-
-def _stored_schema_version(connection: sqlite3.Connection) -> str | None:
-    row = connection.execute(
-        f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'"
-    ).fetchone()
-    return None if row is None else str(row[0])
-
-
-def ensure_registry(connection: sqlite3.Connection) -> None:
-    """Validate before writes, then recheck and migrate under the writer lock."""
-
-    def version() -> int | None:
-        if not table_exists(connection, META_TABLE):
-            return None
-        found = _stored_schema_version(connection)
-        if found is None or not re.fullmatch(r"[1-9][0-9]*", found):
-            raise SqliteAdapterError("malformed-schema", "Malformed Mirk schema version")
-        parsed = int(found)
-        if parsed > SCHEMA_VERSION:
-            raise SqliteAdapterError(
-                "unsupported-schema-version",
-                f"Mirk SQLite file schema version {found} is newer than this"
-                f" adapter understands ({SCHEMA_VERSION}).",
-            )
-        return parsed
-
-    def validate_current() -> None:
-        tables = {
-            REGISTRY_TABLE: ("kind", "name", "table_name"),
-            "_mirk_vector_spaces": ("namespace", "name", "dimensions", "metric", "encoding"),
-            "_mirk_vector_documents": ("namespace", "collection", "id", "metadata"),
-            "_mirk_vector_values": ("namespace", "collection", "id", "space", "vec"),
-        }
-        for table, expected in tables.items():
-            if not table_exists(connection, table):
-                raise SqliteAdapterError("malformed-schema", f"Missing Mirk table {table}")
-            columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
-            if not set(expected).issubset(columns):
-                raise SqliteAdapterError("malformed-schema", f"Malformed Mirk table {table}")
-
-    if version() == SCHEMA_VERSION:
-        validate_current()
-        return
-    try:
-        with _registry_write(connection):
-            found = version()
-            if found == SCHEMA_VERSION:
-                validate_current()
-                return
-            names = [
-                row[0]
-                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            ]
-            if found is None:
-                legacy = {
-                    REGISTRY_TABLE: ("kind", "name", "table_name"),
-                    "_mirk_atomic_versions": ("kind", "collection", "target_key", "version"),
-                    "_mirk_atomic_sequence": ("id", "value"),
-                    "_mirk_atomic_identity": ("id", "value"),
-                    "_mirk_atomic_receipts": ("idempotency_key", "request_digest", "result_json"),
-                    "_mirk_log": ("stream", "sequence", "record"),
-                    "_mirk_search_schema": ("collection", "fields_json"),
-                }
-                for name in names:
-                    if not name.startswith("_mirk_") or name.startswith("_mirk_coordination_"):
-                        continue
-                    expected = legacy.get(name)
-                    if expected is None:
-                        raise SqliteAdapterError(
-                            "malformed-schema", "Unrecognized unversioned Mirk layout"
-                        )
-                    actual = {row[1] for row in connection.execute(f'PRAGMA table_info("{name}")')}
-                    if not set(expected).issubset(actual):
-                        raise SqliteAdapterError(
-                            "malformed-schema", "Unrecognized unversioned Mirk layout"
-                        )
-            if found not in (None, 1, 2):
-                raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
-            for statement in _REGISTRY_DDL:
-                connection.execute(statement)
-            from .sqlite_format import migrate_vectors
-
-            try:
-                migrate_vectors(connection)
-            except ValueError as error:
-                raise SqliteAdapterError("malformed-schema", str(error)) from error
-            connection.execute(
-                "INSERT INTO _mirk_meta(key,value) VALUES('schema_version',?) ON "
-                "CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (str(SCHEMA_VERSION),),
-            )
-    except sqlite3.OperationalError as error:
-        if getattr(error, "sqlite_errorname", "").startswith("SQLITE_READONLY"):
-            raise SqliteAdapterError(
-                "migration-required", "Mirk SQLite file requires a writable format migration"
-            ) from error
-        raise
-
-
 def lookup_table(connection: sqlite3.Connection, kind: str, name: str) -> str | None:
     """The physical table recorded for a logical name, without claiming one."""
     row = connection.execute(
@@ -614,6 +474,9 @@ class SqliteStore:
         atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
         receipt_retention_ms: int | None = None,
         now: Callable[[], float] | None = None,
+        migration: str = "auto",
+        backup_path: str | None = None,
+        legacy_vector_space: str = "default",
     ) -> None:
         """``receipt_retention_ms`` keeps each idempotency receipt that long; a
         request whose key matches only an expired receipt is applied as new.
@@ -639,7 +502,12 @@ class SqliteStore:
         self._db.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
         self._db.execute("PRAGMA foreign_keys = ON")
         try:
-            ensure_registry(self._db)
+            ensure_registry(
+                self._db,
+                migration=migration,
+                backup_path=backup_path,
+                legacy_vector_space=legacy_vector_space,
+            )
             self._db.execute("PRAGMA journal_mode = WAL")
         except BaseException:
             if self._owns_connection:
@@ -660,10 +528,6 @@ class SqliteStore:
             row = self._db.execute(
                 "SELECT value FROM _mirk_atomic_identity WHERE id = 1"
             ).fetchone()
-            # Receipts written before receipts expired carry no creation time.
-            columns = self._db.execute("PRAGMA table_info(_mirk_atomic_receipts)").fetchall()
-            if not any(column[1] == "created_at" for column in columns):
-                self._db.execute("ALTER TABLE _mirk_atomic_receipts ADD COLUMN created_at INTEGER")
             self._db.execute(
                 "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at"
                 " ON _mirk_atomic_receipts (created_at)"

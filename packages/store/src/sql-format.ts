@@ -1,5 +1,6 @@
+import { logGenerationMigrationSql } from "./sql-log-format.js";
 /** The `_mirk_meta.schema_version` this build writes and understands. */
-export const MIRK_SCHEMA_VERSION = 3;
+export const MIRK_SCHEMA_VERSION = 4;
 
 export const MIRK_REGISTRY_DDL = `
   CREATE TABLE IF NOT EXISTS _mirk_tables (
@@ -34,11 +35,15 @@ export type SqliteFormatStep =
       args: readonly (string | number)[];
     }
   | { kind: "begin" }
-  | { kind: "commit" };
+  | { kind: "commit" }
+  | { kind: "backup"; path: string };
 export type SqliteFormatErrorCode =
   | "unsupported-schema-version"
   | "malformed-schema"
-  | "migration-required";
+  | "migration-required"
+  | "migration-refused"
+  | "unsupported-backup"
+  | "backup-failed";
 export class SqliteFormatError extends Error {
   constructor(
     readonly code: SqliteFormatErrorCode,
@@ -64,7 +69,29 @@ function* execute(sql: string, ...args: (string | number)[]): Plan {
 }
 
 /** One migration policy; drivers supply queries and writer admission, and roll back on failure. */
-export function* mirkFormatMigration(tablePrefix = ""): Plan {
+export interface SqliteMigrationResult {
+  from: number | null;
+  to: number;
+  changed: boolean;
+  backupPath?: string;
+}
+export interface SqliteMigrationOptions {
+  migration?: "auto" | "explicit" | "refuse";
+  backupPath?: string;
+  legacyVectorSpace?: string;
+}
+export function* mirkFormatMigration(
+  tablePrefix = "",
+  options: SqliteMigrationOptions = {},
+): Plan<SqliteMigrationResult> {
+  const policy = options.migration ?? "auto";
+  const space = options.legacyVectorSpace ?? "default";
+  if (!["auto", "explicit", "refuse"].includes(policy))
+    throw new TypeError("Invalid migration policy");
+  if (typeof space !== "string" || !space.length)
+    throw new TypeError("legacyVectorSpace must be nonempty");
+  if (options.backupPath !== undefined && !options.backupPath.length)
+    throw new TypeError("backupPath must be nonempty");
   if (tablePrefix && !/^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(tablePrefix))
     throw new TypeError("Invalid SQLite table prefix");
   const table = (name: string) => `${tablePrefix}${name}`;
@@ -105,6 +132,9 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
   }
   function* validateCurrent(): Plan {
     const required: Record<string, string[]> = {
+      _mirk_log: ["stream", "sequence", "record"],
+      _mirk_log_streams: ["stream", "generation"],
+      _mirk_log_generation: ["id", "value"],
       _mirk_tables: ["kind", "name", "table_name"],
       _mirk_vector_spaces: [
         "namespace",
@@ -124,18 +154,45 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
         malformed(`Malformed Mirk table ${table(name)}`);
     }
   }
-  if ((yield* version()) === MIRK_SCHEMA_VERSION) {
-    yield* validateCurrent();
-    return;
+  function* older(found: number | null): Plan<boolean> {
+    if (found !== null) return true;
+    const rows = yield* query(
+      "SELECT name FROM sqlite_master WHERE type='table'",
+    );
+    return rows.some((row) => {
+      const name = String(row.name);
+      return (
+        name === table("_kv") ||
+        name === table("vectors") ||
+        name === table("_vec_meta") ||
+        (name.startsWith(table("_mirk_")) &&
+          !name.startsWith(table("_mirk_coordination_")))
+      );
+    });
   }
+  function enforce(isOlder: boolean): void {
+    if (!isOlder || policy === "auto") return;
+    throw new SqliteFormatError(
+      policy === "refuse" ? "migration-refused" : "migration-required",
+      "Mirk SQLite file requires a format migration",
+    );
+  }
+  const initial = yield* version();
+  if (initial === MIRK_SCHEMA_VERSION) {
+    yield* validateCurrent();
+    return { from: initial, to: MIRK_SCHEMA_VERSION, changed: false };
+  }
+  enforce(yield* older(initial));
   yield { kind: "begin" };
   const found = yield* version();
   if (found === MIRK_SCHEMA_VERSION) {
     yield* validateCurrent();
     yield { kind: "commit" };
-    return;
+    return { from: found, to: MIRK_SCHEMA_VERSION, changed: false };
   }
-  if (found !== null && found !== 1 && found !== 2)
+  const isOlder = yield* older(found);
+  enforce(isOlder);
+  if (found !== null && found !== 1 && found !== 2 && found !== 3)
     malformed("Unsupported legacy Mirk format");
   if (found === null) {
     const legacy: Record<string, string[]> = {
@@ -214,6 +271,8 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
     if (lengths.some((row) => row.n !== dimensions! * 4))
       malformed("Legacy vector dimensions do not match BLOB lengths");
   }
+  if (isOlder && options.backupPath !== undefined)
+    yield { kind: "backup", path: options.backupPath };
   const ddl = `${MIRK_REGISTRY_DDL}\n${VECTOR_FORMAT_DDL}`.replace(
     /\b_mirk_[a-z_]+\b/g,
     table,
@@ -222,7 +281,8 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
     if (statement.trim()) yield* execute(statement);
   if (dimensions !== undefined)
     yield* execute(
-      `INSERT INTO ${table("_mirk_vector_spaces")} VALUES('default','default',?,'cosine','float32')`,
+      `INSERT INTO ${table("_mirk_vector_spaces")} VALUES('default',?,?,'cosine','float32')`,
+      space,
       dimensions,
     );
   if (hasVectors) {
@@ -230,14 +290,36 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
       `INSERT INTO ${table("_mirk_vector_documents")}(namespace,collection,id,metadata) SELECT 'default',collection,id,metadata FROM ${table("vectors")}`,
     );
     yield* execute(
-      `INSERT INTO ${table("_mirk_vector_values")}(namespace,collection,id,space,vec) SELECT 'default',collection,id,'default',vec FROM ${table("vectors")}`,
+      `INSERT INTO ${table("_mirk_vector_values")}(namespace,collection,id,space,vec) SELECT 'default',collection,id,?,vec FROM ${table("vectors")}`,
+      space,
     );
     yield* execute(`DROP TABLE ${table("vectors")}`);
   }
   if (hasMeta) yield* execute(`DROP TABLE ${table("_vec_meta")}`);
+  if (yield* exists("_mirk_atomic_receipts")) {
+    if (!(yield* columns("_mirk_atomic_receipts")).includes("created_at"))
+      yield* execute(
+        `ALTER TABLE ${table("_mirk_atomic_receipts")} ADD COLUMN created_at INTEGER`,
+      );
+    yield* execute(
+      `CREATE INDEX IF NOT EXISTS ${table("_mirk_atomic_receipts_created_at")} ON ${table("_mirk_atomic_receipts")} (created_at)`,
+    );
+  }
+  for (const statement of logGenerationMigrationSql(tablePrefix)) {
+    for (const part of statement.split(";"))
+      if (part.trim()) yield* execute(part);
+  }
   yield* execute(
     `INSERT INTO ${table("_mirk_meta")}(key,value) VALUES('schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
     String(MIRK_SCHEMA_VERSION),
   );
   yield { kind: "commit" };
+  return {
+    from: found,
+    to: MIRK_SCHEMA_VERSION,
+    changed: true,
+    ...(isOlder && options.backupPath !== undefined
+      ? { backupPath: options.backupPath }
+      : {}),
+  };
 }

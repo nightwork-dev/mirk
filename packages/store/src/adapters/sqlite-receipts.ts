@@ -15,15 +15,6 @@ export class SqliteReceiptStorage implements SyncReceiptPruning {
         created_at INTEGER
       );
     `);
-    // Receipts written before receipts expired carry no creation time.
-    const receiptColumns = this.db
-      .prepare("PRAGMA table_info(_mirk_atomic_receipts)")
-      .all() as { name: string }[];
-    if (!receiptColumns.some((column) => column.name === "created_at")) {
-      this.db.exec(
-        "ALTER TABLE _mirk_atomic_receipts ADD COLUMN created_at INTEGER",
-      );
-    }
     this.db.exec(
       "CREATE INDEX IF NOT EXISTS _mirk_atomic_receipts_created_at ON _mirk_atomic_receipts (created_at)",
     );

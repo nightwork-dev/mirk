@@ -1,3 +1,4 @@
+import type { SqliteMigrationOptions } from "../sql.js";
 import { ensureMirkFormat } from "./sqlite-format.js";
 import { SqliteVectorFacet } from "./sqlite-vector.js";
 import type { SqliteVectorEngine } from "./sqlite-vector-engine.js";
@@ -49,6 +50,9 @@ import { SqliteSearchFacet } from "./sqlite-search.js";
 //
 export type SqliteAdapterErrorCode =
   | "malformed-schema"
+  | "migration-refused"
+  | "unsupported-backup"
+  | "backup-failed"
   | "migration-required"
   | "unsupported-schema-version"
   | "invalid-busy-timeout"
@@ -184,7 +188,9 @@ export function validateSqliteBusyTimeout(
   }
 }
 
-export interface SqliteAdapterCoreOptions {
+export interface SqliteAdapterCoreOptions extends SqliteMigrationOptions {
+  /** @internal A consistent snapshot while this connection holds writer admission. */
+  migrationBackup?: (path: string) => void;
   /** Path to the SQLite database file. Use ":memory:" for in-memory. */
   path: string;
   /** Driver-wrapped connection. */
@@ -340,6 +346,8 @@ export class SqliteAdapterCore {
           ensureMirkFormat(
             this.db,
             (code, message) => new SqliteAdapterError(code, message),
+            opts,
+            opts.migrationBackup,
           );
           this.db.pragma("journal_mode = WAL");
           kv = new SqliteKvFacet(

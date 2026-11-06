@@ -1,12 +1,13 @@
+import type { SqliteMigrationResult } from "../sql.js";
+import { ensureMirkFormat } from "./sqlite-format.js";
+import { sqliteSnapshot } from "./sqlite-backup.js";
 // ─── @mirk/store/sqlite ─────────────────────────────────────────────────────
 // better-sqlite3 source adapter wrapper. The capability implementation lives
 // in sqlite-core.ts so the node:sqlite entry never loads this native peer.
 
 import BetterSqliteDatabase from "better-sqlite3";
 
-import {
-  BetterSqliteDriver,
-} from "./sqlite-driver.js";
+import { BetterSqliteDriver } from "./sqlite-driver.js";
 import {
   SqliteAdapterCore,
   type SqliteAdapterCoreOptions,
@@ -31,23 +32,53 @@ export {
 };
 
 export interface SqliteAdapterOptions
-  extends Omit<SqliteAdapterCoreOptions, "db" | "ownsDb"> {
+  extends Omit<SqliteAdapterCoreOptions, "db" | "ownsDb" | "migrationBackup"> {
   /** Existing better-sqlite3 instance to reuse (shares one connection). */
   db?: BetterSqliteDatabase.Database;
 }
 
 /** Multi-capability SQLite source adapter backed by better-sqlite3. */
 export class SqliteAdapter extends SqliteAdapterCore {
+  static migrate(opts: SqliteAdapterOptions): SqliteMigrationResult {
+    validateSqliteBusyTimeout(opts.busyTimeoutMs);
+    const db = opts.db ?? new BetterSqliteDatabase(opts.path);
+    const driver = new BetterSqliteDriver(db);
+    try {
+      driver.pragma(`busy_timeout = ${opts.busyTimeoutMs ?? 30000}`);
+      return ensureMirkFormat(
+        driver,
+        (code, message) => new SqliteAdapterError(code, message),
+        { ...opts, migration: "auto" },
+        (path) =>
+          sqliteSnapshot(
+            driver,
+            path,
+            (source) => new BetterSqliteDatabase(source, { readonly: true }),
+          ),
+      );
+    } finally {
+      if (!opts.db) db.close();
+    }
+  }
   constructor(opts: SqliteAdapterOptions) {
     validateSqliteBusyTimeout(opts.busyTimeoutMs);
     const ownsDb = opts.db === undefined;
-    const db = opts.db ?? new BetterSqliteDatabase(opts.path, {
-      timeout: opts.busyTimeoutMs ?? 30_000,
-    });
+    const db =
+      opts.db ??
+      new BetterSqliteDatabase(opts.path, {
+        timeout: opts.busyTimeoutMs ?? 30_000,
+      });
+    const migrationBackup = (path: string) =>
+      sqliteSnapshot(
+        new BetterSqliteDriver(db),
+        path,
+        (source) => new BetterSqliteDatabase(source, { readonly: true }),
+      );
     const core: SqliteAdapterCoreOptions = {
       ...opts,
       db: new BetterSqliteDriver(db),
       ownsDb,
+      migrationBackup,
     };
     super(core);
   }
