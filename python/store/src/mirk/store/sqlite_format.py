@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS _mirk_vector_values (
  FOREIGN KEY(namespace,space) REFERENCES _mirk_vector_spaces(namespace,name));"""
 
 
-def migrate_vectors(connection: sqlite3.Connection) -> None:
+def migrate_vectors(connection: sqlite3.Connection, legacy_vector_space: str = "default") -> None:
     def exists(name: str) -> bool:
         return (
             connection.execute(
@@ -64,8 +64,8 @@ def migrate_vectors(connection: sqlite3.Connection) -> None:
             connection.execute(statement)
     if dimensions is not None:
         connection.execute(
-            "INSERT INTO _mirk_vector_spaces VALUES('default','default',?,'cosine','float32')",
-            (dimensions,),
+            "INSERT INTO _mirk_vector_spaces VALUES('default',?,?,'cosine','float32')",
+            (legacy_vector_space, dimensions),
         )
     if exists("vectors"):
         connection.execute(
@@ -73,8 +73,8 @@ def migrate_vectors(connection: sqlite3.Connection) -> None:
             "'default',collection,id,metadata FROM vectors"
         )
         connection.execute(
-            "INSERT INTO _mirk_vector_values SELECT "
-            "'default',collection,id,'default',vec FROM vectors"
+            "INSERT INTO _mirk_vector_values SELECT 'default',collection,id,?,vec FROM vectors",
+            (legacy_vector_space,),
         )
         connection.execute("DROP TABLE vectors")
     if exists("_vec_meta"):

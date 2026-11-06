@@ -1,3 +1,7 @@
+import type {
+  SqliteMigrationOptions,
+  SqliteMigrationResult,
+} from "@mirk/store/sql";
 // ─── @mirk/store-libsql adapter ──────────────────────────────────────────────
 // One libSQL client, two async capability facets: `.kv` (AsyncStore and
 // AsyncAtomicMutationStore) and `.vector` (AsyncVectorStore). Both ride the same
@@ -12,7 +16,12 @@
 // NOT lifted from a sync impl via toAsync: libSQL is a network/file client whose
 // every call is already a Promise.
 
-import type { Client, InStatement, ResultSet, Transaction } from "@libsql/client";
+import type {
+  Client,
+  InStatement,
+  ResultSet,
+  Transaction,
+} from "@libsql/client";
 
 import type {
   AfterCommitNotify,
@@ -66,6 +75,9 @@ import {
 } from "@mirk/store/sql";
 
 export type LibsqlAdapterErrorCode =
+  | "migration-refused"
+  | "unsupported-backup"
+  | "backup-failed"
   | "migration-required"
   | "malformed-schema"
   | "unsupported-schema-version"
@@ -96,7 +108,11 @@ export class LibsqlAdapterError extends Error {
   declare readonly name: "LibsqlAdapterError";
   readonly code: LibsqlAdapterErrorCode;
 
-  constructor(code: LibsqlAdapterErrorCode, message: string, options?: { cause?: unknown }) {
+  constructor(
+    code: LibsqlAdapterErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
     super(message, options);
     Object.setPrototypeOf(this, new.target.prototype);
     this.code = code;
@@ -109,7 +125,7 @@ Object.defineProperty(LibsqlAdapterError.prototype, "name", {
   enumerable: false,
 });
 
-export interface LibsqlAdapterOptions {
+export interface LibsqlAdapterOptions extends SqliteMigrationOptions {
   /** libSQL connection URL: `libsql://…` (remote/Turso), `file:./db.sqlite`, or `:memory:`. */
   url: string;
   /** Auth token for a remote (Turso) database. Ignored for file:/:memory:. */
@@ -154,33 +170,55 @@ export type LibsqlClientFactory = (config: {
 }) => Client;
 export type LibsqlClient = Client;
 
-type LibsqlKvStore = AsyncStore & AsyncStoreInQuery & AsyncStoreIndexes & AsyncAtomicMutationStore & AsyncReceiptPruning;
+type LibsqlKvStore = AsyncStore &
+  AsyncStoreInQuery &
+  AsyncStoreIndexes &
+  AsyncAtomicMutationStore &
+  AsyncReceiptPruning;
 
 /** Multi-capability libSQL source adapter. The concrete entry point supplies the
  *  client factory so this shared core has no runtime dependency on a driver.
  *  Open once via the static `openWithFactory`; use `.kv` and/or `.vector` — both
  *  ride the same connection. */
 export class LibsqlAdapterCore implements AsyncStoreTransactions {
+  migrationResult!: SqliteMigrationResult;
   readonly kv: LibsqlKvStore;
   readonly vector: AsyncVectorStore;
   private readonly client: Client;
   private readonly ownsClient: boolean;
   private readonly database: LibsqlDatabase;
 
-  protected constructor(client: Client, ownsClient: boolean, opts: LibsqlAdapterOptions) {
+  protected constructor(
+    client: Client,
+    ownsClient: boolean,
+    opts: LibsqlAdapterOptions,
+  ) {
     this.client = client;
     this.ownsClient = ownsClient;
     const names = tableNames(opts.tablePrefix ?? "");
-    this.database = new LibsqlDatabase(client, opts.url, names.sequence, opts.busyTimeoutMs ?? 30_000);
+    this.database = new LibsqlDatabase(
+      client,
+      opts.url,
+      names.sequence,
+      opts.busyTimeoutMs ?? 30_000,
+    );
     const local = client.protocol === "file";
     this.kv = new LibsqlKvFacet(
       this.database,
       names,
-      resolveAtomicLimits(opts.atomicLimits, local ? IN_PROCESS_ATOMIC_LIMITS : DEFAULT_ATOMIC_LIMITS),
+      resolveAtomicLimits(
+        opts.atomicLimits,
+        local ? IN_PROCESS_ATOMIC_LIMITS : DEFAULT_ATOMIC_LIMITS,
+      ),
       resolveReceiptRetention(opts.receiptRetentionMs),
       opts.now,
     );
-    this.vector = new LibsqlVectorFacet(this.database, opts.tablePrefix ?? "", opts.namespace ?? "default", opts.forceJsCosine);
+    this.vector = new LibsqlVectorFacet(
+      this.database,
+      opts.tablePrefix ?? "",
+      opts.namespace ?? "default",
+      opts.forceJsCosine,
+    );
   }
 
   /** Run short, database-only work in one write transaction. Every `.kv` and
@@ -204,8 +242,19 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
   }
 
   /** @internal Initialize the schema in one transaction. */
-  async initialize(versionIdentity: string): Promise<void> {
+  async initialize(
+    versionIdentity: string,
+    options: LibsqlAdapterOptions,
+    backup?: (source: string, destination: string) => void,
+  ): Promise<void> {
     await this.transaction(async () => {
+      this.migrationResult = await ensureMirkRegistry(
+        this.database,
+        tableNames(options.tablePrefix ?? ""),
+        (code, message) => new LibsqlAdapterError(code, message),
+        options,
+        backup,
+      );
       await (this.kv as LibsqlKvFacet).init(versionIdentity);
     });
   }
@@ -217,9 +266,22 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
 export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
   opts: LibsqlAdapterOptions,
   createClient: LibsqlClientFactory,
-  construct: (client: Client, ownsClient: boolean, opts: LibsqlAdapterOptions) => T,
+  construct: (
+    client: Client,
+    ownsClient: boolean,
+    opts: LibsqlAdapterOptions,
+  ) => T,
+  backup?: (source: string, destination: string) => void,
 ): Promise<T> {
   validateOptions(opts);
+  if (
+    opts.backupPath !== undefined &&
+    (!opts.url.startsWith("file:") || !backup)
+  )
+    throw new LibsqlAdapterError(
+      "unsupported-backup",
+      "Migration backups require a local file adapter",
+    );
   const ownsClient = opts.client === undefined;
   const client =
     opts.client ??
@@ -231,7 +293,11 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
   let adapter: T | undefined;
   try {
     adapter = construct(client, ownsClient, opts);
-    await adapter.initialize(opts.versionIdentity ?? crypto.randomUUID());
+    await adapter.initialize(
+      opts.versionIdentity ?? crypto.randomUUID(),
+      opts,
+      backup,
+    );
     return adapter;
   } catch (err) {
     // A facet init can throw (e.g. dimension mismatch). Don't leak a client we
@@ -249,7 +315,10 @@ export async function openLibsqlAdapter<T extends LibsqlAdapterCore>(
 }
 
 function validateOptions(opts: LibsqlAdapterOptions): void {
-  if (opts.tablePrefix !== undefined && !/^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(opts.tablePrefix)) {
+  if (
+    opts.tablePrefix !== undefined &&
+    !/^[A-Za-z][A-Za-z0-9_]{0,47}$/.test(opts.tablePrefix)
+  ) {
     throw new LibsqlAdapterError(
       "invalid-option",
       "tablePrefix must start with a letter and contain at most 48 letters, digits and underscores.",
@@ -257,7 +326,10 @@ function validateOptions(opts: LibsqlAdapterOptions): void {
   }
   const busy = opts.busyTimeoutMs;
   if (busy !== undefined && (!Number.isSafeInteger(busy) || busy < 0)) {
-    throw new LibsqlAdapterError("invalid-option", "busyTimeoutMs must be a non-negative integer.");
+    throw new LibsqlAdapterError(
+      "invalid-option",
+      "busyTimeoutMs must be a non-negative integer.",
+    );
   }
 }
 
@@ -293,7 +365,11 @@ function tableNames(prefix: string): TableNames {
     vectors: `${prefix}vectors`,
     collectionPrefix: `${prefix}${COLLECTION_TABLE_PREFIX}`,
     registrySql: (sql) =>
-      prefix === "" ? sql : sql.replaceAll("_mirk_tables", registry).replaceAll("_mirk_meta", meta),
+      prefix === ""
+        ? sql
+        : sql
+            .replaceAll("_mirk_tables", registry)
+            .replaceAll("_mirk_meta", meta),
   };
 }
 
@@ -336,7 +412,12 @@ const localWriters = new Map<string, { mutex: Mutex; adapters: number }>();
  *  own. */
 function fileWriters(url: string): { mutex: Mutex; detach: () => void } {
   const path = url.replace(/^file:/i, "").replace(/\?.*$/, "");
-  if (!/^file:/i.test(url) || path === "" || path === ":memory:" || /[?&]mode=memory\b/.test(url)) {
+  if (
+    !/^file:/i.test(url) ||
+    path === "" ||
+    path === ":memory:" ||
+    /[?&]mode=memory\b/.test(url)
+  ) {
     return { mutex: new Mutex(), detach: () => undefined };
   }
   let entry = localWriters.get(path);
@@ -353,7 +434,8 @@ function fileWriters(url: string): { mutex: Mutex; detach: () => void } {
       if (detached) return;
       detached = true;
       shared.adapters -= 1;
-      if (shared.adapters === 0 && localWriters.get(path) === shared) localWriters.delete(path);
+      if (shared.adapters === 0 && localWriters.get(path) === shared)
+        localWriters.delete(path);
     },
   };
 }
@@ -421,10 +503,16 @@ class LibsqlDatabase {
         await guard(open.execute(`RELEASE SAVEPOINT ${name}`));
       },
       rollbackToSavepoint: async (open, name) => {
-        await guard(open.batch([`ROLLBACK TO SAVEPOINT ${name}`, ...this.keepMinted(open)]));
+        await guard(
+          open.batch([
+            `ROLLBACK TO SAVEPOINT ${name}`,
+            ...this.keepMinted(open),
+          ]),
+        );
       },
       end: async (open, cleanupError) => {
-        if (cleanupError !== undefined) this.floor = Math.max(this.floor, open.minted);
+        if (cleanupError !== undefined)
+          this.floor = Math.max(this.floor, open.minted);
         if (open.stream) {
           open.stream.close();
         } else {
@@ -446,14 +534,17 @@ class LibsqlDatabase {
   /** Run a statement in the calling context's transaction, or on its own. */
   execute(stmt: InStatement): Promise<ResultSet> {
     return this.transactions.withConnection((open) =>
-      open ? guard(open.execute(stmt)) : this.alone(() => this.client.execute(stmt)),
+      open
+        ? guard(open.execute(stmt))
+        : this.alone(() => this.client.execute(stmt)),
     );
   }
 
   /** Run `op` with the open transaction. The caller must be inside one. */
   inTransaction<T>(op: (open: OpenTransaction) => Promise<T>): Promise<T> {
     return this.transactions.withConnection((open) => {
-      if (!open) throw new Error("internal: a libSQL write ran outside its transaction");
+      if (!open)
+        throw new Error("internal: a libSQL write ran outside its transaction");
       return op(open);
     });
   }
@@ -484,15 +575,21 @@ class LibsqlDatabase {
 
   private keepMinted(open: OpenTransaction): InStatement[] {
     return open.minted > 0
-      ? [{
-          sql: `UPDATE ${this.sequenceTable} SET value = max(value, ?) WHERE id = 1`,
-          args: [open.minted],
-        }]
+      ? [
+          {
+            sql: `UPDATE ${this.sequenceTable} SET value = max(value, ?) WHERE id = 1`,
+            args: [open.minted],
+          },
+        ]
       : [];
   }
 
   private async begin(): Promise<OpenTransaction> {
-    if (this.closed) throw new LibsqlAdapterError("adapter-closed", "The libSQL adapter is closed.");
+    if (this.closed)
+      throw new LibsqlAdapterError(
+        "adapter-closed",
+        "The libSQL adapter is closed.",
+      );
     const minted = this.floor;
     const opening: InStatement[] = [`SAVEPOINT ${OUTER_SAVEPOINT}`];
     if (minted > 0) {
@@ -525,7 +622,8 @@ class LibsqlDatabase {
           execute: (stmt) => this.client.execute(stmt),
           batch: async (stmts) => {
             const results: ResultSet[] = [];
-            for (const stmt of stmts) results.push(await this.client.execute(stmt));
+            for (const stmt of stmts)
+              results.push(await this.client.execute(stmt));
             return results;
           },
           minted,
@@ -572,7 +670,10 @@ class LibsqlDatabase {
       if (error instanceof LibsqlAdapterError) throw error;
       const code = classifyFailure(error);
       if (code === undefined) throw error;
-      throw failure(code === "connection-lost" ? "commit-indeterminate" : code, error);
+      throw failure(
+        code === "connection-lost" ? "commit-indeterminate" : code,
+        error,
+      );
     }
   }
 
@@ -588,7 +689,12 @@ class LibsqlDatabase {
       else await guard(this.client.execute("ROLLBACK"));
       return;
     }
-    await guard(open.batch([`ROLLBACK TO SAVEPOINT ${OUTER_SAVEPOINT}`, ...this.keepMinted(open)]));
+    await guard(
+      open.batch([
+        `ROLLBACK TO SAVEPOINT ${OUTER_SAVEPOINT}`,
+        ...this.keepMinted(open),
+      ]),
+    );
     if (open.stream) await guard(open.stream.commit());
     else await this.whileBusy(() => this.client.execute("COMMIT"));
     if (this.floor <= open.minted) this.floor = 0;
@@ -602,10 +708,14 @@ class LibsqlDatabase {
         return await attempt();
       } catch (error) {
         const code = classifyFailure(error);
-        if (code !== "busy") throw code === undefined ? error : failure(code, error);
+        if (code !== "busy")
+          throw code === undefined ? error : failure(code, error);
         if (this.local) this.stale = true;
-        if (Date.now() - started >= this.busyTimeoutMs) throw failure("busy", error);
-        await new Promise((resolve) => setTimeout(resolve, Math.min(2 ** tries, 50)));
+        if (Date.now() - started >= this.busyTimeoutMs)
+          throw failure("busy", error);
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(2 ** tries, 50)),
+        );
       }
     }
   }
@@ -614,13 +724,19 @@ class LibsqlDatabase {
 type FailureCode = "busy" | "transaction-expired" | "connection-lost";
 
 const FAILURE_MESSAGES: Record<FailureCode | "commit-indeterminate", string> = {
-  "busy": "The libSQL database stayed locked by another writer for longer than busyTimeoutMs.",
-  "transaction-expired": "The libSQL server ended the transaction; its writes were rolled back.",
-  "connection-lost": "The libSQL connection failed before the transaction committed.",
-  "commit-indeterminate": "The libSQL connection failed during COMMIT; the transaction may or may not have committed.",
+  busy: "The libSQL database stayed locked by another writer for longer than busyTimeoutMs.",
+  "transaction-expired":
+    "The libSQL server ended the transaction; its writes were rolled back.",
+  "connection-lost":
+    "The libSQL connection failed before the transaction committed.",
+  "commit-indeterminate":
+    "The libSQL connection failed during COMMIT; the transaction may or may not have committed.",
 };
 
-function failure(code: FailureCode | "commit-indeterminate", cause: unknown): LibsqlAdapterError {
+function failure(
+  code: FailureCode | "commit-indeterminate",
+  cause: unknown,
+): LibsqlAdapterError {
   return new LibsqlAdapterError(code, FAILURE_MESSAGES[code], { cause });
 }
 
@@ -656,7 +772,11 @@ const TRANSPORT_CODES = new Set([
 /** Classifies a driver error by its code and message only, so this module
  *  stays free of a runtime dependency on a particular libSQL client. */
 function classifyFailure(error: unknown): FailureCode | undefined {
-  for (let current = error, depth = 0; current !== undefined && current !== null && depth < 5; depth++) {
+  for (
+    let current = error, depth = 0;
+    current !== undefined && current !== null && depth < 5;
+    depth++
+  ) {
     if (typeof current !== "object") return undefined;
     const { code, rawCode, message, name } = current as {
       code?: unknown;
@@ -665,8 +785,14 @@ function classifyFailure(error: unknown): FailureCode | undefined {
       name?: unknown;
     };
     const text = typeof message === "string" ? message : "";
-    if (/transaction was rolled back|stream was idle/.test(text)) return "transaction-expired";
-    if (code === "SQLITE_BUSY" || rawCode === 5 || /SQLITE_BUSY|database is locked/.test(text)) return "busy";
+    if (/transaction was rolled back|stream was idle/.test(text))
+      return "transaction-expired";
+    if (
+      code === "SQLITE_BUSY" ||
+      rawCode === 5 ||
+      /SQLITE_BUSY|database is locked/.test(text)
+    )
+      return "busy";
     if (
       code === "TRANSACTION_TIMEOUT" ||
       code === "STREAM_EXPIRED" ||
@@ -708,9 +834,14 @@ async function runTableResolution(
   // lookup and its INSERT. Restarting reads the winner's row as a registry hit.
   for (let attempt = 1; ; attempt++) {
     try {
-      return await db.transactions.transaction(() => resolveTableOnce(db, names, kind, name, register));
+      return await db.transactions.transaction(() =>
+        resolveTableOnce(db, names, kind, name, register),
+      );
     } catch (err) {
-      if (attempt >= TABLE_RESOLUTION_ATTEMPTS || !isTableRegistryConflict(err)) {
+      if (
+        attempt >= TABLE_RESOLUTION_ATTEMPTS ||
+        !isTableRegistryConflict(err)
+      ) {
         throw err;
       }
     }
@@ -726,7 +857,12 @@ async function resolveTableOnce(
   name: string,
   register: boolean,
 ): Promise<string> {
-  const resolution = tableResolution(kind, name, names.collectionPrefix, register);
+  const resolution = tableResolution(
+    kind,
+    name,
+    names.collectionPrefix,
+    register,
+  );
   let step = resolution.next();
   while (!step.done) {
     const query = step.value;
@@ -769,24 +905,35 @@ type VersionKey = [kind: string, collection: string, key: string];
 const NOW_MS_SQL = "COALESCE(?, CAST(unixepoch('subsec') * 1000 AS INTEGER))";
 
 function versionKey(target: StoreTarget): VersionKey {
-  return target.kind === "key" ? ["key", "", target.key] : ["record", target.collection, target.id];
+  return target.kind === "key"
+    ? ["key", "", target.key]
+    : ["record", target.collection, target.id];
 }
 
-function versionedRow(rs: ResultSet): { value: string; version: StoreVersion | null } | null {
+function versionedRow(
+  rs: ResultSet,
+): { value: string; version: StoreVersion | null } | null {
   const row = rs.rows[0];
   if (!row) return null;
   return {
     value: row.value as string,
-    version: row.version === null || row.version === undefined ? null : (row.version as StoreVersion),
+    version:
+      row.version === null || row.version === undefined
+        ? null
+        : (row.version as StoreVersion),
   };
 }
 
-function receiptRow(rs: ResultSet): { requestDigest: string; result: AtomicCompletedMutationResult } | null {
+function receiptRow(
+  rs: ResultSet,
+): { requestDigest: string; result: AtomicCompletedMutationResult } | null {
   const row = rs.rows[0];
   if (!row) return null;
   return {
     requestDigest: row.request_digest as string,
-    result: JSON.parse(row.result_json as string) as AtomicCompletedMutationResult,
+    result: JSON.parse(
+      row.result_json as string,
+    ) as AtomicCompletedMutationResult,
   };
 }
 
@@ -815,7 +962,6 @@ class LibsqlKvFacet implements LibsqlKvStore {
   /** Runs inside the adapter's opening transaction. */
   async init(versionIdentity: string): Promise<void> {
     const n = this.names;
-    await ensureMirkRegistry(this.db, n, (code, message) => new LibsqlAdapterError(code, message));
     await this.db.execute(`
       CREATE TABLE IF NOT EXISTS ${n.kv} (
         key TEXT PRIMARY KEY,
@@ -840,7 +986,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
         value INTEGER NOT NULL
       )
     `);
-    await this.db.execute(`INSERT OR IGNORE INTO ${n.sequence} (id, value) VALUES (1, 0)`);
+    await this.db.execute(
+      `INSERT OR IGNORE INTO ${n.sequence} (id, value) VALUES (1, 0)`,
+    );
     await this.db.execute(`
       CREATE TABLE IF NOT EXISTS ${n.receipts} (
         idempotency_key TEXT PRIMARY KEY,
@@ -851,9 +999,13 @@ class LibsqlKvFacet implements LibsqlKvStore {
     `);
     // Receipts written by @mirk/store/sqlite or an earlier release carry no
     // creation time.
-    const receiptColumns = await this.db.execute(`PRAGMA table_info(${n.receipts})`);
+    const receiptColumns = await this.db.execute(
+      `PRAGMA table_info(${n.receipts})`,
+    );
     if (!receiptColumns.rows.some((row) => row.name === "created_at")) {
-      await this.db.execute(`ALTER TABLE ${n.receipts} ADD COLUMN created_at INTEGER`);
+      await this.db.execute(
+        `ALTER TABLE ${n.receipts} ADD COLUMN created_at INTEGER`,
+      );
     }
     await this.db.execute(
       `CREATE INDEX IF NOT EXISTS ${n.receipts}_created_at ON ${n.receipts} (created_at)`,
@@ -868,7 +1020,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
       sql: `INSERT OR IGNORE INTO ${n.identity} (id, value) VALUES (1, ?)`,
       args: [versionIdentity],
     });
-    const identity = await this.db.execute(`SELECT value FROM ${n.identity} WHERE id = 1`);
+    const identity = await this.db.execute(
+      `SELECT value FROM ${n.identity} WHERE id = 1`,
+    );
     this.versionPrefix = identity.rows[0]!.value as string;
   }
 
@@ -878,13 +1032,25 @@ class LibsqlKvFacet implements LibsqlKvStore {
    *  so two names that sanitize and hash alike never share one table. The
    *  table is remembered only once the transaction that created it commits. */
   private async ensureTable(collection: string): Promise<string> {
-    if (collection.length === 0) throw new LibsqlAdapterError("invalid-collection-name", "Invalid collection name");
+    if (collection.length === 0)
+      throw new LibsqlAdapterError(
+        "invalid-collection-name",
+        "Invalid collection name",
+      );
     const cached = this.initializedTables.get(collection);
     if (cached !== undefined) return cached;
     return this.write(async () => {
-      const table = await runTableResolution(this.db, this.names, COLLECTION_TABLE_KIND, collection, true);
+      const table = await runTableResolution(
+        this.db,
+        this.names,
+        COLLECTION_TABLE_KIND,
+        collection,
+        true,
+      );
       await this.db.execute(collectionTableDdl(table));
-      this.db.transactions.afterCommit(() => this.initializedTables.set(collection, table));
+      this.db.transactions.afterCommit(() =>
+        this.initializedTables.set(collection, table),
+      );
       return table;
     });
   }
@@ -904,11 +1070,17 @@ class LibsqlKvFacet implements LibsqlKvStore {
       const table = row.table_name as string;
       tables.set(collection, table);
       ensure.push(collectionTableDdl(table));
-      this.db.transactions.afterCommit(() => this.initializedTables.set(collection, table));
+      this.db.transactions.afterCommit(() =>
+        this.initializedTables.set(collection, table),
+      );
     }
     for (const collection of collections) {
       if (tables.has(collection)) continue;
-      tables.set(collection, this.initializedTables.get(collection) ?? (await this.ensureTable(collection)));
+      tables.set(
+        collection,
+        this.initializedTables.get(collection) ??
+          (await this.ensureTable(collection)),
+      );
     }
     return { tables, ensure };
   }
@@ -966,7 +1138,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
       });
       return rs.rows.map((r) => r.key as string);
     }
-    const rs = await this.db.execute(`SELECT key FROM ${this.names.kv} ORDER BY key`);
+    const rs = await this.db.execute(
+      `SELECT key FROM ${this.names.kv} ORDER BY key`,
+    );
     return rs.rows.map((r) => r.key as string);
   }
 
@@ -1041,17 +1215,29 @@ class LibsqlKvFacet implements LibsqlKvStore {
     return Number(rs.rows[0]!.cnt);
   }
 
-  async getVersioned<T>(target: StoreTarget): Promise<VersionedStoreValue<T> | null> {
+  async getVersioned<T>(
+    target: StoreTarget,
+  ): Promise<VersionedStoreValue<T> | null> {
     const row = await this.readVersioned(target);
     if (!row) return null;
     // A row written before this adapter issued version tokens gets one now,
     // with the value read in the same transaction: another host may have
     // written the row since the read above.
-    const versioned = row.version === null ? await this.write(() => this.backfillVersion(target)) : row;
-    return versioned === null ? null : { value: JSON.parse(versioned.value) as T, version: versioned.version! };
+    const versioned =
+      row.version === null
+        ? await this.write(() => this.backfillVersion(target))
+        : row;
+    return versioned === null
+      ? null
+      : {
+          value: JSON.parse(versioned.value) as T,
+          version: versioned.version!,
+        };
   }
 
-  async mutateAtomically(request: AtomicMutationRequest): Promise<AtomicMutationResult> {
+  async mutateAtomically(
+    request: AtomicMutationRequest,
+  ): Promise<AtomicMutationResult> {
     const validated = validateAtomicRequest(request, this.atomicLimits);
     const outermost = !this.db.transactions.inTransaction();
     try {
@@ -1068,8 +1254,16 @@ class LibsqlKvFacet implements LibsqlKvStore {
           key === undefined ? "manual-reconciliation" : "retry-with-same-key",
         );
       }
-      if (error.code === "busy" || error.code === "connection-lost" || error.code === "transaction-expired") {
-        throw new AtomicMutationBackendError("unavailable", true, error.message);
+      if (
+        error.code === "busy" ||
+        error.code === "connection-lost" ||
+        error.code === "transaction-expired"
+      ) {
+        throw new AtomicMutationBackendError(
+          "unavailable",
+          true,
+          error.message,
+        );
       }
       throw error;
     }
@@ -1081,7 +1275,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
    *  operation, its version token and the receipt. The open write transaction
    *  holds the database's write lock throughout, so the state the conditions
    *  read is the state the writes apply to. */
-  private async decideAtomic(validated: ReturnType<typeof validateAtomicRequest>): Promise<AtomicMutationResult> {
+  private async decideAtomic(
+    validated: ReturnType<typeof validateAtomicRequest>,
+  ): Promise<AtomicMutationResult> {
     const n = this.names;
     const key = validated.idempotency?.key;
     const now = key === undefined ? null : this.clock();
@@ -1091,19 +1287,34 @@ class LibsqlKvFacet implements LibsqlKvStore {
       if (target.kind === "record") collections.add(target.collection);
     }
     for (const operation of validated.operations) {
-      if (operation.op === "put" || operation.op === "remove") collections.add(operation.collection);
+      if (operation.op === "put" || operation.op === "remove")
+        collections.add(operation.collection);
     }
-    const unresolved = [...collections].filter((collection) => !this.initializedTables.has(collection));
+    const unresolved = [...collections].filter(
+      (collection) => !this.initializedTables.has(collection),
+    );
 
     // Round trip 1, when there is a receipt or a table to look up.
     const reads: InStatement[] = [];
     if (key !== undefined) reads.push(...this.pruneReceiptStatements(now));
-    const receiptAt = key === undefined ? -1 : reads.push(this.readReceiptStatement(key, now)) - 1;
+    const receiptAt =
+      key === undefined
+        ? -1
+        : reads.push(this.readReceiptStatement(key, now)) - 1;
     // The receipt is written in the same round trip as the version tokens it
     // records, so it needs the sequence they are issued from.
-    const sequenceAt = key === undefined ? -1 : reads.push(`SELECT value FROM ${n.sequence} WHERE id = 1`) - 1;
-    const registryAt = unresolved.length === 0 ? -1 : reads.push(this.registeredTablesStatement(unresolved)) - 1;
-    const first = reads.length === 0 ? [] : await this.db.inTransaction((open) => guard(open.batch(reads)));
+    const sequenceAt =
+      key === undefined
+        ? -1
+        : reads.push(`SELECT value FROM ${n.sequence} WHERE id = 1`) - 1;
+    const registryAt =
+      unresolved.length === 0
+        ? -1
+        : reads.push(this.registeredTablesStatement(unresolved)) - 1;
+    const first =
+      reads.length === 0
+        ? []
+        : await this.db.inTransaction((open) => guard(open.batch(reads)));
 
     if (key !== undefined) {
       const prior = receiptRow(first[receiptAt]!);
@@ -1126,7 +1337,10 @@ class LibsqlKvFacet implements LibsqlKvStore {
       }
     }
 
-    const { tables, ensure } = await this.atomicTables(collections, registryAt < 0 ? undefined : first[registryAt]);
+    const { tables, ensure } = await this.atomicTables(
+      collections,
+      registryAt < 0 ? undefined : first[registryAt],
+    );
     const tableOf = (collection: string) => tables.get(collection)!;
 
     // Round trip 2, when there are conditions: every target at once.
@@ -1134,22 +1348,32 @@ class LibsqlKvFacet implements LibsqlKvStore {
       const checks = [
         ...ensure.splice(0),
         ...validated.conditions.map(({ target }) =>
-          this.readVersionedStatement(target, target.kind === "record" ? tableOf(target.collection) : "")),
+          this.readVersionedStatement(
+            target,
+            target.kind === "record" ? tableOf(target.collection) : "",
+          ),
+        ),
       ];
-      const observed = (await this.db.inTransaction((open) => guard(open.batch(checks))))
-        .slice(checks.length - validated.conditions.length);
+      const observed = (
+        await this.db.inTransaction((open) => guard(open.batch(checks)))
+      ).slice(checks.length - validated.conditions.length);
       for (const [index, condition] of validated.conditions.entries()) {
         const row = versionedRow(observed[index]!);
-        const matches = condition.expected === "missing"
-          ? row === null
-          : condition.expected === "present"
-            ? row !== null
-            : row?.version === condition.version;
+        const matches =
+          condition.expected === "missing"
+            ? row === null
+            : condition.expected === "present"
+              ? row !== null
+              : row?.version === condition.version;
         if (matches) continue;
-        let reported: StoreVersion | "missing" | "present" = row === null ? "missing" : "present";
+        let reported: StoreVersion | "missing" | "present" =
+          row === null ? "missing" : "present";
         if (row !== null && condition.expected === "version") {
           // A row written before this adapter issued version tokens gets one now.
-          reported = row.version ?? (await this.backfillVersion(condition.target))?.version ?? "missing";
+          reported =
+            row.version ??
+            (await this.backfillVersion(condition.target))?.version ??
+            "missing";
         }
         return { status: "conflict", condition, observed: reported };
       }
@@ -1157,12 +1381,17 @@ class LibsqlKvFacet implements LibsqlKvStore {
 
     // Round trip 3: every write, one sequence step for all the version tokens,
     // and the receipt. Token j of m is the sequence's new value minus m - j.
-    const issuing = validated.operations.filter((operation) => operation.op === "set" || operation.op === "put").length;
+    const issuing = validated.operations.filter(
+      (operation) => operation.op === "set" || operation.op === "put",
+    ).length;
     const writes: InStatement[] = [...ensure];
-    const sequenceAt2 = issuing === 0 ? -1 : writes.push({
-      sql: `UPDATE ${n.sequence} SET value = value + CAST(? AS INTEGER) WHERE id = 1 RETURNING value`,
-      args: [issuing],
-    }) - 1;
+    const sequenceAt2 =
+      issuing === 0
+        ? -1
+        : writes.push({
+            sql: `UPDATE ${n.sequence} SET value = value + CAST(? AS INTEGER) WHERE id = 1 RETURNING value`,
+            args: [issuing],
+          }) - 1;
     const targets: { target: StoreTarget; issued: number | null }[] = [];
     let issued = 0;
     for (const operation of validated.operations) {
@@ -1170,23 +1399,44 @@ class LibsqlKvFacet implements LibsqlKvStore {
       switch (operation.op) {
         case "set":
           target = { kind: "key", key: operation.key };
-          writes.push(this.upsertKeyStatement(operation.key, JSON.stringify(operation.value)));
+          writes.push(
+            this.upsertKeyStatement(
+              operation.key,
+              JSON.stringify(operation.value),
+            ),
+          );
           break;
         case "delete":
           target = { kind: "key", key: operation.key };
-          writes.push({ sql: `DELETE FROM ${n.kv} WHERE key = ?`, args: [operation.key] });
+          writes.push({
+            sql: `DELETE FROM ${n.kv} WHERE key = ?`,
+            args: [operation.key],
+          });
           break;
         case "put":
-          target = { kind: "record", collection: operation.collection, id: operation.item.id };
-          writes.push(this.upsertRecordStatement(
-            tableOf(operation.collection),
-            operation.item.id,
-            JSON.stringify(operation.item),
-          ));
+          target = {
+            kind: "record",
+            collection: operation.collection,
+            id: operation.item.id,
+          };
+          writes.push(
+            this.upsertRecordStatement(
+              tableOf(operation.collection),
+              operation.item.id,
+              JSON.stringify(operation.item),
+            ),
+          );
           break;
         case "remove":
-          target = { kind: "record", collection: operation.collection, id: operation.id };
-          writes.push({ sql: `DELETE FROM ${tableOf(operation.collection)} WHERE id = ?`, args: [operation.id] });
+          target = {
+            kind: "record",
+            collection: operation.collection,
+            id: operation.id,
+          };
+          writes.push({
+            sql: `DELETE FROM ${tableOf(operation.collection)} WHERE id = ?`,
+            args: [operation.id],
+          });
           break;
       }
       if (operation.op === "set" || operation.op === "put") {
@@ -1208,13 +1458,28 @@ class LibsqlKvFacet implements LibsqlKvStore {
       requestDigest: validated.requestDigest,
       versions: targets.map(({ target, issued }) => ({
         target,
-        version: issued === null ? null : (`${this.versionPrefix}-v${last - issuing + issued}` as StoreVersion),
+        version:
+          issued === null
+            ? null
+            : (`${this.versionPrefix}-v${last - issuing + issued}` as StoreVersion),
       })),
-      ...(validated.outcome === undefined ? {} : { outcome: validated.outcome }),
+      ...(validated.outcome === undefined
+        ? {}
+        : { outcome: validated.outcome }),
     });
-    const expected = key === undefined ? undefined : Number(first[sequenceAt]!.rows[0]!.value) + issuing;
+    const expected =
+      key === undefined
+        ? undefined
+        : Number(first[sequenceAt]!.rows[0]!.value) + issuing;
     if (key !== undefined) {
-      writes.push(this.writeReceiptStatement(key, validated.requestDigest, result(expected!), now));
+      writes.push(
+        this.writeReceiptStatement(
+          key,
+          validated.requestDigest,
+          result(expected!),
+          now,
+        ),
+      );
     }
 
     return this.db.inTransaction(async (open) => {
@@ -1224,7 +1489,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
       open.minted = Math.max(open.minted, last);
       if (expected !== undefined && last !== expected) {
         // The receipt names tokens the sequence did not issue; roll back.
-        throw new Error("internal: the libSQL version sequence moved during an atomic mutation");
+        throw new Error(
+          "internal: the libSQL version sequence moved during an atomic mutation",
+        );
       }
       return result(last);
     });
@@ -1234,7 +1501,9 @@ class LibsqlKvFacet implements LibsqlKvStore {
     if (this.receiptRetentionMs === undefined) return 0;
     let removed = 0;
     for (;;) {
-      const batch = await this.write(() => this.pruneReceiptBatch(this.clock()));
+      const batch = await this.write(() =>
+        this.pruneReceiptBatch(this.clock()),
+      );
       removed += batch;
       if (batch < RECEIPT_PRUNE_BATCH) return removed;
     }
@@ -1250,12 +1519,16 @@ class LibsqlKvFacet implements LibsqlKvStore {
 
   /** Selects the live receipt under `key`; see `receiptRow`. */
   private readReceiptStatement(key: string, now: number | null): InStatement {
-    const live = this.receiptRetentionMs === undefined
-      ? ""
-      : ` AND (created_at IS NULL OR created_at >= ${NOW_MS_SQL} - ?)`;
+    const live =
+      this.receiptRetentionMs === undefined
+        ? ""
+        : ` AND (created_at IS NULL OR created_at >= ${NOW_MS_SQL} - ?)`;
     return {
       sql: `SELECT request_digest, result_json FROM ${this.names.receipts} WHERE idempotency_key = ?${live}`,
-      args: this.receiptRetentionMs === undefined ? [key] : [key, now, this.receiptRetentionMs],
+      args:
+        this.receiptRetentionMs === undefined
+          ? [key]
+          : [key, now, this.receiptRetentionMs],
     };
   }
 
@@ -1302,18 +1575,28 @@ class LibsqlKvFacet implements LibsqlKvStore {
   private async pruneReceiptBatch(now: number | null): Promise<number> {
     const statements = this.pruneReceiptStatements(now);
     if (statements.length === 0) return 0;
-    const [, deleted] = await this.db.inTransaction((open) => guard(open.batch(statements)));
+    const [, deleted] = await this.db.inTransaction((open) =>
+      guard(open.batch(statements)),
+    );
     return deleted!.rowsAffected;
   }
 
-  private async readVersioned(target: StoreTarget): Promise<{ value: string; version: StoreVersion | null } | null> {
-    const table = target.kind === "record" ? await this.ensureTable(target.collection) : "";
-    return versionedRow(await this.db.execute(this.readVersionedStatement(target, table)));
+  private async readVersioned(
+    target: StoreTarget,
+  ): Promise<{ value: string; version: StoreVersion | null } | null> {
+    const table =
+      target.kind === "record" ? await this.ensureTable(target.collection) : "";
+    return versionedRow(
+      await this.db.execute(this.readVersionedStatement(target, table)),
+    );
   }
 
   /** Selects `target`'s value and version token; `table` is its collection's
    *  table. See `versionedRow`. */
-  private readVersionedStatement(target: StoreTarget, table: string): InStatement {
+  private readVersionedStatement(
+    target: StoreTarget,
+    table: string,
+  ): InStatement {
     const n = this.names;
     if (target.kind === "key") {
       return {
@@ -1337,19 +1620,24 @@ class LibsqlKvFacet implements LibsqlKvStore {
 
   /** Issue the next version token for `target` in the open transaction. The
    *  statements in `with` run first, in the same round trip. */
-  private mint(target: StoreTarget, before: InStatement[]): Promise<StoreVersion> {
+  private mint(
+    target: StoreTarget,
+    before: InStatement[],
+  ): Promise<StoreVersion> {
     const n = this.names;
     return this.db.inTransaction(async (open) => {
-      const results = await guard(open.batch([
-        ...before,
-        `UPDATE ${n.sequence} SET value = value + 1 WHERE id = 1 RETURNING value`,
-        {
-          sql: `INSERT INTO ${n.versions} (kind, collection, target_key, version)
+      const results = await guard(
+        open.batch([
+          ...before,
+          `UPDATE ${n.sequence} SET value = value + 1 WHERE id = 1 RETURNING value`,
+          {
+            sql: `INSERT INTO ${n.versions} (kind, collection, target_key, version)
                 SELECT ?, ?, ?, ? || '-v' || value FROM ${n.sequence} WHERE id = 1
                 ON CONFLICT(kind, collection, target_key) DO UPDATE SET version = excluded.version`,
-          args: [...versionKey(target), this.versionPrefix],
-        },
-      ]));
+            args: [...versionKey(target), this.versionPrefix],
+          },
+        ]),
+      );
       const minted = Number(results[before.length]!.rows[0]!.value);
       open.minted = Math.max(open.minted, minted);
       return `${this.versionPrefix}-v${minted}` as StoreVersion;
@@ -1371,7 +1659,11 @@ class LibsqlKvFacet implements LibsqlKvStore {
     };
   }
 
-  private upsertRecordStatement(table: string, id: string, encoded: string): InStatement {
+  private upsertRecordStatement(
+    table: string,
+    id: string,
+    encoded: string,
+  ): InStatement {
     return {
       sql: `INSERT INTO ${table} (id, data, updated_at) VALUES (?, ?, datetime('now'))
             ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = datetime('now')`,
@@ -1380,34 +1672,55 @@ class LibsqlKvFacet implements LibsqlKvStore {
   }
 
   private writeKey(key: string, encoded: string): Promise<StoreVersion> {
-    return this.mint({ kind: "key", key }, [this.upsertKeyStatement(key, encoded)]);
+    return this.mint({ kind: "key", key }, [
+      this.upsertKeyStatement(key, encoded),
+    ]);
   }
 
-  private async writeRecord(collection: string, id: string, encoded: string): Promise<StoreVersion> {
+  private async writeRecord(
+    collection: string,
+    id: string,
+    encoded: string,
+  ): Promise<StoreVersion> {
     const table = await this.ensureTable(collection);
-    return this.mint({ kind: "record", collection, id }, [this.upsertRecordStatement(table, id, encoded)]);
+    return this.mint({ kind: "record", collection, id }, [
+      this.upsertRecordStatement(table, id, encoded),
+    ]);
   }
 
   private async deleteKey(key: string): Promise<boolean> {
-    const [deleted] = await this.db.inTransaction((open) => guard(open.batch([
-      { sql: `DELETE FROM ${this.names.kv} WHERE key = ?`, args: [key] },
-      this.clearVersion({ kind: "key", key }),
-    ])));
+    const [deleted] = await this.db.inTransaction((open) =>
+      guard(
+        open.batch([
+          { sql: `DELETE FROM ${this.names.kv} WHERE key = ?`, args: [key] },
+          this.clearVersion({ kind: "key", key }),
+        ]),
+      ),
+    );
     return deleted!.rowsAffected > 0;
   }
 
   private async deleteRecord(collection: string, id: string): Promise<boolean> {
     const table = await this.ensureTable(collection);
-    const [deleted] = await this.db.inTransaction((open) => guard(open.batch([
-      { sql: `DELETE FROM ${table} WHERE id = ?`, args: [id] },
-      this.clearVersion({ kind: "record", collection, id }),
-    ])));
+    const [deleted] = await this.db.inTransaction((open) =>
+      guard(
+        open.batch([
+          { sql: `DELETE FROM ${table} WHERE id = ?`, args: [id] },
+          this.clearVersion({ kind: "record", collection, id }),
+        ]),
+      ),
+    );
     return deleted!.rowsAffected > 0;
   }
 
-  private async backfillVersion(target: StoreTarget): Promise<{ value: string; version: StoreVersion } | null> {
+  private async backfillVersion(
+    target: StoreTarget,
+  ): Promise<{ value: string; version: StoreVersion } | null> {
     const row = await this.readVersioned(target);
     if (!row) return null;
-    return { value: row.value, version: row.version ?? (await this.mint(target, [])) };
+    return {
+      value: row.value,
+      version: row.version ?? (await this.mint(target, [])),
+    };
   }
 }

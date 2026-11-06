@@ -10,6 +10,8 @@ export type {
   SqliteFormatStep,
   SqliteFormatRows,
   SqliteFormatErrorCode,
+  SqliteMigrationOptions,
+  SqliteMigrationResult,
 } from "./sql-format.js";
 // ─── @mirk/store/sql ─────────────────────────────────────────────────────────
 // Pure SQL-string builders for the JSON-document KV collection layer, SHARED by
