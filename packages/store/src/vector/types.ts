@@ -15,6 +15,7 @@ export type Vector = Float32Array;
 export interface VectorStoreMeta {
   /** Backend identifier (e.g. "memory", "sqlite"). */
   backend: string;
+  engine?: string;
   /** True when the backend answers from a native vector index; false when it
    *  does exact JS-side cosine search. `@mirk/store-libsql` reports its own
    *  `vector_top_k` path here; the SQLite adapter is always false, having no

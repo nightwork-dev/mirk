@@ -185,8 +185,8 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "docs",
-          { space: "default", vector: [
-            { id: "b", vectors: { default: [0, 1, 0] } } },
+          [
+            { id: "b", vectors: { default: [0, 1, 0] } },
             { id: "c", vectors: { default: [0, 0, 1, 1] } },
           ],
         ],
@@ -208,8 +208,8 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "docs",
-          { space: "default", vector: [
-            { id: "a", vectors: { default: [1, 0, 0] } }, metadata: { n: 1 } },
+          [
+            { id: "a", vectors: { default: [1, 0, 0] }, metadata: { n: 1 } },
             { id: "b", vectors: { default: [0, 1, 0] } },
           ],
         ],
@@ -474,10 +474,10 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "pets",
-          { space: "default", vector: [
+          [
             {
               id: "cat-black",
-              vectors: { default: [1, 0, 0] } },
+              vectors: { default: [1, 0, 0] },
               metadata: { type: "cat", color: "black" },
             },
             {
@@ -511,10 +511,10 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "pets",
-          { space: "default", vector: [
+          [
             {
               id: "cat-black",
-              vectors: { default: [1, 0, 0] } },
+              vectors: { default: [1, 0, 0] },
               metadata: { type: "cat", color: "black" },
             },
             {
@@ -579,8 +579,8 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "pets",
-          { space: "default", vector: [
-            { id: "cat-1", vectors: { default: [1, 0, 0] } }, metadata: { type: "cat" } },
+          [
+            { id: "cat-1", vectors: { default: [1, 0, 0] }, metadata: { type: "cat" } },
             { id: "cat-2", vectors: { default: [0.9, 0.1, 0] }, metadata: { type: "cat" } },
             { id: "cat-3", vectors: { default: [0.8, 0.2, 0] }, metadata: { type: "cat" } },
             { id: "dog-1", vectors: { default: [0.95, 0.05, 0] }, metadata: { type: "dog" } },
@@ -791,8 +791,8 @@ export const scenarios = [
         op: "upsertMany",
         args: [
           "docs",
-          { space: "default", vector: [
-            { id: "z", vectors: { default: [1, 0, 0] } } },
+          [
+            { id: "z", vectors: { default: [1, 0, 0] } },
             { id: "a", vectors: { default: [0, 1, 0] } },
             { id: "b", vectors: { default: [0, 0, 1] } },
           ],

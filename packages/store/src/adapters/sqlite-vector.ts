@@ -10,7 +10,7 @@ export class SqliteVectorFacet implements VectorStore {
   readonly meta: VectorStoreMeta;
   constructor(private readonly db: SqliteDb, private readonly namespace = 'default', private readonly engine?: SqliteVectorEngine) {
     engine?.initialize(db);
-    this.meta = {backend: 'sqlite', accelerated: !!engine};
+    this.meta = {backend: 'sqlite', engine:engine?.name ?? 'javascript', accelerated: !!engine};
   }
   ensureSpace(name: string, options: VectorSpaceOptions): void {
     validateSpace(name, options);

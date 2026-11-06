@@ -39,7 +39,12 @@ __all__ = ["SqliteVectorFacet", "connection_of"]
 
 class SqliteVectorFacet:
     def __init__(
-        self, db: sqlite3.Connection, *, path: str = "", namespace: str = "default", vector_engine: SqliteVectorEngine | None = None
+        self,
+        db: sqlite3.Connection,
+        *,
+        path: str = "",
+        namespace: str = "default",
+        vector_engine: SqliteVectorEngine | None = None,
     ) -> None:
         self._db = db
         self._namespace = namespace
@@ -50,7 +55,11 @@ class SqliteVectorFacet:
 
     @property
     def meta(self) -> VectorStoreMeta:
-        return {"backend": "sqlite", "accelerated": self._engine is not None}
+        return {
+            "backend": "sqlite",
+            "engine": self._engine.name if self._engine else "python",
+            "accelerated": self._engine is not None,
+        }
 
     @contextmanager
     def _write(self) -> Generator[None]:
@@ -192,7 +201,9 @@ class SqliteVectorFacet:
         assert_dimensions(query["vector"], self._require_space(query["space"])["dimensions"])
         vector = to_float32(query["vector"])
         if self._engine is not None:
-            return self._engine.search(self._db, self._namespace, collection, query["space"], vector, opts)
+            return self._engine.search(
+                self._db, self._namespace, collection, query["space"], vector, opts
+            )
         rows = self._db.execute(
             "SELECT v.id,v.vec,d.metadata FROM _mirk_vector_values v JOIN "
             "_mirk_vector_documents d USING(namespace,collection,id) WHERE "

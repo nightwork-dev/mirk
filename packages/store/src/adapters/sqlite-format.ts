@@ -23,7 +23,7 @@ export function ensureMirkFormat(db:SqliteDb, failure:Failure):void {
      return;
    }
    const tables=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as {name:string}[];
-   if(found===null&&tables.some(row=>row.name.startsWith('_mirk_'))&&!exists('_mirk_tables'))throw failure('malformed-schema','Unrecognized unversioned Mirk layout');
+   if(found===null&&tables.some(row=>row.name.startsWith('_mirk_'))&&!exists('_mirk_tables')&&!exists('_kv'))throw failure('malformed-schema','Unrecognized unversioned Mirk layout');
    if(found!==null&&found!==1&&found!==2)throw failure('malformed-schema','Unsupported legacy Mirk format');
    let dimensions:number|undefined;
    if(exists('_vec_meta')){

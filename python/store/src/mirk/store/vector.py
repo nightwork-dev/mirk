@@ -17,6 +17,7 @@ import struct
 from typing import (
     Any,
     Literal,
+    NotRequired,
     Protocol,
     Required,
     TypedDict,
@@ -65,6 +66,7 @@ class VectorStoreMeta(TypedDict):
     """What a store reports about itself. ``accelerated`` is informational."""
 
     backend: str
+    engine: NotRequired[str]
     accelerated: bool
 
 
