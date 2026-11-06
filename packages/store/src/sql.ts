@@ -1,3 +1,16 @@
+import { MIRK_SCHEMA_VERSION } from "./sql-format.js";
+export {
+  MIRK_SCHEMA_VERSION,
+  MIRK_REGISTRY_DDL,
+  VECTOR_FORMAT_DDL,
+  mirkFormatMigration,
+  SqliteFormatError,
+} from "./sql-format.js";
+export type {
+  SqliteFormatStep,
+  SqliteFormatRows,
+  SqliteFormatErrorCode,
+} from "./sql-format.js";
 // ─── @mirk/store/sql ─────────────────────────────────────────────────────────
 // Pure SQL-string builders for the JSON-document KV collection layer, SHARED by
 // every SQLite-dialect source adapter: the better-sqlite3 `@mirk/store/sqlite`
@@ -29,10 +42,13 @@ export function jsonPath(field: string): string {
 /** The message BOTH backends raise for a `where` value that is not a JSON scalar.
  *  There is no deep equality anywhere in the port, so an object or array value is
  *  a caller error rather than a filter that matches nothing. */
-export const NON_SCALAR_FILTER_MESSAGE = "Store filters only support JSON scalar values.";
+export const NON_SCALAR_FILTER_MESSAGE =
+  "Store filters only support JSON scalar values.";
 
-export const INVALID_RANGE_BOUND_MESSAGE = "Store range bounds must be finite numbers or strings.";
-export const NON_FINITE_NUMBER_MESSAGE = "Store filters only support finite numbers.";
+export const INVALID_RANGE_BOUND_MESSAGE =
+  "Store range bounds must be finite numbers or strings.";
+export const NON_FINITE_NUMBER_MESSAGE =
+  "Store filters only support finite numbers.";
 
 /** The most values one `listWhereIn` call takes. Each is one bound parameter on
  *  SQLite and libSQL, whose limit is 32,766 per statement; PostgreSQL binds one
@@ -52,7 +68,10 @@ export type StoreFilterErrorCode =
  *  string, and an IN list longer than `MAX_IN_VALUES`. */
 export class StoreFilterError extends Error {
   declare readonly name: "StoreFilterError";
-  constructor(readonly code: StoreFilterErrorCode, message: string) {
+  constructor(
+    readonly code: StoreFilterErrorCode,
+    message: string,
+  ) {
     super(message);
     Object.setPrototypeOf(this, new.target.prototype);
   }
@@ -69,14 +88,30 @@ export type StoreRangeOperator = "gt" | "gte" | "lt" | "lte";
 /** A `where` value that compares instead of matching exactly:
  *  `{ seenAt: { gte: since } }`. A number bound compares only numbers, a string
  *  bound only strings by code point, and null or missing never match. */
-export type StoreRange = { readonly [operator in StoreRangeOperator]?: number | string };
+export type StoreRange = {
+  readonly [operator in StoreRangeOperator]?: number | string;
+};
 
-export const STORE_RANGE_OPERATORS: readonly StoreRangeOperator[] = ["gt", "gte", "lt", "lte"];
+export const STORE_RANGE_OPERATORS: readonly StoreRangeOperator[] = [
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+];
 
 /** One `where` entry, classified. */
 export type WhereCondition =
-  | { readonly kind: "equals"; readonly value: string | number | bigint | boolean | null }
-  | { readonly kind: "range"; readonly bounds: readonly (readonly [StoreRangeOperator, number | string])[] };
+  | {
+      readonly kind: "equals";
+      readonly value: string | number | bigint | boolean | null;
+    }
+  | {
+      readonly kind: "range";
+      readonly bounds: readonly (readonly [
+        StoreRangeOperator,
+        number | string,
+      ])[];
+    };
 
 /** Classify a `where` value. A plain object whose keys are all range operators
  *  is a range; any other non-scalar is the `non-scalar-filter` error, and a range
@@ -90,22 +125,40 @@ export function whereCondition(value: unknown): WhereCondition {
     typeof value === "boolean"
   ) {
     if (typeof value === "number" && !Number.isFinite(value)) {
-      throw new StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE);
+      throw new StoreFilterError(
+        "non-finite-number",
+        NON_FINITE_NUMBER_MESSAGE,
+      );
     }
     return { kind: "equals", value };
   }
-  if (typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+  if (
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
     throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
   }
   const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length === 0 || !entries.every(([key]) => (STORE_RANGE_OPERATORS as readonly string[]).includes(key))) {
+  if (
+    entries.length === 0 ||
+    !entries.every(([key]) =>
+      (STORE_RANGE_OPERATORS as readonly string[]).includes(key),
+    )
+  ) {
     throw new StoreFilterError("non-scalar-filter", NON_SCALAR_FILTER_MESSAGE);
   }
   const bounds = entries.map(([operator, bound]) => {
-    if (typeof bound === "string" || (typeof bound === "number" && Number.isFinite(bound))) {
+    if (
+      typeof bound === "string" ||
+      (typeof bound === "number" && Number.isFinite(bound))
+    ) {
       return [operator as StoreRangeOperator, bound] as const;
     }
-    throw new StoreFilterError("invalid-range-bound", INVALID_RANGE_BOUND_MESSAGE);
+    throw new StoreFilterError(
+      "invalid-range-bound",
+      INVALID_RANGE_BOUND_MESSAGE,
+    );
   });
   return { kind: "range", bounds };
 }
@@ -117,7 +170,10 @@ export function assertWhere(where: Record<string, unknown>): void {
 }
 
 /** True when a stored value lies inside every bound of a range. */
-export function inRange(stored: unknown, bounds: WhereCondition & { kind: "range" }): boolean {
+export function inRange(
+  stored: unknown,
+  bounds: WhereCondition & { kind: "range" },
+): boolean {
   return bounds.bounds.every(([operator, bound]) => {
     let order: number;
     if (typeof bound === "number") {
@@ -134,9 +190,17 @@ export function inRange(stored: unknown, bounds: WhereCondition & { kind: "range
   });
 }
 
-const RANGE_SQL: Record<StoreRangeOperator, string> = { gt: ">", gte: ">=", lt: "<", lte: "<=" };
+const RANGE_SQL: Record<StoreRangeOperator, string> = {
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+};
 
-export function buildWhereClause(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
+export function buildWhereClause(filter?: StoreFilter): {
+  clause: string;
+  params: SqlParam[];
+} {
   if (!filter?.where || Object.keys(filter.where).length === 0) {
     return { clause: "", params: [] };
   }
@@ -163,7 +227,13 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
       const kinds = new Set(condition.bounds.map(([, bound]) => typeof bound));
       // A number bound compares only numbers and a string bound only strings, so
       // bounds of both kinds match nothing.
-      conditions.push(kinds.size > 1 ? "0" : kinds.has("number") ? `${type} IN ('integer', 'real')` : `${type} = 'text'`);
+      conditions.push(
+        kinds.size > 1
+          ? "0"
+          : kinds.has("number")
+            ? `${type} IN ('integer', 'real')`
+            : `${type} = 'text'`,
+      );
       continue;
     }
     const match = condition.value;
@@ -191,7 +261,8 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
  *  so each language sees the other's index as already present. */
 export function indexNameFor(table: string, field: string): string {
   let hex = "";
-  for (const byte of new TextEncoder().encode(jsonPath(field).slice(3, -1))) hex += byte.toString(16).padStart(2, "0");
+  for (const byte of new TextEncoder().encode(jsonPath(field).slice(3, -1)))
+    hex += byte.toString(16).padStart(2, "0");
   return `ix_${table}_${hex}`;
 }
 
@@ -211,18 +282,31 @@ export function jsonPathLiteral(field: string): string {
   return `'${jsonPath(field).replace(/'/g, "''")}'`;
 }
 
-export const NON_SCALAR_IN_MESSAGE = "Store IN queries only support JSON scalar values.";
+export const NON_SCALAR_IN_MESSAGE =
+  "Store IN queries only support JSON scalar values.";
 
 /** Validate a `listWhereIn` value list: at most `MAX_IN_VALUES` values, each a
  *  JSON scalar, each number finite. */
 export function assertInValues(values: readonly unknown[]): void {
   if (values.length > MAX_IN_VALUES) {
-    throw new StoreFilterError("too-many-in-values", TOO_MANY_IN_VALUES_MESSAGE);
+    throw new StoreFilterError(
+      "too-many-in-values",
+      TOO_MANY_IN_VALUES_MESSAGE,
+    );
   }
   for (const value of values) {
     if (typeof value === "number") {
-      if (!Number.isFinite(value)) throw new StoreFilterError("non-finite-number", NON_FINITE_NUMBER_MESSAGE);
-    } else if (value !== null && typeof value !== "string" && typeof value !== "bigint" && typeof value !== "boolean") {
+      if (!Number.isFinite(value))
+        throw new StoreFilterError(
+          "non-finite-number",
+          NON_FINITE_NUMBER_MESSAGE,
+        );
+    } else if (
+      value !== null &&
+      typeof value !== "string" &&
+      typeof value !== "bigint" &&
+      typeof value !== "boolean"
+    ) {
       throw new StoreFilterError("non-scalar-in-value", NON_SCALAR_IN_MESSAGE);
     }
   }
@@ -261,7 +345,9 @@ export function buildInClause(
   const terms: string[] = [];
   const params: SqlParam[] = [];
   if (scalars.length > 0) {
-    terms.push(`(${extract} IN (${scalars.map(() => "?").join(", ")}) AND ${type} IN ('integer', 'real', 'text'))`);
+    terms.push(
+      `(${extract} IN (${scalars.map(() => "?").join(", ")}) AND ${type} IN ('integer', 'real', 'text'))`,
+    );
     params.push(...scalars);
   }
   for (const kind of kinds) {
@@ -269,10 +355,16 @@ export function buildInClause(
     terms.push(`(${extract} ${match} AND ${type} = '${kind}')`);
   }
   const condition = terms.length === 1 ? terms[0]! : `(${terms.join(" OR ")})`;
-  return { clause: `${hasPriorWhere ? " AND" : " WHERE"} ${condition}`, params };
+  return {
+    clause: `${hasPriorWhere ? " AND" : " WHERE"} ${condition}`,
+    params,
+  };
 }
 
-export function buildOrderBy(filter?: StoreFilter): { clause: string; params: SqlParam[] } {
+export function buildOrderBy(filter?: StoreFilter): {
+  clause: string;
+  params: SqlParam[];
+} {
   // `rowid` is the FINAL key so ties resolve to insertion order, matching the
   // in-memory reference's stable sort. With no `sortBy` it is the only key, which
   // pins the default `list()` order to insertion order instead of leaving it to
@@ -324,22 +416,6 @@ export function hashName(s: string): string {
 // critical loop has exactly one definition and each adapter only supplies a
 // six-line driver in its own execution model.
 
-/** The `_mirk_meta.schema_version` this build writes and understands. */
-export const MIRK_SCHEMA_VERSION = 3;
-
-export const MIRK_REGISTRY_DDL = `
-  CREATE TABLE IF NOT EXISTS _mirk_tables (
-    kind TEXT NOT NULL,
-    name TEXT NOT NULL,
-    table_name TEXT NOT NULL UNIQUE,
-    PRIMARY KEY (kind, name)
-  );
-  CREATE TABLE IF NOT EXISTS _mirk_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`;
-
 export const SELECT_SCHEMA_VERSION_SQL =
   "SELECT value FROM _mirk_meta WHERE key = 'schema_version'";
 export const INSERT_SCHEMA_VERSION_SQL =
@@ -379,7 +455,10 @@ export function ftsTableFor(docsTable: string): string {
   return `${SEARCH_FTS_TABLE_PREFIX}${docsTable.slice(SEARCH_DOCS_TABLE_PREFIX.length)}`;
 }
 
-export function schemaVersionTooNewMessage(found: string, supported: number): string {
+export function schemaVersionTooNewMessage(
+  found: string,
+  supported: number,
+): string {
   return `Mirk SQLite file schema version ${found} is newer than this adapter understands (${supported}).`;
 }
 
@@ -435,11 +514,15 @@ export function* tableResolution(
   prefix: string,
   register: boolean,
 ): Generator<TableRegistryQuery, string, TableRegistryAnswer> {
-  const recorded = (yield { q: "registered", kind, name }) as string | undefined;
+  const recorded = (yield { q: "registered", kind, name }) as
+    | string
+    | undefined;
   if (recorded !== undefined) return recorded;
 
   const legacy = legacyTableName(prefix, name);
-  const legacyClaim = (yield { q: "claimant", table: legacy }) as string | undefined;
+  const legacyClaim = (yield { q: "claimant", table: legacy }) as
+    | string
+    | undefined;
   if (legacyClaim === undefined) {
     if (register) yield { q: "register", kind, name, table: legacy };
     return legacy;
@@ -447,7 +530,9 @@ export function* tableResolution(
 
   for (let attempt = 2; ; attempt++) {
     const candidate = candidateTableName(legacy, attempt);
-    const claim = (yield { q: "claimant", table: candidate }) as string | undefined;
+    const claim = (yield { q: "claimant", table: candidate }) as
+      | string
+      | undefined;
     if (claim !== undefined) continue;
     const exists = (yield { q: "tableExists", table: candidate }) as boolean;
     if (exists) continue;
@@ -463,17 +548,7 @@ export function* tableResolution(
  *  surface a constraint error from an ordinary `put`. */
 export function isTableRegistryConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes("constraint failed") && message.includes("_mirk_tables");
+  return (
+    message.includes("constraint failed") && message.includes("_mirk_tables")
+  );
 }
-
-export const VECTOR_FORMAT_DDL = `
-CREATE TABLE IF NOT EXISTS _mirk_vector_spaces (
- namespace TEXT NOT NULL, name TEXT NOT NULL, dimensions INTEGER NOT NULL CHECK(dimensions>0),
- metric TEXT NOT NULL CHECK(metric='cosine'), encoding TEXT NOT NULL CHECK(encoding='float32'), PRIMARY KEY(namespace,name));
-CREATE TABLE IF NOT EXISTS _mirk_vector_documents (
- namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, metadata TEXT, PRIMARY KEY(namespace,collection,id));
-CREATE TABLE IF NOT EXISTS _mirk_vector_values (
- namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, space TEXT NOT NULL, vec BLOB NOT NULL,
- PRIMARY KEY(namespace,collection,id,space),
- FOREIGN KEY(namespace,collection,id) REFERENCES _mirk_vector_documents(namespace,collection,id) ON DELETE CASCADE,
- FOREIGN KEY(namespace,space) REFERENCES _mirk_vector_spaces(namespace,name));`;
