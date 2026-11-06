@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mirk-sqlite-vec-native"
-version = "0.15.0"
+version = "0.16.0"
 description = "Pinned sqlite-vec with ordered float64 cosine for Mirk SQLite adapters."
 requires-python = ">=3.12"
 license = "MIT"
