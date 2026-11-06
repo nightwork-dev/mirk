@@ -6,7 +6,7 @@ import os
 import re
 import sqlite3
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 
@@ -169,6 +169,7 @@ def ensure_registry(
                     "malformed-schema", "Malformed Mirk table _mirk_atomic_receipts"
                 )
 
+    entered_in_transaction = connection.in_transaction
     initial = version()
     if initial == SCHEMA_VERSION:
         validate_current()
@@ -212,6 +213,11 @@ def ensure_registry(
             if found not in (None, 1, 2, 3):
                 raise SqliteAdapterError("malformed-schema", "Unsupported legacy Mirk format")
             if is_older and backup_path is not None:
+                if entered_in_transaction:
+                    raise SqliteAdapterError(
+                        "unsupported-backup",
+                        "Commit caller transactions before requesting a migration backup",
+                    )
                 owned = next(
                     (
                         name
@@ -294,7 +300,8 @@ def snapshot(connection: sqlite3.Connection, destination: str) -> None:
             reader.close()
     except (OSError, sqlite3.Error) as error:
         if reserved:
-            os.unlink(destination)
+            with suppress(OSError):
+                os.unlink(destination)
         raise SqliteAdapterError(
             "backup-failed", f"Cannot create migration backup: {error}"
         ) from error

@@ -1147,12 +1147,18 @@ def test_python_reads_and_continues_the_log_typescript_wrote(tmp_path: Path) -> 
         log = SqliteLogFacet(store)
         assert log.lastSequence("events") == 2
         assert log.list("events") == [
-            {"sequence": 1, "record": {"kind": "submitted", "text": "é 🔥", "n": 1.5}},
-            {"sequence": 2, "record": {"kind": "settled", "at": None}},
+            {
+                "generation": 1,
+                "sequence": 1,
+                "record": {"kind": "submitted", "text": "é 🔥", "n": 1.5},
+            },
+            {"generation": 1, "sequence": 2, "record": {"kind": "settled", "at": None}},
         ]
-        assert log.list("other", {"after": 0, "limit": 5}) == [
-            {"sequence": 1, "record": [1, "two"]}
-        ]
+        cursor = log.lastCursor("other")
+        assert cursor is not None
+        assert log.list(
+            "other", {"after": {"generation": cursor["generation"], "sequence": 0}, "limit": 5}
+        ) == [{"generation": cursor["generation"], "sequence": 1, "record": [1, "two"]}]
         assert log.append("events", {"kind": "from python"}) == 3
 
 
@@ -1166,11 +1172,11 @@ def test_typescript_reads_and_continues_the_log_python_wrote(tmp_path: Path) -> 
     assert out == {
         "last": 2,
         "entries": [
-            {"sequence": 1, "record": {"kind": "submitted", "whole": 2}},
-            {"sequence": 2, "record": {"kind": "settled", "text": "é 🔥"}},
+            {"generation": 1, "sequence": 1, "record": {"kind": "submitted", "whole": 2}},
+            {"generation": 1, "sequence": 2, "record": {"kind": "settled", "text": "é 🔥"}},
         ],
         "next": 3,
-        "third": {"sequence": 3, "record": "from typescript"},
+        "third": {"generation": 1, "sequence": 3, "record": "from typescript"},
     }
     with SqliteStore(str(db)) as store:
         assert SqliteLogFacet(store).lastSequence("events") == 3

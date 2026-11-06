@@ -298,3 +298,68 @@ it("concurrent explicit migrators create one locked backup and converge", async 
   });
   copy.close();
 });
+it("retains a successful snapshot if the later upgrade rolls back", () => {
+  const { file, backup } = paths();
+  const raw = legacy(file);
+  raw.exec(
+    "CREATE TRIGGER reject_version BEFORE UPDATE ON _mirk_meta BEGIN SELECT RAISE(ABORT,'migration failed'); END",
+  );
+  expect(() =>
+    NodeSqliteAdapter.migrate({ path: file, backupPath: backup }),
+  ).toThrow("migration failed");
+  expect(raw.prepare("SELECT value FROM _mirk_meta").get()).toEqual({
+    value: "2",
+  });
+  const snapshot = new Database(backup);
+  expect(snapshot.prepare("SELECT value FROM _mirk_meta").get()).toEqual({
+    value: "2",
+  });
+  expect(snapshot.prepare("SELECT COUNT(*) AS n FROM vectors").get()).toEqual({
+    n: 1,
+  });
+  snapshot.close();
+  raw.close();
+});
+it("upgrades format three without renaming named vectors and assigns log generations in BINARY order", () => {
+  const { file } = paths();
+  const initial = new NodeSqliteAdapter({ path: file });
+  initial.vector.ensureSpace("existing", { dimensions: 2 });
+  initial.vector.upsert("assets", {
+    id: "a",
+    vectors: { existing: Float32Array.from([1, 0]) },
+  });
+  initial.log.append("z", { n: 1 });
+  initial.log.append("a", { n: 2 });
+  initial.close();
+  const old = new DatabaseSync(file);
+  old.exec(
+    "DROP TABLE _mirk_log_streams;DROP TABLE _mirk_log_generation;UPDATE _mirk_meta SET value='3'",
+  );
+  old.close();
+  expect(
+    NodeSqliteAdapter.migrate({ path: file, legacyVectorSpace: "ignored" }),
+  ).toEqual({ fromVersion: 3, toVersion: 4, changed: true });
+  const current = new NodeSqliteAdapter({ path: file });
+  expect(current.vector.listSpaces()[0]?.name).toBe("existing");
+  expect(Object.keys(current.vector.get("assets", "a")!.vectors)).toEqual([
+    "existing",
+  ]);
+  expect(current.log.lastCursor("a")).toEqual({ generation: 1, sequence: 1 });
+  expect(current.log.lastCursor("z")).toEqual({ generation: 2, sequence: 1 });
+  current.close();
+});
+it("rejects backup inside a caller transaction whose uncommitted data is not in a second connection snapshot", () => {
+  const { file, backup } = paths();
+  const db = legacy(file);
+  db.exec("BEGIN IMMEDIATE;UPDATE app SET value='uncommitted'");
+  expect(() =>
+    SqliteAdapter.migrate({ path: file, db, backupPath: backup }),
+  ).toThrow(expect.objectContaining({ code: "unsupported-backup" }));
+  expect(existsSync(backup)).toBe(false);
+  expect(db.inTransaction).toBe(true);
+  expect(db.prepare("SELECT value FROM app").get()).toEqual({
+    value: "uncommitted",
+  });
+  db.exec("ROLLBACK");
+  db.close();
+});

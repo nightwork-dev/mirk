@@ -159,3 +159,34 @@ def test_current_format_does_not_self_repair_missing_receipt_columns(tmp_path: P
         row[1] for row in connection.execute("PRAGMA table_info(_mirk_atomic_receipts)")
     }
     connection.close()
+
+
+def test_failed_upgrade_retains_successful_preimage_backup(tmp_path: Path) -> None:
+    path, backup = tmp_path / "old.db", tmp_path / "backup.db"
+    connection = legacy(path)
+    connection.execute("""CREATE TRIGGER reject_version BEFORE UPDATE ON _mirk_meta
+      BEGIN SELECT RAISE(ABORT,'migration failed'); END""")
+    with pytest.raises(sqlite3.IntegrityError, match="migration failed"):
+        migrate_sqlite(str(path), backup_path=str(backup))
+    assert connection.execute("SELECT value FROM _mirk_meta").fetchone()[0] == "2"
+    assert connection.execute("SELECT COUNT(*) FROM vectors").fetchone()[0] == 1
+    copy = sqlite3.connect(backup)
+    assert copy.execute("SELECT value FROM _mirk_meta").fetchone()[0] == "2"
+    assert copy.execute("SELECT COUNT(*) FROM vectors").fetchone()[0] == 1
+    copy.close()
+    connection.close()
+
+
+def test_backup_rejects_an_existing_caller_transaction(tmp_path: Path) -> None:
+    path, backup = tmp_path / "old.db", tmp_path / "backup.db"
+    connection = legacy(path)
+    connection.execute("BEGIN IMMEDIATE")
+    connection.execute("UPDATE app SET value='uncommitted'")
+    with pytest.raises(SqliteAdapterError) as caught:
+        ensure_registry(connection, backup_path=str(backup))
+    assert caught.value.code == "unsupported-backup"
+    assert not backup.exists()
+    assert connection.in_transaction
+    assert connection.execute("SELECT value FROM app").fetchone()[0] == "uncommitted"
+    connection.execute("ROLLBACK")
+    connection.close()
