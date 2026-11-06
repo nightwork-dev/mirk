@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-store"
-version = "0.14.0"
+version = "0.15.0"
 description = "Storage primitives with no domain baked in: key-value, collections, vector, full-text search, append-only log, and graph. Python port of @mirk/store."
 readme = "README.md"
 license = "Apache-2.0"
@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-vec = ["mirk-sqlite-vec-native==0.14.0"]
+vec = ["mirk-sqlite-vec-native==0.15.0"]
 
 [project.urls]
 Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/store"

@@ -7,16 +7,27 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsert",
       "args": [
         "docs",
         {
           "id": "raw",
-          "vector": [
-            3,
-            4,
-            0
-          ]
+          "vectors": {
+            "default": [
+              3,
+              4,
+              0
+            ]
+          }
         }
       ]
     },
@@ -29,11 +40,13 @@
       "expect": {
         "value": {
           "id": "raw",
-          "vector": [
-            3,
-            4,
-            0
-          ]
+          "vectors": {
+            "default": [
+              3,
+              4,
+              0
+            ]
+          }
         }
       }
     }

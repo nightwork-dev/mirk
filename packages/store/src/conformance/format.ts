@@ -88,7 +88,7 @@ export interface Scenario {
   /** Ports this scenario touches. A runner skips a scenario whose ports it does
    *  not implement and reports the skip. */
   ports: string[];
-  /** Optional capabilities the scenario requires (`listWhereIn`, `vec0`). */
+  /** Optional capabilities the scenario requires (`listWhereIn`). */
   capabilities: string[];
   store?: ScenarioStoreOptions;
   steps: Step[];

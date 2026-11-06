@@ -564,6 +564,27 @@ The ordinary engine computes exact cosine with float64 accumulation over float32
 its engine name after initialization; a load or execution failure raises instead of falling back.
 `compareCodePoints` is exported for adapters that need the same ordering.
 
+Install the optional `@mirk/sqlite-vec-native` companion to select native search:
+
+```ts
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
+import { sqliteVecEngine } from "@mirk/store/sqlite-vec";
+
+const db = new NodeSqliteAdapter({ path: "vectors.db", vectorEngine: sqliteVecEngine() });
+```
+
+The companion pins sqlite-vec 0.1.6 with an additional ordered float64 scalar. Upstream float32
+functions remain available. Native cosine, metadata filtering, ranking, and limiting run on the
+adapter's connection; only result IDs, scores, and metadata cross into JavaScript. The same file
+opens with the ordinary engine. `SqliteVecError` reports code `native-vector-engine` when loading
+or execution fails. There is no automatic fallback. `meta.accelerated` means native computation,
+not an approximate-neighbor algorithm or a workload-independent speed guarantee.
+
+The companion requires a C compiler during installation. Its npm tarball and Python source/wheel
+paths have been exercised on macOS arm64. Other platform builds have not been exercised in this
+change. See the [companion contract](../sqlite-vec-native/README.md).
+
+
 ## Atomic mutations
 
 Sometimes several writes must happen together, and only if the data is still what you read. The

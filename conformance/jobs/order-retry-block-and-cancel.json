@@ -1,0 +1,369 @@
+{
+  "id": "jobs/order-retry-block-and-cancel",
+  "title": "queue ordering precedes selection and retries respect availability",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "z",
+        "q",
+        null,
+        0
+      ]
+    },
+    {
+      "op": "enqueue",
+      "args": [
+        "b",
+        "q",
+        null,
+        3
+      ]
+    },
+    {
+      "op": "enqueue",
+      "args": [
+        "a",
+        "q",
+        null,
+        3
+      ]
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "a",
+          "ownerToken": "owner-1",
+          "generation": 1
+        }
+      }
+    },
+    {
+      "op": "retry",
+      "args": [
+        "a",
+        200
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 200,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "a",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 3,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "queued",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "b",
+          "ownerToken": "owner-2",
+          "generation": 1
+        }
+      }
+    },
+    {
+      "op": "block",
+      "args": [
+        "b",
+        {
+          "providerId": "b"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "b"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "b",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 3,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "blocked",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "resolveBlocked",
+      "args": [
+        "b",
+        {
+          "state": "queued",
+          "availableAt": 100
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "b"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "b",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 3,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "queued",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "b",
+          "ownerToken": "owner-3",
+          "generation": 2
+        }
+      }
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "b"
+      ]
+    },
+    {
+      "op": "acknowledgeCancel",
+      "args": [
+        "b"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 2,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 2,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "b"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "b",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 3,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "cancelled",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "z"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 0,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 0,
+            "requestedAt": 100
+          },
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "z",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "cancelled",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "setNow",
+      "args": [
+        200
+      ]
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "a",
+          "ownerToken": "owner-4",
+          "generation": 2
+        }
+      }
+    },
+    {
+      "op": "fail",
+      "args": [
+        "a",
+        {
+          "message": "failure"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 2,
+          "availableAt": 200,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": {
+            "message": "failure"
+          },
+          "expiresAt": null,
+          "generation": 2,
+          "id": "a",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 3,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "failed",
+          "updatedAt": 200
+        }
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "q"
+      ],
+      "expect": {
+        "value": [
+          {
+            "attempt": 2,
+            "availableAt": 200,
+            "cancellation": null,
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": {
+              "message": "failure"
+            },
+            "expiresAt": null,
+            "generation": 2,
+            "id": "a",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 3,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 1,
+            "state": "failed",
+            "updatedAt": 200
+          },
+          {
+            "attempt": 2,
+            "availableAt": 100,
+            "cancellation": {
+              "generation": 2,
+              "requestedAt": 100
+            },
+            "checkpoint": {
+              "providerId": "b"
+            },
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 2,
+            "id": "b",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 3,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 1,
+            "state": "cancelled",
+            "updatedAt": 100
+          },
+          {
+            "attempt": 0,
+            "availableAt": 100,
+            "cancellation": {
+              "generation": 0,
+              "requestedAt": 100
+            },
+            "checkpoint": null,
+            "enqueuedAt": 100,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "z",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 1,
+            "state": "cancelled",
+            "updatedAt": 100
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -63,9 +63,10 @@ db.search.index("notes", { id: "n1", fields: { title: "Invoice", body: "Send the
 db.search.search("notes", "invoice");
 
 // Vector search, ranked by exact cosine
-const embedding = new Float32Array(768); // your model's output
-db.vector.upsert("docs", { id: "a", vector: embedding });
-db.vector.search("docs", embedding, { topK: 10 });
+const embedding = new Float32Array([1, 0, 0]); // example model output
+db.vector.ensureSpace("text", { dimensions: 3 });
+db.vector.upsert("docs", { id: "a", vectors: { text: embedding } });
+db.vector.search("docs", { space: "text", vector: embedding }, { topK: 10 });
 
 // One transaction across all of it
 db.transaction(() => {
@@ -158,6 +159,13 @@ Metadata lives in a mirk store. The bytes live on disk, on S3 and other object s
 
 ## Also in the box
 
+- **Durable jobs** — [`@mirk/jobs`](packages/jobs) stores queued work, conditional claims, checkpoints,
+  cancellation, and fenced completion over an injected store and transaction domain. Applications
+  retain their workers and provider calls.
+- **Native SQLite vectors** — [`@mirk/sqlite-vec-native`](packages/sqlite-vec-native) is the optional
+  sqlite-vec companion for `@mirk/store/sqlite-vec`. It preserves the float64 search contract and
+  computes inside SQLite. The companion compiles during installation, never during a query.
+
 - **Moving between backends** — [`@mirk/migrate`](packages/migrate) copies data from one store to
   another and resumes where it stopped.
 - **Revision history** — [`@mirk/statements`](packages/statements) is specialized storage for hosts
@@ -176,6 +184,8 @@ written by TypeScript, and TypeScript opens theirs.
 | `mirk-store-markdown`   | Markdown file storage                                                |
 | `mirk-artifact-opendal` | file bytes on S3-compatible storage                                  |
 | `mirk-vector-qdrant`    | vectors on Qdrant                                                    |
+| `mirk-jobs`             | durable jobs and fenced lifecycle transitions                       |
+| `mirk-sqlite-vec-native` | optional native SQLite vector computation                           |
 
 ## Install
 

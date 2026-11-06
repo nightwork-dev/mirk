@@ -7,50 +7,67 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsertMany",
       "args": [
         "pets",
         [
           {
             "id": "cat-1",
-            "vector": [
-              1,
-              0,
-              0
-            ],
+            "vectors": {
+              "default": [
+                1,
+                0,
+                0
+              ]
+            },
             "metadata": {
               "type": "cat"
             }
           },
           {
             "id": "cat-2",
-            "vector": [
-              0.9,
-              0.1,
-              0
-            ],
+            "vectors": {
+              "default": [
+                0.9,
+                0.1,
+                0
+              ]
+            },
             "metadata": {
               "type": "cat"
             }
           },
           {
             "id": "cat-3",
-            "vector": [
-              0.8,
-              0.2,
-              0
-            ],
+            "vectors": {
+              "default": [
+                0.8,
+                0.2,
+                0
+              ]
+            },
             "metadata": {
               "type": "cat"
             }
           },
           {
             "id": "dog-1",
-            "vector": [
-              0.95,
-              0.05,
-              0
-            ],
+            "vectors": {
+              "default": [
+                0.95,
+                0.05,
+                0
+              ]
+            },
             "metadata": {
               "type": "dog"
             }
@@ -62,11 +79,14 @@
       "op": "search",
       "args": [
         "pets",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "type": "cat"

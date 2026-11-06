@@ -1,6 +1,6 @@
 {
   "name": "@mirk/jobs",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "type": "module",
   "description": "Portable durable job records, atomic leases, and fenced lifecycle transitions.",
   "license": "Apache-2.0",

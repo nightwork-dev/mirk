@@ -1,0 +1,175 @@
+{
+  "id": "jobs/stable-claim-and-terminal-cleanup",
+  "title": "renewal and checkpoint preserve the worker claim through completion",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "job",
+        "renders",
+        {
+          "asset": "17"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 0,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "job",
+          "ownerToken": null,
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "queued",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "job",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "job",
+          "ownerToken": "owner-1",
+          "generation": 1
+        }
+      }
+    },
+    {
+      "op": "renew",
+      "args": [
+        "job",
+        20
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "job",
+          "ownerToken": "owner-1",
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "leased",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "checkpoint",
+      "args": [
+        "job",
+        {
+          "providerId": "remote"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "job",
+          "ownerToken": "owner-1",
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "leased",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "job",
+        {
+          "artifact": "out"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "job",
+          "ownerToken": null,
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": {
+            "artifact": "out"
+          },
+          "schemaVersion": 1,
+          "state": "succeeded",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "removeTerminal",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

@@ -1,3 +1,8 @@
+import { JobsStore } from "@mirk/jobs";
+import { jobsConformanceTarget } from "./jobs-target.js";
+import { coordinationApi } from "../coordination/conformance.js";
+import { createMemoryCoordinator, createMemoryCoordinationState } from "../coordination/memory.js";
+import { SqliteCoordinator } from "../coordination/sqlite.js";
 import { recordHistoryApi } from "./record-history-target.js";
 import { createMemoryTransactions } from "../transaction.js";
 // ─── Conformance backend targets ────────────────────────────────────────────
@@ -153,9 +158,7 @@ function graphApi(store: Parameters<typeof toAsync>[0]): Record<string, unknown>
  *  scenario's `capabilities` is a corpus typo, and every runner must fail on it
  *  rather than pass a scenario whose gate nobody understands.
  *
- *  `vec0` is not a capability and never will be: the vec0 path was deleted
- *  from the SQLite adapter after it was shown never to execute. There is no
- *  accelerated path left to gate a scenario on. */
+ * Native vector engines replay the full vector contract separately. */
 const KNOWN_CAPABILITIES = ["listWhereIn"] as const;
 
 /** Optional capabilities a backend has right now. `listWhereIn` is a method both
@@ -189,6 +192,33 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
 
   if (kind === "hash") {
     return { target: { kind, api: hashApi() }, dispose: () => {} };
+  }
+
+  if (kind === "coordination") {
+    if (backend === "node-sqlite") throw new Error("Coordination uses its explicit SQLite source adapter.");
+    let sqlite: SqliteCoordinator | undefined;
+    const api = coordinationApi((clock) => {
+      if (backend === "memory") return createMemoryCoordinator({ state: createMemoryCoordinationState(), clock });
+      sqlite = new SqliteCoordinator({ path: ":memory:", clock });
+      return sqlite;
+    });
+    return { target: { kind, api }, dispose: () => sqlite?.close() };
+  }
+
+  if (kind === "jobs") {
+    let now = 100;
+    let token = 0;
+    const clock = { now: () => now, token: () => `owner-${++token}` };
+    if (backend === "memory") {
+      const kv = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+      const log = new InMemoryLogStore();
+      const jobs = new JobsStore({ store: toAsync(kv), transactions: createMemoryTransactions({ kv, log }), ...clock });
+      return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => {} };
+    }
+    const Adapter = backend === "node-sqlite" ? NodeSqliteAdapter : SqliteAdapter;
+    const adapter = new Adapter({ path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY });
+    const jobs = new JobsStore({ store: adapter.asyncKv, transactions: { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }, ...clock });
+    return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => adapter.close() };
   }
 
   if (backend === "memory") {

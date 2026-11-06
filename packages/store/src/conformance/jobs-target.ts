@@ -1,6 +1,6 @@
 import type { JsonValue } from '@mirk/store/atomic';
-import { JobsStore } from './index.js';
-import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord } from './types.js';
+import { JobsStore } from '@mirk/jobs';
+import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord } from '@mirk/jobs';
 
 export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) => void): Record<string, unknown> {
   const claims = new Map<string, JobClaim>();

@@ -1,0 +1,62 @@
+{
+  "id": "jobs/reject-runtime-input-and-malformed-state",
+  "title": "runtime fields and malformed persisted lifecycle state cannot become executable jobs",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "job",
+          "queue": "q",
+          "payload": null,
+          "state": "succeeded"
+        },
+        "smuggled"
+      ],
+      "expect": {
+        "throws": "Malformed jobs data"
+      }
+    },
+    {
+      "op": "enqueue",
+      "args": [
+        "job",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "corruptRecord",
+      "args": [
+        "job",
+        {
+          "state": "leased",
+          "ownerToken": null
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "throws": "Malformed jobs data"
+      }
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "throws": "Malformed jobs data"
+      }
+    }
+  ]
+}

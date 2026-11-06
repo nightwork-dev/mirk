@@ -1,0 +1,155 @@
+{
+  "id": "coordination/immediate-fenced-lease-lifecycle",
+  "title": "Immediate leases expose contention, exact expiry, renewal and persistent fencing",
+  "ports": [
+    "coordination"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "acquire",
+      "args": [
+        "old",
+        "key",
+        100
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "fencingGeneration": 1,
+          "expiresAt": 1100
+        }
+      }
+    },
+    {
+      "op": "acquire",
+      "args": [
+        "held",
+        "key",
+        100
+      ],
+      "expect": {
+        "value": {
+          "status": "held",
+          "expiresAt": 1100
+        }
+      }
+    },
+    {
+      "op": "advance",
+      "args": [
+        99
+      ]
+    },
+    {
+      "op": "owned",
+      "args": [
+        "old"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "renew",
+      "args": [
+        "old",
+        100
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "advance",
+      "args": [
+        100
+      ]
+    },
+    {
+      "op": "owned",
+      "args": [
+        "old"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "acquire",
+      "args": [
+        "new",
+        "key",
+        100
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "fencingGeneration": 2,
+          "expiresAt": 1299
+        }
+      }
+    },
+    {
+      "op": "renew",
+      "args": [
+        "old",
+        100
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "release",
+      "args": [
+        "old"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "owned",
+      "args": [
+        "new"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "release",
+      "args": [
+        "new"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "release",
+      "args": [
+        "new"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "acquire",
+      "args": [
+        "third",
+        "key",
+        100
+      ],
+      "expect": {
+        "value": {
+          "status": "acquired",
+          "fencingGeneration": 3,
+          "expiresAt": 1299
+        }
+      }
+    }
+  ]
+}

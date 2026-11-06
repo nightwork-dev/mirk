@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mirk-jobs"
-version = "0.14.0"
+version = "0.15.0"
 description = "Portable durable job storage and fenced lifecycle transitions."
 readme = "README.md"
 license = "Apache-2.0"

@@ -7,17 +7,28 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsertMany",
       "args": [
         "pets",
         [
           {
             "id": "cat-black",
-            "vector": [
-              1,
-              0,
-              0
-            ],
+            "vectors": {
+              "default": [
+                1,
+                0,
+                0
+              ]
+            },
             "metadata": {
               "type": "cat",
               "color": "black"
@@ -25,11 +36,13 @@
           },
           {
             "id": "cat-white",
-            "vector": [
-              0.9,
-              0.1,
-              0
-            ],
+            "vectors": {
+              "default": [
+                0.9,
+                0.1,
+                0
+              ]
+            },
             "metadata": {
               "type": "cat",
               "color": "white"
@@ -37,11 +50,13 @@
           },
           {
             "id": "dog-a",
-            "vector": [
-              0,
-              1,
-              0
-            ],
+            "vectors": {
+              "default": [
+                0,
+                1,
+                0
+              ]
+            },
             "metadata": {
               "type": "dog",
               "color": "black"
@@ -54,11 +69,14 @@
       "op": "search",
       "args": [
         "pets",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "type": "cat"

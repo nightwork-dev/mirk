@@ -158,7 +158,12 @@ a known empty space returns `[]`. Search preserves metadata prefiltering, full-c
 vectors remain readable but do not match. Components round to float32 on write and query.
 The ordinary SQLite engine reports `meta.engine="python"` and `accelerated=False`.
 Pass `vector_engine=sqlite_vec_engine()` from `mirk.store.sqlite_vec` for optional native
-computation on the same connection; initialization and execution failures raise visibly.
+computation on the same connection; initialization and execution failures raise visibly. Install the `vec` extra
+with `uv add 'mirk-store[vec]'`. The optional `mirk-sqlite-vec-native` package builds pinned
+sqlite-vec with ordered float64 scoring; it requires a C compiler for a source installation.
+Only final IDs, scores, and metadata cross into Python. The ordinary engine reads the same file.
+The native package's Python 3.12.15 and 3.13 wheel paths have been exercised on macOS arm64.
+
 
 ## Threads and transactions
 

@@ -1,0 +1,173 @@
+{
+  "id": "log/delete-stream-rollback",
+  "title": "rollback restores deleted streams even after a replacement append",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "a"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "b"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "c"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "d"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "e"
+        }
+      ]
+    },
+    {
+      "op": "deleteRolledBack",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "step": "a"
+            }
+          },
+          {
+            "sequence": 2,
+            "record": {
+              "step": "b"
+            }
+          },
+          {
+            "sequence": 3,
+            "record": {
+              "step": "c"
+            }
+          },
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          },
+          {
+            "sequence": 5,
+            "record": {
+              "step": "e"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "deleteRolledBack",
+      "args": [
+        "s",
+        "replacement"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": [
+          {
+            "sequence": 1,
+            "record": {
+              "step": "a"
+            }
+          },
+          {
+            "sequence": 2,
+            "record": {
+              "step": "b"
+            }
+          },
+          {
+            "sequence": 3,
+            "record": {
+              "step": "c"
+            }
+          },
+          {
+            "sequence": 4,
+            "record": {
+              "step": "d"
+            }
+          },
+          {
+            "sequence": 5,
+            "record": {
+              "step": "e"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": 5
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "sixth"
+      ],
+      "expect": {
+        "value": 6
+      }
+    }
+  ]
+}

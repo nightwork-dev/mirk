@@ -1,0 +1,120 @@
+{
+  "id": "log/delete-stream-lifecycle",
+  "title": "deleting a stream removes its history and recreation begins at one",
+  "ports": [
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "deleteStream",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "a"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "b"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "c"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "d"
+        }
+      ]
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        {
+          "step": "e"
+        }
+      ]
+    },
+    {
+      "op": "deleteStream",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "s",
+        1
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "op": "lastSequence",
+      "args": [
+        "s"
+      ],
+      "expect": {
+        "value": 0
+      }
+    },
+    {
+      "op": "append",
+      "args": [
+        "s",
+        "new incarnation"
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "deleteStream",
+      "args": [
+        ""
+      ],
+      "expect": {
+        "throws": "log stream must be a non-empty string"
+      }
+    }
+  ]
+}

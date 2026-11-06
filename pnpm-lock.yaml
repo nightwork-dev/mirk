@@ -208,6 +208,9 @@ importers:
       '@mirk/fixtures':
         specifier: workspace:^
         version: link:../fixtures
+      '@mirk/jobs':
+        specifier: workspace:^
+        version: link:../jobs
       '@mirk/sqlite-vec-native':
         specifier: workspace:^
         version: link:../sqlite-vec-native
