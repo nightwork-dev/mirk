@@ -1,8 +1,9 @@
+import { memoryTransactionRollback } from "./transaction-conformance.js";
 import type {
   AsyncCoordinator,
   CoordinationClock,
   CoordinationLease,
-} from "../coordination.js";
+} from "./core.js";
 
 export function coordinationApi(
   create: (clock: CoordinationClock) => AsyncCoordinator,
@@ -43,4 +44,8 @@ export function coordinationApi(
       }
     },
   };
+}
+
+export function memoryTransactionApi(): Record<string, unknown> {
+  return { memoryTransactionRollback };
 }

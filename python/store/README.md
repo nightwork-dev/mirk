@@ -362,10 +362,27 @@ clock, and errors. `createMemoryCoordinator(state=createMemoryCoordinationState(
 `SqliteCoordinator(path="leases.db")` from `mirk.store.coordination_sqlite` uses durable leases.
 Both use the same lease state machine. The SQLite source has `close()`.
 
+Memory state can opt into the existing transaction domain with
+`create_memory_transactions(kv=kv, log=log, coordination=state)` from `mirk.store.transaction`.
+Acquisition, renewal, and release then roll back with KV and log, including nested scopes.
+Generation allocation continues forward through rollback, so repeated owner tokens cannot revive
+an escaped provisional handle. Rollback invalidates new handles and restores prior handle expiry.
+Ownership-loss signal effects from provisional release or failed assertions wait until commit;
+assertions still throw immediately. Rollback discards those effects and preserves previously valid
+handles. Async lease methods queue behind foreign transaction ownership; synchronous assertions and
+expiry reads reject foreign access. A state can join only one domain. Unenlisted state remains
+independently committed. Clock advancement, external cancellation, and external side effects are
+outside rollback; callers may already have observed provisional results.
+
+The durable coordinator opens its own SQLite connection and commits lease metadata independently
+of KV/log transactions, including when the connections share one file. It does not enlist in a
+store transaction. This is distinct from the opt-in memory participant above.
+
 `await coordinator.tryAcquire(key, leaseMs=5000, signal=signal)` makes one atomic attempt and
 returns a dictionary: `{"status": "acquired", "lease": lease}`, `{"status": "held", "expiresAt": ms}`,
 or `{"status": "unavailable", "retryable": True}`. SQLite lock contention is unavailable;
-other failures are errors. No sleep, local queue, or native lock wait occurs in this operation.
+other failures are errors. The lease attempt does not poll or wait on a native lock. Explicitly
+enlisted memory state first waits for admission to its transaction domain.
 A lease exposes `key`, `ownerToken`, `fencingGeneration`, `expiresAt`, `signal`, `assertOwned()`,
 `await renew(leaseMs)`, and `await release()`. Manual leases do not renew automatically.
 Renewal and release succeed only for the current unexpired token and generation; repeat release
