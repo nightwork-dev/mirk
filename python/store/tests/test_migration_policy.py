@@ -190,3 +190,28 @@ def test_backup_rejects_an_existing_caller_transaction(tmp_path: Path) -> None:
     assert connection.execute("SELECT value FROM app").fetchone()[0] == "uncommitted"
     connection.execute("ROLLBACK")
     connection.close()
+
+
+def test_migration_failure_restores_its_savepoint_inside_a_caller_transaction(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "old.db"
+    connection = legacy(path)
+    connection.execute("""CREATE TRIGGER reject_version BEFORE UPDATE ON _mirk_meta
+      BEGIN SELECT RAISE(ABORT,'migration failed'); END""")
+    connection.execute("BEGIN IMMEDIATE")
+    connection.execute("UPDATE app SET value='caller value'")
+    with pytest.raises(sqlite3.IntegrityError, match="migration failed"):
+        ensure_registry(connection)
+    assert connection.in_transaction
+    assert connection.execute("SELECT value FROM app").fetchone()[0] == "caller value"
+    assert connection.execute("SELECT value FROM _mirk_meta").fetchone()[0] == "2"
+    assert connection.execute("SELECT COUNT(*) FROM vectors").fetchone()[0] == 1
+    assert (
+        connection.execute(
+            "SELECT name FROM sqlite_master WHERE name='_mirk_vector_values'"
+        ).fetchone()
+        is None
+    )
+    connection.execute("COMMIT")
+    connection.close()

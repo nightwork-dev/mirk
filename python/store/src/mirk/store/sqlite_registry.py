@@ -49,18 +49,19 @@ _REGISTRY_DDL = (
 
 @contextmanager
 def _registry_write(connection: sqlite3.Connection) -> Generator[sqlite3.Connection]:
-    """A write transaction, unless the caller already opened one."""
-    if connection.in_transaction:
-        yield connection
-        return
-    connection.execute("BEGIN IMMEDIATE")
+    nested = connection.in_transaction
+    connection.execute("SAVEPOINT mirk_format_migration" if nested else "BEGIN IMMEDIATE")
     try:
         yield connection
     except BaseException:
-        connection.execute("ROLLBACK")
+        if nested:
+            connection.execute("ROLLBACK TO SAVEPOINT mirk_format_migration")
+            connection.execute("RELEASE SAVEPOINT mirk_format_migration")
+        else:
+            connection.execute("ROLLBACK")
         raise
     else:
-        connection.execute("COMMIT")
+        connection.execute("RELEASE SAVEPOINT mirk_format_migration" if nested else "COMMIT")
 
 
 def table_exists(connection: sqlite3.Connection, table: str) -> bool:
