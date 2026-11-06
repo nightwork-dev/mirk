@@ -66,6 +66,7 @@ import {
 } from "@mirk/store/sql";
 
 export type LibsqlAdapterErrorCode =
+  | "migration-required"
   | "malformed-schema"
   | "unsupported-schema-version"
   | "invalid-collection-name"
