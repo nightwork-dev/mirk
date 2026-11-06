@@ -26,6 +26,7 @@ export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) =
     requestCancel: async (id: string) => (await jobs.requestCancel(id,key())).value,
     acknowledgeCancel: async (id: string) => (await jobs.acknowledgeCancel(claim(id),key())).value,
     recoverExpired: async (id: string) => (await jobs.recoverExpired(id,claim(id).generation,key())).value,
+    resolveBlockedCommand: async (id: string, decision: BlockedDecision, commandKey: string) => (await jobs.resolveBlocked(id,(await jobs.get(id))!.version,decision,{key:commandKey})).value,
     resolveBlocked: async (id: string, decision: BlockedDecision) => (await jobs.resolveBlocked(id,(await jobs.get(id))!.version,decision,key())).value,
     updateQueued: async (id: string, patch: {priority?: number; availableAt?: number}) => (await jobs.updateQueued(id,(await jobs.get(id))!.version,patch,key())).value,
     requeueTerminal: async (id: string, patch: {availableAt?: number}) => (await jobs.requeueTerminal(id,(await jobs.get(id))!.version,patch,key())).value,

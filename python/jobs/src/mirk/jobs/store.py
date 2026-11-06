@@ -148,15 +148,18 @@ class JobsStore(JobsCore):
     def resolveBlocked(
         self, id: str, expectedVersion: str, decision: Record, command: Record
     ) -> Record:
+        fields = {
+            "queued": {"state", "availableAt"},
+            "succeeded": {"state", "result"},
+            "failed": {"state", "error"},
+            "cancelled": {"state"},
+        }
+        state = decision.get("state")
+        expected_fields = fields.get(state) if isinstance(state, str) else None
+        if expected_fields is None or set(decision) != expected_fields:
+            raise JobsError("invalid-input")
+
         def work() -> Record:
-            fields = {
-                "queued": {"state", "availableAt"},
-                "succeeded": {"state", "result"},
-                "failed": {"state", "error"},
-                "cancelled": {"state"},
-            }
-            if set(decision) != fields.get(decision.get("state", ""), set()):
-                raise JobsError("invalid-input")
             prior = self._require(id)
             if prior["version"] != expectedVersion:
                 raise JobsError("conflict")
