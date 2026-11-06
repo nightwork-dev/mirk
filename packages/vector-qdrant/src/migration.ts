@@ -12,7 +12,14 @@ export interface QdrantMigrationOptions {
   onProgress?: (progress: QdrantMigrationProgress) => void;
 }
 
-/** Copy a quiesced legacy collection; retain the source and resume a partial destination. */
+function legacyJson(payload: Record<string, unknown>, field: string): unknown {
+  const value = payload[field];
+  if (typeof value !== "string") throw new QdrantCollectionError(`Malformed legacy field ${field}: expected JSON text`);
+  try { return JSON.parse(value) as unknown; }
+  catch { throw new QdrantCollectionError(`Malformed legacy field ${field}: invalid JSON`); }
+}
+
+/** Copy with one runner and both stores quiesced; retain the source and resume a partial destination. */
 export async function migrateLegacyQdrantVectors(client: QdrantClient, options: QdrantMigrationOptions): Promise<QdrantVectorStore> {
   const source = options.sourceCollectionName;
   const target = options.collectionName;
@@ -41,12 +48,16 @@ export async function migrateLegacyQdrantVectors(client: QdrantClient, options: 
     for (const point of page.points) {
       const payload = point.payload;
       if (!payload || typeof payload._mirk_collection !== "string" || typeof payload._mirk_id !== "string" || typeof payload._mirk_vector !== "string") throw new QdrantCollectionError("Malformed legacy point");
-      const collection: unknown = JSON.parse(payload._mirk_collection);
-      const id: unknown = JSON.parse(payload._mirk_id);
+      const collection = legacyJson(payload, "_mirk_collection");
+      const id = legacyJson(payload, "_mirk_id");
       if (typeof collection !== "string" || typeof id !== "string" || point.id !== pointIdFor(collection, id)) throw new QdrantCollectionError("Malformed legacy point identity");
       const bytes = Buffer.from(payload._mirk_vector, "base64");
-      if (bytes.byteLength !== params.size * 4) throw new QdrantCollectionError("Malformed legacy vector bytes");
-      const metadata = payload._mirk_has_metadata === true ? JSON.parse(String(payload._mirk_metadata)) as Record<string, unknown> : undefined;
+      if (bytes.toString("base64") !== payload._mirk_vector || bytes.byteLength !== params.size * 4) throw new QdrantCollectionError("Malformed legacy vector bytes");
+      if (typeof payload._mirk_has_metadata !== "boolean") throw new QdrantCollectionError("Malformed legacy metadata presence flag");
+      const decodedMetadata = payload._mirk_has_metadata ? legacyJson(payload, "_mirk_metadata") : undefined;
+      if (decodedMetadata !== undefined && (decodedMetadata === null || typeof decodedMetadata !== "object" || Array.isArray(decodedMetadata))) throw new QdrantCollectionError("Malformed legacy metadata: expected JSON object");
+      if (!payload._mirk_has_metadata && "_mirk_metadata" in payload) throw new QdrantCollectionError("Malformed legacy metadata: present without its flag");
+      const metadata = decodedMetadata as Record<string, unknown> | undefined;
       await store.upsert(collection, { id, vectors: { default: bufferToVector(bytes) }, ...(metadata === undefined ? {} : { metadata }) });
       copied += 1;
     }

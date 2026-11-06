@@ -56,7 +56,9 @@ collection. The host owns the client's lifecycle and collection deletion.
 
 ## Migrating an unnamed legacy collection
 
-Stop legacy writers first. Qdrant cannot atomically migrate schema and every point in place. Copy
+Use one migration runner for each source and destination pair. Stop ordinary source and destination
+writers until that runner finishes. The completion marker is not a lock. Qdrant cannot atomically
+migrate schema and every point in place. Copy
 to a new physical collection, then switch the application's configured collection after success:
 
 ```ts
@@ -70,10 +72,10 @@ const vectors = await migrateLegacyQdrantVectors(client, {
 ```
 
 The source remains untouched. Legacy embeddings become space `default` in namespace `default`.
-The destination carries a persisted completion marker. An interrupted destination cannot be opened
-as an ordinary store; call the same migration again to resume by idempotent replacement. Completion
+The destination carries a persisted completion marker. Malformed legacy JSON raises
+`QdrantCollectionError`. An interrupted destination cannot be opened as an ordinary store; call the same migration again to resume by idempotent replacement. Completion
 checks source and destination document counts before marking it ready. Reserve the destination for
-this migration until completion, and keep source writers stopped throughout copy and resume.
+this migration until completion, and keep source and destination writers stopped throughout copy and resume. Run resumptions one at a time.
 Neither adapter deletes or swaps collections automatically. TypeScript and Python share the format
 and migration marker, so either language can resume the other's interrupted copy.
 

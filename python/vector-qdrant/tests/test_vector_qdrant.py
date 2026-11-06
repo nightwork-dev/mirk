@@ -346,3 +346,91 @@ def test_interrupted_migration_resumes_without_destroying_source(qdrant_url: str
         if client.collection_exists(target):
             client.delete_collection(target)
         client.close()
+
+
+def test_malformed_legacy_json_keeps_incomplete_marker_and_resumes(qdrant_url: str) -> None:
+    import base64
+    import json
+    import struct
+
+    from mirk.vector_qdrant import QdrantCollectionError, migrateLegacyQdrantVectors
+    from mirk.vector_qdrant.wire import point_uuid
+
+    client = QdrantClient(url=qdrant_url)
+    source = f"mirk_py_bad_json_{uuid.uuid4().hex}"
+    client.create_collection(
+        source, vectors_config=models.VectorParams(size=2, distance=models.Distance.DOT)
+    )
+    payload = {
+        "_mirk_collection": json.dumps("docs"),
+        "_mirk_id": json.dumps("a"),
+        "_mirk_vector": base64.b64encode(struct.pack("<ff", 1, 0)).decode(),
+        "_mirk_usable": True,
+        "_mirk_has_metadata": True,
+        "_mirk_metadata": json.dumps({"kind": "legacy"}),
+        "_mirk_terms": [json.dumps(["kind", "legacy"], separators=(",", ":"))],
+    }
+    try:
+        for field, invalid in (
+            ("_mirk_collection", "{invalid"),
+            ("_mirk_id", "{invalid"),
+            ("_mirk_metadata", "{invalid"),
+            ("_mirk_metadata", "[]"),
+            ("_mirk_metadata", "NaN"),
+            ("_mirk_vector", base64.b64encode(bytes(9)).decode()),
+        ):
+            target = source + field
+            damaged = {**payload, field: invalid}
+            client.upsert(
+                source,
+                wait=True,
+                points=[
+                    models.PointStruct(
+                        id=str(point_uuid("docs", "a")),
+                        vector=[1, 0],
+                        payload=damaged,
+                    )
+                ],
+            )
+            try:
+                with pytest.raises(QdrantCollectionError):
+                    migrateLegacyQdrantVectors(
+                        client, source_collection_name=source, collection_name=target
+                    )
+                marker = (client.get_collection(target).config.metadata or {}).get("mirkMigration")
+                assert marker == {"source": source, "complete": False}
+                with pytest.raises(ValueError, match="incomplete"):
+                    QdrantVectorStore(client, collection_name=target)
+                original = client.retrieve(
+                    source, ids=[str(point_uuid("docs", "a"))], with_payload=True
+                )
+                assert original[0].payload is not None
+                assert original[0].payload[field] == invalid
+                assert client.count(source, exact=True).count == 1
+                client.upsert(
+                    source,
+                    wait=True,
+                    points=[
+                        models.PointStruct(
+                            id=str(point_uuid("docs", "a")),
+                            vector=[1, 0],
+                            payload=payload,
+                        )
+                    ],
+                )
+                repaired = migrateLegacyQdrantVectors(
+                    client, source_collection_name=source, collection_name=target
+                )
+                assert repaired.get("docs", "a") == {
+                    "id": "a",
+                    "vectors": {"default": [1, 0]},
+                    "metadata": {"kind": "legacy"},
+                }
+                marker = (client.get_collection(target).config.metadata or {}).get("mirkMigration")
+                assert marker == {"source": source, "complete": True}
+            finally:
+                if client.collection_exists(target):
+                    client.delete_collection(target)
+    finally:
+        client.delete_collection(source)
+        client.close()

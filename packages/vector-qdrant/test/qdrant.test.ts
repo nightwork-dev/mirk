@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { QdrantProtocolError, QdrantVectorStore, pointIdFor, migrateLegacyQdrantVectors } from "../src/index.js";
+import { QdrantCollectionError, QdrantProtocolError, QdrantVectorStore, pointIdFor, migrateLegacyQdrantVectors } from "../src/index.js";
 
 const qdrantUrl = process.env.MIRK_QDRANT_URL;
 const describeQdrant = qdrantUrl ? describe : describe.skip;
@@ -40,6 +40,40 @@ describeQdrant("QdrantVectorStore against the real service", () => {
     await other.ensureSpace("text", { dimensions: 5 });
     expect(await other.count("assets")).toBe(0);
     expect((await other.listSpaces()).map((space) => space.dimensions)).toEqual([5]);
+  });
+
+  it("rejects malformed legacy JSON with a collection error and resumes after repair", async () => {
+    const source = physical + "_json_source";
+    await client.createCollection(source, { vectors: { size: 2, distance: "Dot" } });
+    const payload = {
+      _mirk_collection: JSON.stringify("docs"), _mirk_id: JSON.stringify("a"),
+      _mirk_vector: Buffer.from(new Float32Array([1, 0]).buffer).toString("base64"),
+      _mirk_usable: true, _mirk_has_metadata: true, _mirk_metadata: JSON.stringify({ kind: "legacy" }),
+      _mirk_terms: [JSON.stringify(["kind", "legacy"])],
+    };
+    try {
+      for (const [field, invalid] of [
+        ["_mirk_collection", "{invalid"], ["_mirk_id", "{invalid"], ["_mirk_metadata", "{invalid"],
+        ["_mirk_metadata", "[]"], ["_mirk_metadata", "NaN"],
+        ["_mirk_vector", Buffer.from(new Uint8Array(9)).toString("base64")],
+      ] as const) {
+        const target = physical + field;
+        const damaged = { ...payload, [field]: invalid };
+        await client.upsert(source, { wait: true, points: [{ id: pointIdFor("docs", "a"), vector: [1, 0], payload: damaged }] });
+        try {
+          await expect(migrateLegacyQdrantVectors(client, { sourceCollectionName: source, collectionName: target })).rejects.toBeInstanceOf(QdrantCollectionError);
+          expect((await client.getCollection(target)).config.metadata?.mirkMigration).toEqual({ source, complete: false });
+          await expect(QdrantVectorStore.open(client, { collectionName: target })).rejects.toThrow("incomplete");
+          const original = await client.retrieve(source, { ids: [pointIdFor("docs", "a")], with_payload: true });
+          expect(original[0]!.payload?.[field]).toBe(invalid);
+          expect((await client.count(source, { exact: true })).count).toBe(1);
+          await client.upsert(source, { wait: true, points: [{ id: pointIdFor("docs", "a"), vector: [1, 0], payload }] });
+          const repaired = await migrateLegacyQdrantVectors(client, { sourceCollectionName: source, collectionName: target });
+          expect(await repaired.get("docs", "a")).toEqual({ id: "a", vectors: { default: vector(1, 0) }, metadata: { kind: "legacy" } });
+          expect((await client.getCollection(target)).config.metadata?.mirkMigration).toEqual({ source, complete: true });
+        } finally { if ((await client.collectionExists(target)).exists) await client.deleteCollection(target); }
+      }
+    } finally { await client.deleteCollection(source); }
   });
 
   it("resumes an interrupted legacy copy without exposing a partial destination", async () => {

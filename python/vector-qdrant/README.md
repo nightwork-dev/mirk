@@ -44,7 +44,9 @@ an ordinary open.
 
 ## Legacy migration
 
-Quiesce old writers and reserve a new destination until copying completes:
+Use one migration runner for each source and destination pair. Stop ordinary source and destination
+writers until that runner finishes. Reserve a new destination for the copy. The completion marker
+is not a lock, so resumptions must run one at a time:
 
 ```python
 from mirk.vector_qdrant import migrateLegacyQdrantVectors
@@ -60,10 +62,13 @@ vectors = migrateLegacyQdrantVectors(
 
 The source is preserved. Legacy embeddings become the `default` space in the `default` namespace.
 Progress includes `copied`, `total`, and `complete`. A durable marker prevents ordinary opening of
-an interrupted destination. Repeat the same call to resume idempotently, with source writers still
+an interrupted destination. Repeat the same call to resume idempotently, with source and destination writers still
 stopped. Completion checks document counts. Either language can resume the same copy. The caller
 switches its configured physical collection after success; neither adapter deletes or swaps it.
 
 The repository's `scripts/run-qdrant-tests.py` runs both languages on a temporary native server,
 including shared vector scenarios and cross-language writes. Direct tests skip without
 `MIRK_QDRANT_URL`.
+
+Malformed legacy migration records raise `QdrantCollectionError`, a `ValueError` subclass. The
+destination remains incomplete so the same copy can resume after the source record is repaired.
