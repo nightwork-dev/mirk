@@ -11,9 +11,9 @@ const execute = promisify(execFile);
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const nodeWorker = fileURLToPath(new URL('./worker.mjs', import.meta.url));
 const pythonWorker = resolve(root,'python/jobs/tests/worker.py');
-const python = process.env.PYTHON ?? 'python3';
+const python = process.env.PYTHON;
 const run = async (language: 'node'|'python', path: string, action: string, id: string, key: string) => {
-  const output = await execute(language === 'node' ? process.execPath : python,[language === 'node' ? nodeWorker : pythonWorker,path,action,id,key], {env:{...process.env,PYTHONPATH:[resolve(root,'python/store/src'),resolve(root,'python/jobs/src'),process.env.PYTHONPATH ?? ''].join(delimiter)}});
+  const output = await execute(language === 'node' ? process.execPath : python ?? 'uv',[...(language === 'python' && !python ? ['run','--project',resolve(root,'python/jobs'),'python'] : []),language === 'node' ? nodeWorker : pythonWorker,path,action,id,key], {env:{...process.env,PYTHONPATH:[resolve(root,'python/store/src'),resolve(root,'python/jobs/src'),process.env.PYTHONPATH ?? ''].join(delimiter)}});
   return JSON.parse(output.stdout);
 };
 it('arbitrates real competing processes and continues the SQLite file in both languages', async () => {
