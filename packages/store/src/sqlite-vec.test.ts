@@ -24,7 +24,7 @@ function fixture() {
   return {db,engine,put,search,vectors};
 }
 
-describe("sqlite-vec native ordered float64 refinement", () => {
+describe("sqlite-vec native ordered float64 scoring", () => {
   it("preserves inclusive cutoff, zero-query, nonfinite and extreme magnitudes", () => {
     const f=fixture();
     try {
@@ -51,7 +51,7 @@ describe("sqlite-vec native ordered float64 refinement", () => {
     } finally { f.db.close(); }
   });
 
-  it("matches exact scores and membership across adversarial safe and unsafe populations", () => {
+  it("matches exact scores and membership across adversarial vector populations", () => {
     let seed=41;
     const random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/2**32)*2-1;
     for (const dimensions of [1,3,31,128]) {

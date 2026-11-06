@@ -9,8 +9,9 @@
 required-version = ">=0.13.5"
 
 [tool.uv.workspace]
-members = ["store", "fixtures", "artifact", "store-markdown", "artifact-opendal", "vector-qdrant", "jobs"]
+members = ["store", "fixtures", "artifact", "store-markdown", "artifact-opendal", "vector-qdrant", "jobs", "sqlite-vec-native"]
 
 [tool.uv.sources]
 mirk-store = { workspace = true }
 mirk-artifact = { workspace = true }
+mirk-sqlite-vec-native = { workspace = true }

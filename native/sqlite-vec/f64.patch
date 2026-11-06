@@ -1,0 +1,37 @@
+--- sqlite-vec.c.upstream
++++ sqlite-vec.c
+@@ -1165,6 +1165,24 @@
+     return;
+   }
+ 
++  if (sqlite3_user_data(context)) {
++    if (elementType != SQLITE_VEC_ELEMENT_TYPE_FLOAT32) {
++      sqlite3_result_error(context, "float64 cosine requires float32 vectors", -1);
++      goto finish;
++    }
++    const f32 *av = a, *bv = b;
++    double dot = 0, an = 0, bn = 0;
++    for (size_t i = 0; i < dimensions; i++) {
++      const double x = av[i], y = bv[i];
++      if (!isfinite(x) || !isfinite(y)) goto finish;
++      dot += x * y;
++      an += x * x;
++      bn += y * y;
++    }
++    if (an > 0) sqlite3_result_double(context, bn == 0 ? 0 : dot / (sqrt(an) * sqrt(bn)));
++    goto finish;
++  }
++
+   switch (elementType) {
+   case SQLITE_VEC_ELEMENT_TYPE_BIT: {
+     sqlite3_result_error(
+@@ -9620,6 +9638,9 @@
+ 
+ #define DEFAULT_FLAGS (SQLITE_UTF8 | SQLITE_INNOCUOUS | SQLITE_DETERMINISTIC)
+ 
++  rc = sqlite3_create_function_v2(db, "vec_cosine_similarity_f64", 2,
++      DEFAULT_FLAGS | SQLITE_SUBTYPE, (void *)1, vec_distance_cosine, NULL, NULL, NULL);
++  if (rc != SQLITE_OK) return rc;
+   rc = sqlite3_create_function_v2(db, "vec_version", 0, DEFAULT_FLAGS,
+                                   SQLITE_VEC_VERSION, _static_text_func, NULL,
+                                   NULL, NULL);

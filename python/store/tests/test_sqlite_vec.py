@@ -14,10 +14,10 @@ from mirk.store.vector import (
     vector_to_bytes,
 )
 
-pytest.importorskip("sqlite_vec")
+pytest.importorskip("mirk_sqlite_vec_native")
 
 
-def test_native_refinement_and_boundaries() -> None:
+def test_native_scoring_and_boundaries() -> None:
     db = sqlite3.connect(":memory:")
     engine = sqlite_vec_engine()
     engine.initialize(db)

@@ -1,0 +1,15 @@
+{
+  "upstream": "https://github.com/asg017/sqlite-vec/tree/v0.1.6",
+  "version": "0.1.6",
+  "sqlite_headers": "https://sqlite.org/2024/sqlite-amalgamation-3450300.zip",
+  "sqlite_archive_sha256": "ea170e73e447703e8359308ca2e4366a3ae0c4304a8665896f068c736781c651",
+  "files": {
+    "sqlite-vec.c": "aea2ff1524ab80ccd1d51c698b09a74403c2d6ef00949d2a083661b4660881fe",
+    "sqlite-vec.h": "ea2308d7992be96c57bf742978db3d7d11a403951f6b15c19668e5784304a468",
+    "sqlite3.h": "882ad3c0448d0324fb3a6b1a85333a9173d539ac669c9972ae1f03722ff86282",
+    "sqlite3ext.h": "b184dd1586d935133d37ad76fa353faf0a1021ff2fdedeedcc3498fff74bbb94",
+    "LICENSE": "6ce72bbe12d975bd5286e5ab0a064c069693300c47bccbc57bec18485f1621ea",
+    "f64.patch": "bf6e2d7746ba68331ef170ea75d202e66a60493b87884bd1049b9b405355a12f"
+  },
+  "patched_sha256": "1515f5ce9c9b01bbc82afa98a6bcae0c0ddedd76d8bdc2a0027e57c9a6dee9c4"
+}

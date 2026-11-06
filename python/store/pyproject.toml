@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-vec = ["sqlite-vec==0.1.6"]
+vec = ["mirk-sqlite-vec-native==0.14.0"]
 
 [project.urls]
 Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/store"

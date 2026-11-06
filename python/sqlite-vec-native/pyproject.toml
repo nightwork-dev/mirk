@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mirk-sqlite-vec-native"
+version = "0.14.0"
+description = "Pinned sqlite-vec with ordered float64 cosine for Mirk SQLite adapters."
+requires-python = ">=3.12"
+license = "MIT"
+readme = "README.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mirk_sqlite_vec_native = ["_native/*.c", "_native/*.h", "_native/*.patch", "_native/*.json", "_native/LICENSE"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pyright>=1.1", "ruff>=0.6"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src/mirk_sqlite_vec_native/__init__.py", "tests"]
+pythonVersion = "3.12"
+reportMissingTypeStubs = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "N", "RUF"]
