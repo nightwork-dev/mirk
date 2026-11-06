@@ -20,13 +20,13 @@ function clean(path: string): void {
 
 describe("NodeSqliteAdapter", () => {
   it("serves KV, vector, search, and nested transactions on one DatabaseSync", () => {
-    const adapter = new NodeSqliteAdapter({ path: ":memory:", dimensions: 3 });
+    const adapter = configuredNodeSqliteAdapter({ path: ":memory:"}, 3 );
     try {
       adapter.kv.set("user:1", { name: "Ada" });
       adapter.kv.put("events", { id: "e1", type: "created" });
       adapter.vector.upsert("docs", {
         id: "doc-1",
-        vector: Float32Array.from([1, 0, 0]),
+        vectors: { default: Float32Array.from([1, 0, 0]) },
         metadata: { source: "test" },
       });
       adapter.search.index("pages", { id: "intro", text: "hello world" });
@@ -36,7 +36,7 @@ describe("NodeSqliteAdapter", () => {
         id: "e1",
         type: "created",
       });
-      expect(adapter.vector.search("docs", Float32Array.from([1, 0, 0]))).toMatchObject([
+      expect(adapter.vector.search("docs", { space: "default", vector: Float32Array.from([1, 0, 0]) })).toMatchObject([
         { id: "doc-1", score: 1, metadata: { source: "test" } },
       ]);
       expect(adapter.search.search("pages", "hello")[0]?.id).toBe("intro");
@@ -74,20 +74,20 @@ describe("NodeSqliteAdapter", () => {
   it("opens files written by better-sqlite3 and writes files it can reopen", () => {
     const path = tempDb("compatibility");
     try {
-      const better = new SqliteAdapter({ path, dimensions: 2 });
+      const better = configuredSqliteAdapter({ path}, 2 );
       better.kv.set("from-better", { ok: true });
-      better.vector.upsert("docs", { id: "b", vector: Float32Array.from([1, 0]) });
+      better.vector.upsert("docs", { id: "b", vectors: { default: Float32Array.from([1, 0])  }});
       better.close();
 
-      const node = new NodeSqliteAdapter({ path, dimensions: 2 });
+      const node = configuredNodeSqliteAdapter({ path}, 2 );
       expect(node.kv.get("from-better")).toEqual({ ok: true });
-      expect(node.vector.get("docs", "b")?.vector).toEqual(
+      expect(node.vector.get("docs", "b")?.vectors.default).toEqual(
         Float32Array.from([1, 0]),
       );
       node.kv.set("from-node", { ok: true });
       node.close();
 
-      const reopened = new SqliteAdapter({ path, dimensions: 2 });
+      const reopened = configuredSqliteAdapter({ path}, 2 );
       expect(reopened.kv.get("from-node")).toEqual({ ok: true });
       reopened.close();
     } finally {
@@ -165,3 +165,7 @@ describe("NodeSqliteAdapter", () => {
   });
 });
 
+
+function configuredSqliteAdapter(options: ConstructorParameters<typeof SqliteAdapter>[0], dimensions: number) { const store = new SqliteAdapter(options); store.vector.ensureSpace("default", {dimensions}); return store; }
+
+function configuredNodeSqliteAdapter(options: ConstructorParameters<typeof NodeSqliteAdapter>[0], dimensions: number) { const store = new NodeSqliteAdapter(options); store.vector.ensureSpace("default", {dimensions}); return store; }

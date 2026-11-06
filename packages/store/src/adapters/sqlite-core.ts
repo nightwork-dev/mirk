@@ -1,3 +1,6 @@
+import { ensureMirkFormat } from "./sqlite-format.js";
+import { SqliteVectorFacet } from "./sqlite-vector.js";
+import type { SqliteVectorEngine } from "./sqlite-vector-engine.js";
 // ─── Shared synchronous SQLite adapter core ─────────────────────────────────
 // One SQLite connection, multiple capability
 // facets: `.kv` is a SyncStore (KV + collections), `.vector` is a VectorStore.
@@ -59,23 +62,9 @@ import {
 } from "../atomic.js";
 import type {
   VectorStore,
-  VectorStoreMeta,
-  VectorDocument,
-  VectorSearchResult,
-  VectorSearchOptions,
-  Vector,
 } from "../vector/types.js";
 import { matchesWhere } from "../vector/filter.js";
-import { compareCodePoints } from "../order.js";
 import { isSqliteBusyOrLocked, runSqliteBusyRetry } from "../sqlite-busy.js";
-import {
-  cosineSimilarity,
-  vectorToBuffer,
-  bufferToVector,
-  assertDimensions,
-  isUsableVector,
-  VectorInputError,
-} from "../vector/cosine.js";
 import type {
   SearchStore,
   SearchDocument,
@@ -102,16 +91,10 @@ import {
   COLLECTION_TABLE_PREFIX,
   ftsTableFor,
   INSERT_REGISTERED_TABLE_SQL,
-  INSERT_SCHEMA_VERSION_SQL,
-  isSchemaVersionTooNew,
   isTableRegistryConflict,
-  MIRK_REGISTRY_DDL,
-  MIRK_SCHEMA_VERSION,
-  schemaVersionTooNewMessage,
   SEARCH_DOCS_TABLE_PREFIX,
   SEARCH_TABLE_KIND,
   SELECT_REGISTERED_TABLE_SQL,
-  SELECT_SCHEMA_VERSION_SQL,
   SELECT_TABLE_CLAIM_SQL,
   SELECT_TABLE_EXISTS_SQL,
   tableResolution,
@@ -128,6 +111,8 @@ import { existsSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export type SqliteAdapterErrorCode =
+  | "malformed-schema"
+  | "migration-required"
   | "unsupported-schema-version"
   | "invalid-busy-timeout"
   | "async-operation-active";
@@ -210,6 +195,8 @@ class GuardedSqliteDb implements SqliteDb {
   get inTransaction(): boolean {
     return this.inner.inTransaction;
   }
+  loadExtension(path: string): void { this.check(); this.inner.loadExtension(path); }
+
   close(): void {
     this.check();
     this.inner.close();
@@ -245,40 +232,6 @@ export function validateSqliteBusyTimeout(busyTimeoutMs: number | undefined): vo
       `busyTimeoutMs must be an integer from 0 to ${SQLITE_MAX_BUSY_TIMEOUT_MS}; got ${busyTimeoutMs}.`
     );
   }
-}
-
-function assertPositiveDimensions(dimensions: number): void {
-  if (!Number.isInteger(dimensions) || dimensions <= 0) {
-    throw new VectorInputError(
-      "invalid-dimensions",
-      `Vector dimensions must be a positive integer; got ${dimensions}.`
-    );
-  }
-}
-
-/** Create `_mirk_tables` / `_mirk_meta` and pin `schema_version`. Runs once per
- *  open, BEFORE any facet, so a file written by a newer adapter is refused
- *  rather than half-read. */
-function ensureMirkRegistry(db: SqliteDb): void {
-  const hasMeta =
-    db
-      .prepare(
-        "SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = '_mirk_meta'"
-      )
-      .get() !== undefined;
-  if (hasMeta) {
-    const row = db.prepare(SELECT_SCHEMA_VERSION_SQL).get() as
-      | { value: string }
-      | undefined;
-    if (row !== undefined && isSchemaVersionTooNew(row.value)) {
-      throw new SqliteAdapterError(
-        "unsupported-schema-version",
-        schemaVersionTooNewMessage(row.value, MIRK_SCHEMA_VERSION)
-      );
-    }
-  }
-  db.exec(MIRK_REGISTRY_DDL);
-  db.prepare(INSERT_SCHEMA_VERSION_SQL).run(String(MIRK_SCHEMA_VERSION));
 }
 
 /** Synchronous driver for the shared `tableResolution` procedure in ../sql.ts.
@@ -353,7 +306,8 @@ export interface SqliteAdapterCoreOptions {
   ownsDb: boolean;
   /** Embedding dimensions. Optional: when omitted, `.vector` persists the
    *  dimensions from the first upsert/upsertMany call. KV/search work without it. */
-  dimensions?: number;
+  namespace?: string;
+  vectorEngine?: SqliteVectorEngine;
   /** Maximum time SQLite waits for another process's writer before returning SQLITE_BUSY. */
   busyTimeoutMs?: number;
   /** Override any of the in-process atomic request bounds `.kv` enforces. The
@@ -492,8 +446,8 @@ export class SqliteAdapterCore {
       let log: SqliteLogFacet | undefined;
       runSqliteBusyRetry(
         () => {
+          ensureMirkFormat(this.db, (code, message) => new SqliteAdapterError(code, message));
           this.db.pragma("journal_mode = WAL");
-          ensureMirkRegistry(this.db);
           kv = new SqliteKvFacet(
             this.db,
             resolveAtomicLimits(opts.atomicLimits, IN_PROCESS_ATOMIC_LIMITS),
@@ -501,7 +455,7 @@ export class SqliteAdapterCore {
             resolveReceiptRetention(opts.receiptRetentionMs),
             opts.now ?? Date.now
           );
-          vector = new SqliteVectorFacet(this.db, opts.path, opts.dimensions);
+          vector = new SqliteVectorFacet(this.db, opts.namespace, opts.vectorEngine);
           search = new SqliteSearchFacet(this.db);
           log = new SqliteLogFacet(this.db);
         },
@@ -673,6 +627,7 @@ export class SqliteAdapterCore {
       get: (stream, sequence) => run(() => lifted.get(stream, sequence)),
       list: (stream, options) => run(() => lifted.list(stream, options)),
       lastSequence: (stream) => run(() => lifted.lastSequence(stream)),
+      deleteStream: (stream) => run(() => lifted.deleteStream(stream)),
     };
   }
 
@@ -1355,223 +1310,6 @@ function conditionMatches(
   if (condition.expected === "missing") return observed === null;
   if (condition.expected === "present") return observed !== null;
   return observed !== null && observed.version === condition.version;
-}
-
-// ─── Vector facet (VectorStore) ──────────────────────────────────────────────
-
-interface VectorRow {
-  id: string;
-  vec: Buffer;
-  metadata: string | null;
-}
-
-class SqliteVectorFacet implements VectorStore {
-  readonly meta: VectorStoreMeta = {
-    backend: "sqlite",
-    dimensions: 0,
-    accelerated: false,
-  };
-  private dimensions = -1;
-
-  constructor(
-    private readonly db: SqliteDb,
-    private readonly path: string,
-    dimensions?: number
-  ) {
-    this.db.exec(
-      `CREATE TABLE IF NOT EXISTS vectors (
-         collection TEXT NOT NULL,
-         id TEXT NOT NULL,
-         vec BLOB NOT NULL,
-         metadata TEXT,
-         PRIMARY KEY (collection, id)
-       );
-       CREATE INDEX IF NOT EXISTS vectors_collection ON vectors(collection);
-       CREATE TABLE IF NOT EXISTS _vec_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`
-    );
-    // Persist + enforce dimensionality so a store created at N dims can't be
-    // reopened at M (which would let stale-length rows score a silent 0).
-    const stored = this.db
-      .prepare(`SELECT value FROM _vec_meta WHERE key = 'dimensions'`)
-      .get() as { value: string } | undefined;
-    if (stored) {
-      this.dimensions = Number(stored.value);
-      if (dimensions !== undefined && dimensions !== this.dimensions) {
-        throw new VectorInputError(
-          "dimensions-changed",
-          `Vector store at ${path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`
-        );
-      }
-      this.refreshVectorMeta();
-    } else if (dimensions !== undefined) {
-      this.initializeDims(dimensions);
-    }
-  }
-
-  private initializeDims(dimensions: number): void {
-    assertPositiveDimensions(dimensions);
-    if (this.dimensions >= 0) {
-      if (dimensions !== this.dimensions) {
-        throw new VectorInputError(
-          "dimensions-changed",
-          `Vector store at ${this.path} was created with ${this.dimensions} dimensions, opened with ${dimensions}.`
-        );
-      }
-      return;
-    }
-    this.dimensions = dimensions;
-    this.db
-      .prepare(
-        `INSERT INTO _vec_meta (key, value) VALUES ('dimensions', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-      )
-      .run(String(dimensions));
-    this.refreshVectorMeta();
-  }
-
-  private refreshVectorMeta(): void {
-    this.meta.dimensions = Math.max(this.dimensions, 0);
-  }
-
-  private requireKnownDims(v: Vector): void {
-    if (this.dimensions < 0) {
-      throw new VectorInputError(
-        "dimensions-unknown",
-        "SqliteAdapter.vector has no dimensions yet — pass { dimensions } when opening or upsert a vector first."
-      );
-    }
-    assertDimensions(v, this.dimensions);
-  }
-
-  private ensureDimsForWrite(v: Vector): void {
-    if (this.dimensions < 0) this.initializeDims(v.length);
-    assertDimensions(v, this.dimensions);
-  }
-
-  upsert<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    doc: VectorDocument<M>
-  ): void {
-    this.ensureDimsForWrite(doc.vector);
-    this.db
-      .prepare(
-        `INSERT INTO vectors(collection, id, vec, metadata) VALUES (?, ?, ?, ?)
-         ON CONFLICT(collection, id) DO UPDATE SET vec = excluded.vec, metadata = excluded.metadata`
-      )
-      .run(
-        collection,
-        doc.id,
-        vectorToBuffer(doc.vector),
-        doc.metadata === undefined ? null : JSON.stringify(doc.metadata)
-      );
-  }
-
-  upsertMany<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    docs: ReadonlyArray<VectorDocument<M>>
-  ): void {
-    const first = docs[0];
-    if (!first) return;
-    const dimensions =
-      this.dimensions >= 0 ? this.dimensions : first.vector.length;
-    assertPositiveDimensions(dimensions);
-    for (const doc of docs) {
-      assertDimensions(doc.vector, dimensions);
-    }
-    if (this.dimensions < 0) this.initializeDims(dimensions);
-    const tx = this.db.transaction(
-      (items: ReadonlyArray<VectorDocument<M>>) => {
-        for (const doc of items) this.upsert(collection, doc);
-      }
-    );
-    tx(docs);
-  }
-
-  get<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    id: string
-  ): VectorDocument<M> | null {
-    const row = this.db
-      .prepare(
-        `SELECT id, vec, metadata FROM vectors WHERE collection = ? AND id = ?`
-      )
-      .get(collection, id) as VectorRow | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      vector: bufferToVector(row.vec),
-      metadata:
-        row.metadata === null ? undefined : (JSON.parse(row.metadata) as M),
-    };
-  }
-
-  has(collection: string, id: string): boolean {
-    return (
-      this.db
-        .prepare(`SELECT 1 FROM vectors WHERE collection = ? AND id = ?`)
-        .get(collection, id) !== undefined
-    );
-  }
-
-  remove(collection: string, id: string): boolean {
-    return (
-      this.db
-        .prepare(`DELETE FROM vectors WHERE collection = ? AND id = ?`)
-        .run(collection, id).changes > 0
-    );
-  }
-
-  count(collection: string): number {
-    const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM vectors WHERE collection = ?`)
-      .get(collection) as { n: number };
-    return row.n;
-  }
-
-  search<M extends Record<string, unknown> = Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    opts?: VectorSearchOptions
-  ): VectorSearchResult<M>[] {
-    this.requireKnownDims(query);
-    return this.searchJs<M>(
-      collection,
-      query,
-      opts?.topK ?? 10,
-      opts?.minScore,
-      opts?.where,
-      opts?.whereNot
-    );
-  }
-
-  private searchJs<M extends Record<string, unknown>>(
-    collection: string,
-    query: Vector,
-    topK: number,
-    minScore: number | undefined,
-    where?: Record<string, unknown>,
-    whereNot?: Record<string, unknown>
-  ): VectorSearchResult<M>[] {
-    const rows = this.db
-      .prepare(`SELECT id, vec, metadata FROM vectors WHERE collection = ?`)
-      .all(collection) as VectorRow[];
-    const scored: VectorSearchResult<M>[] = [];
-    for (const row of rows) {
-      const meta =
-        row.metadata === null ? undefined : (JSON.parse(row.metadata) as M);
-      // Pre-KNN metadata filters — applied before scoring.
-      if (where && !matchesWhere(meta, where)) continue;
-      if (whereNot && matchesWhere(meta, whereNot)) continue;
-      const vec = bufferToVector(row.vec);
-      if (!isUsableVector(vec)) continue; // directionless — no cosine direction
-      const score = cosineSimilarity(query, vec);
-      if (!Number.isFinite(score)) continue;
-      if (minScore !== undefined && score < minScore) continue;
-      scored.push({ id: row.id, score, metadata: meta });
-    }
-    scored.sort((a, b) => b.score - a.score || compareCodePoints(a.id, b.id));
-    return scored.slice(0, topK);
-  }
 }
 
 // ─── Search facet (SearchStore) ─────────────────────────────────────────────

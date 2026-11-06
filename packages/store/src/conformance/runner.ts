@@ -105,6 +105,7 @@ export function vectorDimensionsFor(steps: ReadonlyArray<{ args: unknown[] }>): 
 function withVectorField(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
+  if (record.vectors && typeof record.vectors === "object") return { ...record, vectors: Object.fromEntries(Object.entries(record.vectors as Record<string, number[]>).map(([name, vector]) => [name, Float32Array.from(vector)])) };
   if (!isNumberArray(record.vector)) return value;
   return { ...record, vector: Float32Array.from(record.vector) };
 }

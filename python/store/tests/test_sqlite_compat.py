@@ -261,13 +261,15 @@ def test_integral_floats_are_written_the_way_javascript_writes_them(tmp_path: Pa
 VECTOR_WRITE_SCRIPT = f"""
 import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
 
-const adapter = new SqliteAdapter({{ path: process.argv[2], dimensions: 3 }});
+const adapter = new SqliteAdapter({{ path: process.argv[2], namespace: "default" }});
+adapter.vector.ensureSpace("default", {{dimensions: 3}});
 adapter.vector.upsert("vecs", {{
   id: "t1",
-  vector: Float32Array.from([0.1, 0.2, 0.3]),
+  vectors: {{ default: Float32Array.from([0.1, 0.2, 0.3]) }},
   metadata: {{ kind: "ts", nested: {{ n: 1, tags: ["a", "b"] }} }},
 }});
-adapter.vector.upsert("vecs", {{ id: "t2", vector: Float32Array.from([0.3, 0.2, 0.1]) }});
+adapter.vector.upsert("vecs",
+  {{ id: "t2", vectors: {{ default: Float32Array.from([0.3, 0.2, 0.1]) }} }});
 adapter.close();
 console.log(JSON.stringify({{ ok: true }}));
 """
@@ -279,11 +281,12 @@ import {{ SqliteAdapter }} from {json.dumps(str(DIST_SQLITE))};
 const adapter = new SqliteAdapter({{ path: process.argv[2] }});
 const doc = adapter.vector.get("vecs", "p1");
 const out = {{
-  dimensions: adapter.vector.meta.dimensions,
+  dimensions: adapter.vector.listSpaces()[0].dimensions,
   count: adapter.vector.count("vecs"),
-  vector: doc ? Array.from(doc.vector) : null,
+  vector: doc ? Array.from(doc.vectors.default) : null,
   metadata: doc ? (doc.metadata ?? null) : null,
-  results: adapter.vector.search("vecs", Float32Array.from([0.25, 0.5, 0.75]), {{ topK: 5 }}),
+  results: adapter.vector.search("vecs",
+    {{ space: "default", vector: Float32Array.from([0.25, 0.5, 0.75]) }}, {{ topK: 5 }}),
 }};
 adapter.close();
 console.log(JSON.stringify(out));
@@ -292,7 +295,9 @@ console.log(JSON.stringify(out));
 
 def _vector_facet(db: Path) -> tuple[SqliteVectorFacet, sqlite3.Connection]:
     connection = sqlite3.connect(db, isolation_level=None)
-    return (SqliteVectorFacet(connection, path=str(db)), connection)
+    facet = SqliteVectorFacet(connection, path=str(db))
+    facet.ensureSpace("default", {"dimensions": 3})
+    return facet, connection
 
 
 def test_python_reads_the_vector_typescript_wrote(tmp_path: Path) -> None:
@@ -305,22 +310,24 @@ def test_python_reads_the_vector_typescript_wrote(tmp_path: Path) -> None:
         # components are the float32 roundings of what the caller passed.
         blob: bytes = bytes(
             connection.execute(
-                "SELECT vec FROM vectors WHERE collection = 'vecs' AND id = 't1'"
+                "SELECT vec FROM _mirk_vector_values WHERE collection = 'vecs' AND id = 't1'"
             ).fetchone()[0]
         )
         assert blob == struct.pack("<3f", 0.1, 0.2, 0.3)
 
-        assert facet.meta["dimensions"] == 3
+        assert facet.listSpaces()[0]["dimensions"] == 3
         doc = facet.get("vecs", "t1")
         assert doc is not None
-        assert doc["vector"] == list(struct.unpack("<3f", struct.pack("<3f", 0.1, 0.2, 0.3)))
+        assert doc["vectors"]["default"] == list(
+            struct.unpack("<3f", struct.pack("<3f", 0.1, 0.2, 0.3))
+        )
         assert doc.get("metadata") == {"kind": "ts", "nested": {"n": 1, "tags": ["a", "b"]}}
 
         plain = facet.get("vecs", "t2")
         assert plain is not None
         assert "metadata" not in plain
 
-        found = facet.search("vecs", [0.1, 0.2, 0.3], {"topK": 1})
+        found = facet.search("vecs", {"space": "default", "vector": [0.1, 0.2, 0.3]}, {"topK": 1})
         assert [hit["id"] for hit in found] == ["t1"]
         assert found[0]["score"] == pytest.approx(1.0, abs=1e-6)
     finally:
@@ -333,9 +340,13 @@ def test_typescript_searches_the_vector_python_wrote(tmp_path: Path) -> None:
     try:
         facet.upsert(
             "vecs",
-            {"id": "p1", "vector": [0.25, 0.5, 0.75], "metadata": {"kind": "py", "n": 2}},
+            {
+                "id": "p1",
+                "vectors": {"default": [0.25, 0.5, 0.75]},
+                "metadata": {"kind": "py", "n": 2},
+            },
         )
-        facet.upsert("vecs", {"id": "p2", "vector": [1.0, 0.0, 0.0]})
+        facet.upsert("vecs", {"id": "p2", "vectors": {"default": [1.0, 0.0, 0.0]}})
     finally:
         connection.close()
 

@@ -105,6 +105,9 @@ export {
 // Vector port + in-memory reference + shared helpers
 export type {
   Vector,
+  VectorSpace,
+  VectorSpaceOptions,
+  VectorQuery,
   VectorStore,
   AsyncVectorStore,
   VectorStoreMeta,

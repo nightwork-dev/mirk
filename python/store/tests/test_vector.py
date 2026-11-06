@@ -37,7 +37,11 @@ ROUNDED = list(struct.unpack("<3f", struct.pack("<3f", *RAW)))
 
 def open_facet(path: str, **kwargs: Any) -> tuple[SqliteVectorFacet, sqlite3.Connection]:
     connection = sqlite3.connect(path, isolation_level=None)
-    return (SqliteVectorFacet(connection, path=path, **kwargs), connection)
+    dimensions = kwargs.pop("dimensions", None)
+    facet = SqliteVectorFacet(connection, path=path, **kwargs)
+    if dimensions is not None:
+        facet.ensureSpace("default", {"dimensions": dimensions})
+    return facet, connection
 
 
 @pytest.fixture
@@ -57,26 +61,26 @@ def ids_of(results: VectorSearchResultList) -> list[str]:
 
 
 def test_stored_blob_is_little_endian_float32(memory_facet: SqliteVectorFacet) -> None:
-    memory_facet.upsert("c", {"id": "a", "vector": RAW})
+    memory_facet.upsert("c", {"id": "a", "vectors": {"default": RAW}})
     blob: bytes = bytes(
         memory_facet._db.execute(  # pyright: ignore[reportPrivateUsage]
-            "SELECT vec FROM vectors WHERE collection = 'c' AND id = 'a'"
+            "SELECT vec FROM _mirk_vector_values WHERE collection = 'c' AND id = 'a'"
         ).fetchone()[0]
     )
     assert blob == struct.pack("<3f", *RAW)
     assert len(blob) == 12
     doc = memory_facet.get("c", "a")
     assert doc is not None
-    assert doc["vector"] == ROUNDED
-    assert doc["vector"] != RAW
+    assert doc["vectors"]["default"] == ROUNDED
+    assert doc["vectors"]["default"] != RAW
 
 
 def test_memory_rounds_components_on_write() -> None:
-    store = InMemoryVectorStore(3)
-    store.upsert("c", {"id": "a", "vector": RAW})
+    store = memory_store(3)
+    store.upsert("c", {"id": "a", "vectors": {"default": RAW}})
     doc = store.get("c", "a")
     assert doc is not None
-    assert doc["vector"] == ROUNDED
+    assert doc["vectors"]["default"] == ROUNDED
 
 
 def test_a_value_that_underflows_float32_stops_being_usable() -> None:
@@ -117,17 +121,19 @@ DIRECTIONLESS = [[float("nan"), 1.0, 0.0], [float("inf"), 1.0, 0.0], [0.0, 0.0, 
 
 @pytest.mark.parametrize("bad", DIRECTIONLESS)
 def test_directionless_stored_vectors_are_kept_but_never_returned(bad: list[float]) -> None:
-    stores: list[Any] = [InMemoryVectorStore(3)]
+    stores: list[Any] = [memory_store(3)]
     facet, connection = open_facet(":memory:", dimensions=3)
     stores.append(facet)
     try:
         for store in stores:
-            store.upsert("c", {"id": "good", "vector": [1.0, 0.0, 0.0]})
-            store.upsert("c", {"id": "bad", "vector": bad})
+            store.upsert("c", {"id": "good", "vectors": {"default": [1.0, 0.0, 0.0]}})
+            store.upsert("c", {"id": "bad", "vectors": {"default": bad}})
             assert store.count("c") == 2
             assert store.has("c", "bad") is True
             assert store.get("c", "bad") is not None
-            found = store.search("c", [1.0, 0.0, 0.0], {"minScore": -1})
+            found = store.search(
+                "c", {"space": "default", "vector": [1.0, 0.0, 0.0]}, {"minScore": -1}
+            )
             assert ids_of(found) == ["good"]
     finally:
         connection.close()
@@ -153,29 +159,41 @@ def test_metadata_equality_is_json_text_equality() -> None:
 
 
 def test_where_not_excludes_only_when_every_condition_matches() -> None:
-    store = InMemoryVectorStore(2)
-    store.upsert("c", {"id": "a", "vector": [1.0, 0.0], "metadata": {"t": "cat", "c": "black"}})
-    store.upsert("c", {"id": "b", "vector": [1.0, 0.0], "metadata": {"t": "cat", "c": "white"}})
+    store = memory_store(2)
+    store.upsert(
+        "c", {"id": "a", "vectors": {"default": [1.0, 0.0]}, "metadata": {"t": "cat", "c": "black"}}
+    )
+    store.upsert(
+        "c", {"id": "b", "vectors": {"default": [1.0, 0.0]}, "metadata": {"t": "cat", "c": "white"}}
+    )
     opts: VectorSearchOptions = {"whereNot": {"t": "cat", "c": "black"}}
-    assert ids_of(store.search("c", [1.0, 0.0], opts)) == ["b"]
+    assert ids_of(store.search("c", {"space": "default", "vector": [1.0, 0.0]}, opts)) == ["b"]
 
 
 # ── ordering ─────────────────────────────────────────────────────────────────
 
 
 def test_ties_break_by_code_point_not_insertion_order() -> None:
-    store = InMemoryVectorStore(2)
+    store = memory_store(2)
     for id in ("c", "a", "\U0001f525", "Z", "b"):
-        store.upsert("c", {"id": id, "vector": [1.0, 0.0]})
-    assert ids_of(store.search("c", [1.0, 0.0])) == ["Z", "a", "b", "c", "\U0001f525"]
+        store.upsert("c", {"id": id, "vectors": {"default": [1.0, 0.0]}})
+    assert ids_of(store.search("c", {"space": "default", "vector": [1.0, 0.0]})) == [
+        "Z",
+        "a",
+        "b",
+        "c",
+        "\U0001f525",
+    ]
 
 
 def test_min_score_is_applied_before_top_k(memory_facet: SqliteVectorFacet) -> None:
-    memory_facet.upsert("c", {"id": "near", "vector": [1.0, 0.0, 0.0]})
-    memory_facet.upsert("c", {"id": "mid", "vector": [1.0, 1.0, 0.0]})
-    memory_facet.upsert("c", {"id": "far", "vector": [0.0, 0.0, 1.0]})
+    memory_facet.upsert("c", {"id": "near", "vectors": {"default": [1.0, 0.0, 0.0]}})
+    memory_facet.upsert("c", {"id": "mid", "vectors": {"default": [1.0, 1.0, 0.0]}})
+    memory_facet.upsert("c", {"id": "far", "vectors": {"default": [0.0, 0.0, 1.0]}})
     opts: VectorSearchOptions = {"topK": 2, "minScore": 0.9}
-    assert ids_of(memory_facet.search("c", [1.0, 0.0, 0.0], opts)) == ["near"]
+    assert ids_of(
+        memory_facet.search("c", {"space": "default", "vector": [1.0, 0.0, 0.0]}, opts)
+    ) == ["near"]
 
 
 # ── the SQLite path ──────────────────────────────────────────────────────────
@@ -185,13 +203,17 @@ def test_removal_and_replacement_are_reflected_by_the_next_search(tmp_path: Path
     db = str(tmp_path / "mirror.db")
     facet, connection = open_facet(db, dimensions=3)
     try:
-        facet.upsert("c", {"id": "a", "vector": [1.0, 0.0, 0.0]})
-        facet.upsert("c", {"id": "b", "vector": [0.0, 1.0, 0.0]})
-        facet.upsert("c", {"id": "a", "vector": [0.0, 0.0, 1.0]})
-        assert ids_of(facet.search("c", [0.0, 0.0, 1.0], {"minScore": 0.99})) == ["a"]
+        facet.upsert("c", {"id": "a", "vectors": {"default": [1.0, 0.0, 0.0]}})
+        facet.upsert("c", {"id": "b", "vectors": {"default": [0.0, 1.0, 0.0]}})
+        facet.upsert("c", {"id": "a", "vectors": {"default": [0.0, 0.0, 1.0]}})
+        assert ids_of(
+            facet.search("c", {"space": "default", "vector": [0.0, 0.0, 1.0]}, {"minScore": 0.99})
+        ) == ["a"]
         assert facet.remove("c", "a") is True
         assert facet.remove("c", "a") is False
-        assert ids_of(facet.search("c", [0.0, 0.0, 1.0], {"minScore": -1})) == ["b"]
+        assert ids_of(
+            facet.search("c", {"space": "default", "vector": [0.0, 0.0, 1.0]}, {"minScore": -1})
+        ) == ["b"]
         assert facet.count("c") == 1
     finally:
         connection.close()
@@ -203,34 +225,35 @@ def test_removal_and_replacement_are_reflected_by_the_next_search(tmp_path: Path
 def test_dimensions_persist_across_a_reopen(tmp_path: Path) -> None:
     db = str(tmp_path / "dims.db")
     first, first_connection = open_facet(db)
-    assert first.meta["dimensions"] == 0
-    first.upsert("c", {"id": "a", "vector": [1.0, 0.0, 0.0, 0.0]})
-    assert first.meta["dimensions"] == 4
+    assert first.listSpaces() == []
+    first.ensureSpace("default", {"dimensions": 4})
+    first.upsert("c", {"id": "a", "vectors": {"default": [1.0, 0.0, 0.0, 0.0]}})
+    assert first.listSpaces()[0]["dimensions"] == 4
     first_connection.close()
 
     second, second_connection = open_facet(db)
     try:
-        assert second.meta["dimensions"] == 4
+        assert second.listSpaces()[0]["dimensions"] == 4
         with pytest.raises(VectorInputError) as mismatch:
-            second.upsert("c", {"id": "b", "vector": [1.0, 0.0, 0.0]})
+            second.upsert("c", {"id": "b", "vectors": {"default": [1.0, 0.0, 0.0]}})
         assert mismatch.value.code == "dimension-mismatch"
         doc = second.get("c", "a")
-        assert doc is not None and doc["vector"] == [1.0, 0.0, 0.0, 0.0]
+        assert doc is not None and doc["vectors"]["default"] == [1.0, 0.0, 0.0, 0.0]
     finally:
         second_connection.close()
 
     with pytest.raises(VectorInputError) as conflict:
         open_facet(db, dimensions=3)
-    assert conflict.value.code == "dimensions-changed"
+    assert conflict.value.code == "space-definition-conflict"
 
 
 def test_search_before_any_dimensions_are_known_raises() -> None:
     facet, connection = open_facet(":memory:")
     try:
         with pytest.raises(VectorInputError) as info:
-            facet.search("c", [1.0, 0.0, 0.0])
-        assert info.value.code == "dimensions-unknown"
-        assert facet.meta["dimensions"] == 0
+            facet.search("c", {"space": "default", "vector": [1.0, 0.0, 0.0]})
+        assert info.value.code == "unknown-space"
+        assert facet.listSpaces() == []
     finally:
         connection.close()
 
@@ -239,7 +262,7 @@ def test_zero_dimensions_are_rejected() -> None:
     facet, connection = open_facet(":memory:")
     try:
         with pytest.raises(VectorInputError) as info:
-            facet.configure_dimensions(0)
+            facet.ensureSpace("default", {"dimensions": 0})
         assert info.value.code == "invalid-dimensions"
     finally:
         connection.close()
@@ -247,33 +270,32 @@ def test_zero_dimensions_are_rejected() -> None:
 
 def test_a_failed_upsert_many_persists_neither_rows_nor_dimensions(tmp_path: Path) -> None:
     db = str(tmp_path / "atomic.db")
-    facet, connection = open_facet(db)
+    facet, connection = open_facet(db, dimensions=3)
     try:
         with pytest.raises(ValueError):
             facet.upsertMany(
                 "c",
                 [
-                    {"id": "a", "vector": [1.0, 0.0, 0.0]},
-                    {"id": "b", "vector": [1.0, 0.0]},
+                    {"id": "a", "vectors": {"default": [1.0, 0.0, 0.0]}},
+                    {"id": "b", "vectors": {"default": [1.0, 0.0]}},
                 ],
             )
         assert facet.count("c") == 0
-        assert facet.meta["dimensions"] == 0
-        facet.upsertMany("c", [{"id": "c", "vector": [1.0, 0.0]}])
-        assert facet.meta["dimensions"] == 2
+        assert facet.listSpaces()[0]["dimensions"] == 3
+        facet.upsertMany("c", [{"id": "c", "vectors": {"default": [1.0, 0.0, 0.0]}}])
     finally:
         connection.close()
 
 
 def test_a_mid_array_mismatch_inserts_nothing_in_memory() -> None:
-    store = InMemoryVectorStore(2)
-    store.upsert("c", {"id": "kept", "vector": [1.0, 0.0]})
+    store = memory_store(2)
+    store.upsert("c", {"id": "kept", "vectors": {"default": [1.0, 0.0]}})
     with pytest.raises(ValueError):
         store.upsertMany(
             "c",
             [
-                {"id": "a", "vector": [0.0, 1.0]},
-                {"id": "b", "vector": [0.0, 1.0, 0.0]},
+                {"id": "a", "vectors": {"default": [0.0, 1.0]}},
+                {"id": "b", "vectors": {"default": [0.0, 1.0, 0.0]}},
             ],
         )
     assert store.count("c") == 1
@@ -284,7 +306,7 @@ def test_an_empty_upsert_many_touches_nothing() -> None:
     facet, connection = open_facet(":memory:")
     try:
         facet.upsertMany("c", [])
-        assert facet.meta["dimensions"] == 0
+        assert facet.listSpaces() == []
         assert facet.count("c") == 0
     finally:
         connection.close()
@@ -303,3 +325,9 @@ def test_connection_of_reaches_the_store_handle(tmp_path: Path) -> None:
         store.close()
     with pytest.raises(TypeError):
         connection_of(object())
+
+
+def memory_store(dimensions: int) -> InMemoryVectorStore:
+    store = InMemoryVectorStore()
+    store.ensureSpace("default", {"dimensions": dimensions})
+    return store
