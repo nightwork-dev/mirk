@@ -82,43 +82,48 @@ use a window of days.
 
 ## Append-only log
 
-`mirk.store.log` is the Python side of `@mirk/store/log`: per-stream sequences
-that start at 1, with no gaps among committed appends.
+`mirk.store.log` provides immutable JSON records in named streams. Entries contain a positive
+safe integer `generation`, a per-stream `sequence`, and the JSON `record`.
 
 ```python
 from mirk.store import SqliteStore
 from mirk.store.sqlite_log import SqliteLogFacet
 
 store = SqliteStore("data.db")
-log = SqliteLogFacet(store)  # shares the store's connection and file
-log.append("deliveries", {"kind": "submitted", "id": "d1"})  # 1
-log.list("deliveries", {"after": 0, "limit": 100})
-log.lastSequence("deliveries")  # 1
+log = SqliteLogFacet(store)
+log.append("deliveries", {"id": "d1"})  # 1
+log.append("deliveries", {"id": "d2"})  # 2
+first = log.list("deliveries", {"limit": 1})[0]
+log.list("deliveries", {"after": first})  # d2 in this incarnation
+log.lastCursor("deliveries")  # {"generation": 1, "sequence": 2}
 ```
 
-`InMemoryLogStore` is the in-memory reference; its `transaction()` context
-manager restores appends and whole-stream deletions inside a block that raises. The block belongs
-to the asyncio task (or, outside an event loop, the thread) that opened it:
-while it is open, any call from another task or thread raises
-`LogTransactionError`, so an `await` inside the block cannot let another task's
-appends be rolled back with it.
+A bare numeric `after` is refused. Resume with `{"generation": generation, "sequence": sequence}`.
+The sequence can be zero to start within a known generation. A stale cursor raises `LogInputError`
+with code `stale-cursor`, including deleted/missing streams and `limit: 0`. Without a cursor,
+an absent stream returns `[]`. `lastCursor` returns the live tail or `None`; `lastSequence`
+returns zero when absent. `get(stream, sequence)` inspects the current incarnation rather than
+resuming a cursor. Cursor fields and limits accept integral floats as TypeScript does.
 
-On SQLite, an append inside a transaction already open on the connection joins
-it and rolls back with it, and a rolled-back append's sequence goes to the next
-append. A transaction that reads and then appends should start with
-`BEGIN IMMEDIATE`, for the reason the TypeScript README gives; an append that
-cannot get the write lock raises `AtomicMutationBackendError` with code
-`unavailable` and `retryable` true. Sequences, `after` and `limit` accept an
-integral float such as `2.0`, as TypeScript does, and return `int`. The
-facet reads and writes the same `_mirk_log` table as the TypeScript adapter, so
-either language can continue a log the other wrote. The guarantees and limits
-are in the [`@mirk/store` README](../../packages/store/README.md#append-only-log).
+`deleteStream` atomically removes entries and the live registry entry, returning whether the
+stream existed. Recreating the stream starts sequence 1 under a fresh store-wide generation.
+SQLite validates the cursor and reads entries in one snapshot. Format 4 eagerly creates
+`_mirk_log_streams` and the singleton `_mirk_log_generation` counter alongside `_mirk_log`.
+Migration assigns existing streams generations in BINARY name order without changing records
+or sequence positions. Deletion retains the counter and no per-deleted-stream tombstone.
+SQLite can reuse freed pages; immediate file shrinkage is not promised.
 
-`deleteStream(stream)` atomically deletes all entries and returns whether the stream existed.
-After deletion, `get` returns `None`, `list` returns `[]`, and `lastSequence` returns 0. Recreating
-it starts at sequence 1. Deletion rolls back with the caller's transaction, including deletion
-followed by append. Applications explicitly coordinate record and history deletion; no inferred
-stream-name cascade exists. Use a new stream incarnation in the name when reusing a record ID.
+An uncommitted entry or cursor is provisional: rollback can reuse its generation and sequence.
+Persist a cursor only after commit. Memory and SQLite rollback restore the prior incarnation,
+including delete-then-append work. `InMemoryLogStore.transaction()` shares the memory checkpoint
+hooks with cross-facet transactions and rejects calls from a foreign task or thread.
+
+SQLite writes join the caller's transaction or acquire an immediate transaction themselves.
+Read-then-append work needs `BEGIN IMMEDIATE`. Lock contention raises retryable
+`AtomicMutationBackendError` with code `unavailable`. Applications explicitly coordinate record
+and history deletion; no inferred stream-name cascade or permanent writer exclusion exists.
+The complete contract and table layouts are in the
+[`@mirk/store` README](../../packages/store/README.md#append-only-log).
 
 `create_memory_transactions(kv=kv, log=log)` from `mirk.store.transaction` binds the supplied
 `InMemoryStore` and `InMemoryLogStore`. `SqliteTransactions(store)` provides the same contract over

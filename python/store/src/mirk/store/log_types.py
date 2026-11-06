@@ -1,8 +1,10 @@
 """Log cursor types, validation, and JSON record encoding."""
 
 from __future__ import annotations
+
 from collections.abc import Mapping
 from typing import Any, Literal, Protocol, TypedDict, cast
+
 from .canonical import canonical_json
 from .filter import dumps_json
 
@@ -94,13 +96,16 @@ def list_bounds(options: Mapping[str, Any] | None) -> tuple[LogCursor | None, in
     after: LogCursor | None = None
     if "after" in given:
         value = given["after"]
-        cursor = cast(Mapping[str, Any], value) if isinstance(value, Mapping) else {}
+        cursor: Mapping[str, Any] = (
+            cast(Mapping[str, Any], value) if isinstance(value, Mapping) else {}
+        )
         generation = _safe_integer(cursor.get("generation"))
         sequence = _safe_integer(cursor.get("sequence"))
         if generation is None or generation < 1 or sequence is None or sequence < 0:
             raise LogInputError(
                 "invalid-cursor",
-                "log after must be a cursor with positive safe generation and non-negative safe sequence",
+                "log after must be a cursor with positive safe generation "
+                "and non-negative safe sequence",
             )
         after = {"generation": generation, "sequence": sequence}
     limit = None if "limit" not in given else _safe_integer(given["limit"])

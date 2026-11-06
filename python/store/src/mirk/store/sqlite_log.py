@@ -60,7 +60,8 @@ class SqliteLogFacet:
             ).fetchone()
             if live is None:
                 allocated = self._db.execute(
-                    "UPDATE _mirk_log_generation SET value = value + 1 WHERE id = 1 AND value < 9007199254740991 RETURNING value"
+                    "UPDATE _mirk_log_generation SET value = value + 1 "
+                    "WHERE id = 1 AND value < 9007199254740991 RETURNING value"
                 ).fetchone()
                 if allocated is None:
                     raise LogInputError("generation-exhausted", "log generation counter exhausted")
@@ -69,7 +70,9 @@ class SqliteLogFacet:
                     (stream, allocated[0]),
                 )
             row = self._db.execute(
-                "INSERT INTO _mirk_log (stream, sequence, record) SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM _mirk_log WHERE stream = ? RETURNING sequence",
+                "INSERT INTO _mirk_log (stream, sequence, record) "
+                "SELECT ?, COALESCE(MAX(sequence), 0) + 1, ? FROM _mirk_log "
+                "WHERE stream = ? RETURNING sequence",
                 (stream, text, stream),
             ).fetchone()
             return int(row[0])
@@ -81,7 +84,8 @@ class SqliteLogFacet:
         assert_stream(stream)
         sequence = assert_sequence(sequence)
         row = self._db.execute(
-            "SELECT s.generation, l.record FROM _mirk_log_streams s JOIN _mirk_log l USING(stream) WHERE s.stream = ? AND l.sequence = ?",
+            "SELECT s.generation, l.record FROM _mirk_log_streams s "
+            "JOIN _mirk_log l USING(stream) WHERE s.stream = ? AND l.sequence = ?",
             (stream, sequence),
         ).fetchone()
         return (
@@ -97,7 +101,8 @@ class SqliteLogFacet:
         rows = self._db.execute(
             """SELECT s.generation, e.sequence, e.record FROM (SELECT 1) anchor
             LEFT JOIN _mirk_log_streams s ON s.stream = ?
-            LEFT JOIN (SELECT sequence, record FROM _mirk_log WHERE stream = ? AND sequence > ? ORDER BY sequence LIMIT ?) e
+            LEFT JOIN (SELECT sequence, record FROM _mirk_log
+                       WHERE stream = ? AND sequence > ? ORDER BY sequence LIMIT ?) e
               ON s.generation IS NOT NULL ORDER BY e.sequence""",
             (stream, stream, after["sequence"] if after else 0, limit if limit is not None else -1),
         ).fetchall()
@@ -128,7 +133,8 @@ class SqliteLogFacet:
         self._check()
         assert_stream(stream)
         row = self._db.execute(
-            "SELECT s.generation, MAX(l.sequence) FROM _mirk_log_streams s JOIN _mirk_log l USING(stream) WHERE s.stream = ? GROUP BY s.generation",
+            "SELECT s.generation, MAX(l.sequence) FROM _mirk_log_streams s "
+            "JOIN _mirk_log l USING(stream) WHERE s.stream = ? GROUP BY s.generation",
             (stream,),
         ).fetchone()
         return {"generation": row[0], "sequence": row[1]} if row else None
