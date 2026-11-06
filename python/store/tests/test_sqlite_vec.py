@@ -92,6 +92,8 @@ def test_shared_vector_corpus_through_extension() -> None:
         (float("nan"), []),
         (float("inf"), ["a", "b", "c"]),
         (float("-inf"), []),
+        (1e100, ["a", "b", "c"]),
+        (-1e100, []),
     ],
 )
 def test_limit_normalization_across_engines(limit: float, expected: list[str]) -> None:
