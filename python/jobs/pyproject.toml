@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/store"
+Homepage = "https://github.com/nightwork-dev/mirk/tree/main/python/jobs"
 Repository = "https://github.com/nightwork-dev/mirk"
 Issues = "https://github.com/nightwork-dev/mirk/issues"
 
