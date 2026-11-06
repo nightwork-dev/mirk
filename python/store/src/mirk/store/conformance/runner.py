@@ -186,7 +186,11 @@ def resolve_target(port: str, backend: str, connection: object) -> object:
     """
     if port == "store":
         return connection
-    candidates = (f"mirk.store.{port}", f"mirk.{port}")
+    candidates = (
+        ("mirk.store.transaction",)
+        if port == "memory_transaction"
+        else (f"mirk.store.{port}", f"mirk.{port}")
+    )
     for module_name in candidates:
         try:
             module = import_module(module_name)
