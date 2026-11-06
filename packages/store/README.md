@@ -222,114 +222,99 @@ are lifted with `toAsyncSearch`.
 
 ## Append-only log
 
-`LogStore` keeps an ordered history of JSON records in named streams: an event ledger to replay on
-restart, an outbox to tail, or a job history. Each append returns the record's sequence number in
-its stream.
+`LogStore` keeps immutable JSON records in named streams. Each entry carries its stream
+incarnation's `generation` and its per-stream `sequence`. `append` returns the numeric sequence.
 
 ```ts
-import { InMemoryLogStore, toAsyncLog } from "@mirk/store/log";
+import { InMemoryLogStore, toAsyncLog, type LogCursor } from "@mirk/store/log";
 
 const log = new InMemoryLogStore();
-log.append("deliveries", { kind: "submitted", id: "d1" }); // 1
-log.append("deliveries", { kind: "settled", id: "d1" }); // 2
-log.append("audit", { kind: "login" }); // 1: each stream counts on its own
-
-log.get("deliveries", 2); // { sequence: 2, record: { kind: "settled", id: "d1" } }
-log.list("deliveries", { after: 1, limit: 100 }); // entries 2 onward, in order
-log.lastSequence("deliveries"); // 2; an empty stream returns 0
-
-const asyncLog = toAsyncLog(log);
-await asyncLog.append("deliveries", { kind: "submitted", id: "d2" }); // 3
+log.append("deliveries", { id: "d1" }); // 1
+log.append("deliveries", { id: "d2" }); // 2
+const first = log.list("deliveries", { limit: 1 })[0]!;
+// first: { generation: 1, sequence: 1, record: { id: "d1" } }
+log.list("deliveries", { after: first, limit: 100 }); // d2
+log.lastCursor("deliveries"); // { generation: 1, sequence: 2 }
+log.lastSequence("deliveries"); // 2
+await toAsyncLog(log).append("deliveries", { id: "d3" }); // 3
 ```
 
-To replay, call `list(stream)`. To tail, remember the last sequence you handled and call
-`list(stream, { after, limit })`.
+To replay, omit `after`. To resume, keep the last handled entry's `{ generation, sequence }`
+as a `LogCursor`. A bare numeric `after` is refused. `lastCursor(stream)` returns the live tail,
+or `null` for an absent stream. `get(stream, sequence)` inspects a position in the current
+incarnation; it is not a resume operation.
 
-Guarantees, in the in-memory reference, both SQLite adapters, and the Python port:
+The memory reference, both SQLite adapters, and Python provide these guarantees:
 
-- Sequences are per stream. The first append gets 1, and each committed append gets the next
-  integer. There are no gaps among committed appends, so `list()` returns 1, 2, 3, … up to
-  `lastSequence()`.
-- The sequence and the record are written together. A crash, or a failed write, cannot leave a used
-  number without its record, or a record without its number.
-- An append that does not commit leaves no trace, and **its sequence goes to the next append**.
-  Inside `transaction()` or `asyncTransaction()` an append joins the transaction and rolls back
-  with it, so a sequence returned inside a transaction is final only after the commit. This is the
-  opposite of [version tokens](#atomic-mutations), which are never reissued: a rolled-back append
-  is gone, and reusing its number is what keeps the committed sequence without gaps.
-  `InMemoryLogStore.transaction(work)` gives the same rollback in memory.
-- Records follow the strict JSON rules of atomic writes: `NaN`, infinities, `undefined`, functions,
-  class instances such as `Date`, sparse arrays, and cycles throw `LogInputError` with code
-  `invalid-record`, and consume no sequence. `null` is a record, which is why `get` returns the
-  entry, not just the record. Reads return a fresh copy.
-- A stream is any non-empty string, compared exactly. Sequences, `after`, and `limit` must be safe
-  integers: `get` needs 1 or more, and `after` and `limit` need 0 or more. `limit: 0` returns
-  nothing; leaving `limit` out returns every entry after `after`.
+- Each stream starts at sequence 1 and has no gaps among committed appends. A failed append
+  consumes no sequence. Records and sequence allocation commit together.
+- The first append to each incarnation allocates a fresh positive safe integer generation from
+  one store-wide counter. Committed deletion and recreation never alias an old incarnation.
+- A cursor against a deleted, absent, or replaced stream throws `LogInputError` with code
+  `stale-cursor`, including with `limit: 0`. Epoch validation and entry reads use one SQLite
+  snapshot. Without a cursor, an absent stream returns `[]` and its last sequence is 0.
+- Cursor generation must be a positive safe integer; cursor sequence can be zero or a positive
+  safe integer. `get` needs a positive safe sequence, and `limit` a non-negative safe integer.
+  Invalid cursor shapes throw `invalid-cursor`. Exhausting the global safe integer counter
+  refuses new incarnations with `generation-exhausted`; it does not wrap or reuse generations.
+- An entry or cursor returned inside an uncommitted transaction is provisional. Rollback can
+  reuse both its sequence and generation. Persist a cursor only after commit. Rollback restores
+  deleted streams, their entries, and the prior counter, including delete-then-append work.
+- Records follow the strict JSON rules of atomic writes. Non-finite numbers, `undefined`, class
+  instances, sparse arrays, functions, and cycles throw `invalid-record` without writing.
+  Reads return a fresh record copy. Streams are non-empty strings compared exactly.
 
-Limits:
+`deleteStream(stream)` atomically removes every entry and the live registry entry. It returns
+whether the stream existed. A later append starts sequence 1 under a new generation. The
+singleton counter remains; no per-deleted-stream tombstones accumulate. SQLite can reuse freed
+pages, but deletion does not promise immediate file shrinkage.
 
-- Individual entries are immutable. `deleteStream(stream)` atomically removes a whole stream
-  and returns whether it existed. Reads then return no entries and `lastSequence` returns 0;
-  a later append receives 1. Deletion joins the caller's transaction, including rollback of a
-  delete followed by append. There is no trimming or permanent writer exclusion. Use a new stream
-  incarnation in its name when reusing an application record ID: old sequence cursors cannot
-  distinguish recreated history. Applications explicitly delete their record and history together;
-  deleting a record never infers a stream name or cascades to its history. A permanent application
-  deletion must also invalidate its writer's record version or job generation in that transaction.
-- It is storage, not messaging. There is no consumer cursor, acknowledgement, delivery status, or
-  wake-up. Keep a consumer's position yourself, for example as a `kv` value written in the same
-  `"immediate"` transaction as the work it records, as shown below.
-- Appends to one database are serialized by SQLite's single writer. Two connections, or two
-  processes, that each append without reading first take turns and get consecutive numbers. A
-  transaction that reads before it appends needs `"immediate"`; see below.
+Applications explicitly delete their record and history together. Record deletion never infers
+a stream name or cascades to history. Permanent application deletion must also invalidate the
+writer's record version or job generation in that transaction. The log does not provide
+consumer acknowledgements, delivery, trimming, wake-up, or permanent writer exclusion.
 
-### Reading, then appending, in one SQLite transaction
-
-A transaction that reads the log (or anything else) and then appends must start as a writer:
-pass `"immediate"` to `transaction()`.
+A transaction that reads before appending must acquire the writer lock before its first read:
 
 ```ts
 const appended = db.transaction(() => {
-  const cursor = db.kv.get<number>("cursor:mailer") ?? 0;
+  const cursor = db.kv.get<LogCursor>("cursor:mailer") ?? undefined;
   const batch = db.log.list("deliveries", { after: cursor, limit: 100 });
   for (const entry of batch) db.log.append("sent", { delivery: entry.sequence });
-  db.kv.set("cursor:mailer", batch.at(-1)?.sequence ?? cursor);
+  db.kv.set("cursor:mailer", batch.at(-1) ?? cursor);
   return batch.length;
 }, "immediate");
 ```
 
-The default `"deferred"` transaction starts as a reader and takes its snapshot at the first read.
-If another connection or process appends after that read, this transaction can no longer become
-the writer: its append fails at once, without waiting out `busyTimeoutMs`. `"immediate"` takes the
-write lock before the first read, so what the transaction reads is still current when it appends,
-and other writers wait for it. `asyncTransaction()` always begins `IMMEDIATE`.
+A deferred transaction that reads before another writer commits cannot upgrade its stale
+snapshot to a writer. Its append throws `AtomicMutationBackendError` with `unavailable` and
+`retryable: true`. Retry the entire transaction. Outside a caller transaction, append and
+deletion use their own immediate transaction. Async transactions always begin immediate.
+`InMemoryLogStore.transaction(work)` gives synchronous rollback through the same checkpoints
+as shared memory transactions. Promise-returning access uses `toAsyncLog` or `.asyncLog`.
 
-When an append cannot get the lock, because another writer held it past `busyTimeoutMs` or
-committed after a deferred transaction's first read, it throws `AtomicMutationBackendError` with
-code `unavailable` and `retryable: true`, from both drivers. Nothing was appended, and the
-transaction rolls back; rerun the whole transaction. The sequence stays without gaps either way.
-
-An append outside a transaction is one write statement, so it needs no mode. Inside a caller's
-transaction the log cannot choose the mode: by the time it runs, a deferred transaction has already
-taken its snapshot. `transaction()` keeps `"deferred"` as its default for all other work.
-
-The in-memory reference (`InMemoryLogStore`) and both SQLite adapters (`.log` and `.asyncLog`)
-implement the port, and so does the Python port (`mirk.store.log`, `mirk.store.sqlite_log`).
-`@mirk/store-postgres`, `@mirk/store-libsql`, and `@mirk/store-indexeddb` do not implement it yet.
-
-In SQLite the log is one table, shared by every stream:
+SQLite format 4 eagerly initializes these tables. Migration assigns existing streams generations
+in BINARY name order without changing any record or sequence position.
 
 ```sql
 CREATE TABLE _mirk_log (
   stream TEXT NOT NULL,
   sequence INTEGER NOT NULL CHECK (sequence >= 1),
-  record TEXT NOT NULL,          -- JSON.stringify text
+  record TEXT NOT NULL,
   PRIMARY KEY (stream, sequence)
-) WITHOUT ROWID
+) WITHOUT ROWID;
+CREATE TABLE _mirk_log_streams (
+  stream TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL UNIQUE CHECK (generation >= 1 AND generation <= 9007199254740991)
+) WITHOUT ROWID;
+CREATE TABLE _mirk_log_generation (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  value INTEGER NOT NULL CHECK (value >= 0 AND value <= 9007199254740991)
+);
 ```
 
-An append is one `INSERT … SELECT COALESCE(MAX(sequence), 0) + 1 … RETURNING sequence` statement.
-There is no separate counter to fall out of step with the rows.
+The counter has one row with `id = 1`; a fresh file starts at `value = 0`.
+`@mirk/store-postgres`, `@mirk/store-libsql`, and `@mirk/store-indexeddb` do not implement the log.
 
 ## Graph helpers
 
