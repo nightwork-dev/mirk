@@ -100,3 +100,25 @@ def test_delete_stream_lifecycle_and_standalone_rollback() -> None:
     assert log.deleteStream("a")
     assert log.lastSequence("a") == 0
     assert log.append("a", "new") == 1
+
+
+def test_rollback_restores_atomic_receipts_and_versions(domain: Any) -> None:
+    kv, log, tx = domain
+    request = {
+        "operations": [{"op": "set", "key": "receipt-value", "value": 1}],
+        "idempotency": {"key": "command"},
+    }
+    with pytest.raises(ValueError), tx.transaction():
+        assert kv.mutateAtomically(request)["status"] == "applied"
+        log.append("receipt", "tentative")
+        raise ValueError()
+    assert kv.getVersioned({"kind": "key", "key": "receipt-value"}) is None
+    assert log.lastSequence("receipt") == 0
+    with tx.transaction():
+        assert kv.mutateAtomically(request)["status"] == "applied"
+    original = kv.getVersioned({"kind": "key", "key": "receipt-value"})
+    with pytest.raises(ValueError), tx.transaction():
+        kv.delete("receipt-value")
+        raise ValueError()
+    assert kv.getVersioned({"kind": "key", "key": "receipt-value"}) == original
+    assert kv.mutateAtomically(request)["status"] == "replayed"
