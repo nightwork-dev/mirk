@@ -6,6 +6,7 @@ import pytest
 from mirk.store.log import InMemoryLogStore
 from mirk.store.memory import InMemoryStore
 from mirk.store.sqlite import SqliteStore
+from mirk.store.sqlite_log import SqliteLogFacet
 from mirk.store.transaction import SqliteTransactions, create_memory_transactions
 
 from mirk.jobs import JobsError, JobsStore
@@ -14,13 +15,21 @@ from mirk.jobs import JobsError, JobsStore
 @pytest.fixture(params=["memory", "sqlite"])
 def fixture(request: Any) -> Any:
     store = InMemoryStore() if request.param == "memory" else SqliteStore(":memory:")
-    tx = (
-        create_memory_transactions(kv=store, log=InMemoryLogStore())
-        if isinstance(store, InMemoryStore)
-        else SqliteTransactions(store)
-    )
+    if isinstance(store, InMemoryStore):
+        log = InMemoryLogStore()
+        tx = create_memory_transactions(kv=store, log=log)
+    else:
+        log = SqliteLogFacet(store)
+        tx = SqliteTransactions(store)
     clock = [100]
-    jobs = JobsStore(store=store, transactions=tx, now=lambda: clock[0], token=lambda: "owner")
+    jobs = JobsStore(
+        store=store,
+        transactions=tx,
+        log=log,
+        deleteHistoryOnRemove=True,
+        now=lambda: clock[0],
+        token=lambda: "owner",
+    )
     yield jobs, tx, clock
     if isinstance(store, SqliteStore):
         store.close()

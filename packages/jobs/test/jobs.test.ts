@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { NodeSqliteAdapter } from '@mirk/store/node-sqlite';
-import { InMemoryLogStore } from '@mirk/store/log';
+import { InMemoryLogStore, toAsyncLog } from '@mirk/store/log';
 import { InMemoryKv, toAsync } from '@mirk/store/kv';
 import { createMemoryTransactions } from '@mirk/store/transaction';
 import { JobsStore } from '../src/index.js';
@@ -11,9 +11,10 @@ function createSetup(backend: string) {
   const db = new NodeSqliteAdapter({path: ':memory:', versionIdentity: 'conformance'}); handles.push(db);
   let now = 100; let tokens = 0;
   const kv = new InMemoryKv({ versionIdentity: 'conformance' });
-  const tx = createMemoryTransactions({kv,log:new InMemoryLogStore()});
+  const log = new InMemoryLogStore();
+  const tx = createMemoryTransactions({kv,log});
   const transactions = backend === 'memory' ? tx : {transaction: <T>(w: () => T | Promise<T>) => db.asyncTransaction(w), afterCommit: (n: () => void) => db.afterCommit(n)};
-  const jobs = new JobsStore({store: backend === 'memory' ? toAsync(kv) : db.asyncKv, transactions, now: () => now, token: () => `owner-${++tokens}`});
+  const jobs = new JobsStore({store: backend === 'memory' ? toAsync(kv) : db.asyncKv, transactions, log: backend === 'memory' ? toAsyncLog(log) : db.asyncLog, deleteHistoryOnRemove:true, now: () => now, token: () => `owner-${++tokens}`});
   return {db,jobs,transactions,clock: (n:number) => {now=n;}};
 }
 const input = {id:'job',queue:'test',payload:{input:'x'}};
