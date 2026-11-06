@@ -179,3 +179,45 @@ console.log(JSON.stringify(db.log.get('s',1)));db.close();"""
         "sequence": 1,
         "record": "python successor",
     }
+
+
+def test_shared_memory_transactions_restore_epoch_and_allocation_counter() -> None:
+    from mirk.store.memory import InMemoryStore
+    from mirk.store.transaction import create_memory_transactions
+
+    kv = InMemoryStore()
+    log = InMemoryLogStore()
+    transactions = create_memory_transactions(kv=kv, log=log)
+    log.append("s", "original")
+    cursor = log.lastCursor("s")
+    with pytest.raises(ValueError), transactions.transaction():
+        kv.set("outer", True)
+        with pytest.raises(ValueError), transactions.transaction():
+            log.deleteStream("s")
+            log.append("s", "inner replacement")
+            log.append("inner", "temporary")
+            raise ValueError()
+        assert log.lastCursor("s") == cursor
+        assert log.lastCursor("inner") is None
+        log.append("outer-new", "temporary")
+        raise ValueError()
+    assert not kv.has("outer")
+    assert log.lastCursor("s") == cursor
+    assert log.lastCursor("outer-new") is None
+    log.append("after", "committed")
+    assert log.lastCursor("after") == {"generation": 2, "sequence": 1}
+
+
+def test_generation_exhaustion_does_not_wrap_or_leave_an_empty_stream(tmp_path: Path) -> None:
+    with SqliteStore(str(tmp_path / "exhausted.db")) as store:
+        log = SqliteLogFacet(store)
+        log.append("existing", "one")
+        store.connection.execute(
+            "UPDATE _mirk_log_generation SET value = 9007199254740991 WHERE id = 1"
+        )
+        with pytest.raises(LogInputError) as raised:
+            log.append("new", "refused")
+        assert raised.value.code == "generation-exhausted"
+        assert log.lastCursor("new") is None
+        assert log.append("existing", "two") == 2
+        assert store.connection.execute("SELECT COUNT(*) FROM _mirk_log_streams").fetchone()[0] == 1
