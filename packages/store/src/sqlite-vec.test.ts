@@ -58,7 +58,7 @@ describe("sqlite-vec native ordered float64 scoring", () => {
       const f=fixture();
       try {
         for(let n=0;n<70;n++) {
-          const scale=[1,1e-30,1e30,1e-8,1e8][n%5]!;
+          const scale=[1,1e-30,1e30,1e-8,1e8,2**-149,3.4028234663852886e38][n%7]!;
           f.put(String(n).padStart(3,"0"),Array.from({length:dimensions},()=>random()*scale));
         }
         for(let n=0;n<5;n++) {

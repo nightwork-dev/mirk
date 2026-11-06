@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export function getLoadablePath() {
-  const directory = new URL("./dist/native/", import.meta.url);
+  const directory = new URL("./native/", import.meta.url);
   const manifestPath = new URL("binary.json", directory);
   if (!existsSync(manifestPath)) throw new Error("Mirk sqlite-vec native binary is missing; install the optional companion with build scripts enabled");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));

@@ -29,6 +29,7 @@ def test_native_scoring_and_boundaries() -> None:
                [0, 0, 0], [float("nan"), 0, 0], [float("inf"), 0, 0]]
     generator = random.Random(41)
     vectors.extend([[generator.uniform(-1, 1) for _ in range(3)] for _ in range(100)])
+    vectors.extend([[2.0**-149, 0, 0], [3.4028234663852886e38, 0, 0]])
     rounded = [to_float32(v) for v in vectors]
     for index, vector in enumerate(rounded):
         identifier = f"{index:03}"
