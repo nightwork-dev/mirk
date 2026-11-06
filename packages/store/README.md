@@ -576,7 +576,8 @@ Unicode code-point ID order. Zero or non-finite stored vectors remain readable b
 The ordinary engine computes exact cosine with float64 accumulation over float32 components.
 `meta.engine` reports `javascript`; `meta.accelerated` is false. The optional
 `@mirk/store/sqlite-vec` engine performs native computation on the existing connection and reports
-its engine name after initialization; a load or execution failure raises instead of falling back.
+its engine name after initialization. An absent companion package or binary, or a companion built
+for another platform, selects the same ordinary exact search path on that connection.
 `compareCodePoints` is exported for adapters that need the same ordering.
 
 Install the optional `@mirk/sqlite-vec-native` companion to select native search:
@@ -592,7 +593,10 @@ The companion pins sqlite-vec 0.1.6 with an additional ordered float64 scalar. U
 functions remain available. Native cosine, metadata filtering, ranking, and limiting run on the
 adapter's connection; only result IDs, scores, and metadata cross into JavaScript. The same file
 opens with the ordinary engine. `SqliteVecError` reports code `native-vector-engine` when loading
-or execution fails. There is no automatic fallback. `meta.accelerated` means native computation,
+or execution fails unexpectedly. Missing native capability reports `meta.engine="javascript"` and
+`meta.accelerated=false`; malformed binaries/manifests, version mismatches and executed-query
+failures raise instead of silently downgrading. Selection is independent for each connection.
+`meta.accelerated` means native computation,
 not an approximate-neighbor algorithm or a workload-independent speed guarantee.
 
 The companion requires a C compiler during installation. Its npm tarball and Python source/wheel

@@ -70,8 +70,21 @@ export function sqliteVecEngine(): SqliteVectorEngine {
     name: "sqlite-vec",
     initialize(db) {
       try {
-        const extension = createRequire(import.meta.url)("@mirk/sqlite-vec-native") as { getLoadablePath(): string };
-        db.loadExtension(extension.getLoadablePath());
+        const require = createRequire(import.meta.url);
+        try { require.resolve("@mirk/sqlite-vec-native"); }
+        catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "MODULE_NOT_FOUND"
+            && error.message.split("\n")[0] === "Cannot find module '@mirk/sqlite-vec-native'") return false;
+          throw error;
+        }
+        const extension = require("@mirk/sqlite-vec-native") as { getLoadablePath(): string };
+        let path: string;
+        try { path = extension.getLoadablePath(); }
+        catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "native-companion-unavailable") return false;
+          throw error;
+        }
+        db.loadExtension(path);
         const row = db.prepare("SELECT vec_version() version,vec_cosine_similarity_f64(vec_f32('[1,0]'),vec_f32('[1,0]')) score").get() as {version:string;score:number};
         if (row.version !== "v0.1.6" || row.score !== 1) throw new Error("Expected Mirk sqlite-vec v0.1.6 with float64 cosine");
       } catch (cause) {

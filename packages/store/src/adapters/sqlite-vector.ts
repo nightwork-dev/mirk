@@ -29,11 +29,11 @@ export class SqliteVectorFacet implements VectorStore {
     private readonly namespace = "default",
     private readonly engine?: SqliteVectorEngine,
   ) {
-    engine?.initialize(db);
+    if (engine?.initialize(db) === false) this.engine = undefined;
     this.meta = {
       backend: "sqlite",
-      engine: engine?.name ?? "javascript",
-      accelerated: !!engine,
+      engine: this.engine?.name ?? "javascript",
+      accelerated: !!this.engine,
     };
   }
   ensureSpace(name: string, options: VectorSpaceOptions): void {

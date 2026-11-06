@@ -117,3 +117,67 @@ def test_limit_normalization_across_engines(limit: float, expected: list[str]) -
             assert [hit["id"] for hit in actual] == expected, kind
         finally:
             db.close()
+
+
+def test_unavailable_companion_selects_existing_exact_path_per_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    from mirk.store.sqlite_vector import SqliteVectorFacet
+
+    original = importlib.import_module
+    calls = 0
+
+    def load(name: str, package: str | None = None):
+        nonlocal calls
+        if name == "mirk_sqlite_vec_native":
+            calls += 1
+            if calls == 1:
+                raise ModuleNotFoundError("companion absent", name=name)
+        return original(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", load)
+    engine = sqlite_vec_engine()
+    connections = [sqlite3.connect(":memory:"), sqlite3.connect(":memory:")]
+    try:
+        facets = [SqliteVectorFacet(db, vector_engine=engine) for db in connections]
+        for facet in facets:
+            facet.ensureSpace("text", {"dimensions": 3})
+            facet.upsertMany(
+                "docs",
+                [
+                    {"id": "near", "vectors": {"text": [1, 0.0001, 0]}},
+                    {"id": "perfect", "vectors": {"text": [1, 0, 0]}},
+                ],
+            )
+            assert [
+                hit["id"]
+                for hit in facet.search(
+                    "docs", {"space": "text", "vector": [1, 0, 0]}, {"minScore": 1}
+                )
+            ] == ["perfect"]
+        assert facets[0].meta.get("engine") == "python"
+        assert facets[0].meta["accelerated"] is False
+        assert facets[1].meta.get("engine") == "sqlite-vec"
+        assert facets[1].meta["accelerated"] is True
+    finally:
+        for db in connections:
+            db.close()
+
+
+def test_missing_transitive_dependency_is_not_absent_companion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    def broken(name: str, package: str | None = None) -> None:
+        raise ModuleNotFoundError("broken companion dependency", name="broken_dependency")
+
+    monkeypatch.setattr(importlib, "import_module", broken)
+    db = sqlite3.connect(":memory:")
+    try:
+        with pytest.raises(SqliteVecError, match="initialization failed"):
+            sqlite_vec_engine().initialize(db)
+    finally:
+        db.close()
