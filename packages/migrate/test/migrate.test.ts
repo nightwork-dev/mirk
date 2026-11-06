@@ -294,16 +294,16 @@ describe("@mirk/migrate", () => {
   });
 
   it("copies caller-supplied vector and search manifests", async () => {
-    const vector = toAsyncVector(new InMemoryVectorStore({ dimensions: 2 }));
+    const vector = toAsyncVector(new InMemoryVectorStore());
     const search = toAsyncSearch(new InMemorySearchStore());
 
     await copyVectorManifest(
-      manifest([
+      {spaces:[{name:"default",dimensions:2,metric:"cosine",encoding:"float32"}],entries:manifest([
         {
           collection: "docs",
-          document: { id: "v1", vector: Float32Array.from([1, 0]) },
+          document: { id: "v1", vectors: { default: Float32Array.from([1, 0]) } },
         },
-      ]),
+      ])},
       vector
     );
     await copySearchManifest(
@@ -339,7 +339,7 @@ describe("@mirk/migrate", () => {
   it("rebuilds a representative export from store collections and deterministic manifests", async () => {
     const source = toAsync(new InMemoryKv());
     const destination = toAsync(new InMemoryKv());
-    const vector = toAsyncVector(new InMemoryVectorStore({ dimensions: 3 }));
+    const vector = toAsyncVector(new InMemoryVectorStore());
     const search = toAsyncSearch(new InMemorySearchStore());
     const objects = new InMemoryObjectStore();
     const checkpoints: Record<string, number> = {};
@@ -380,7 +380,7 @@ describe("@mirk/migrate", () => {
         collection: "documents",
         document: {
           id: "doc:a",
-          vector: Float32Array.from([1, 0, 0]),
+          vectors: { default: Float32Array.from([1, 0, 0]) },
           metadata: { kind: "note", status: "published" },
         },
       },
@@ -388,7 +388,7 @@ describe("@mirk/migrate", () => {
         collection: "documents",
         document: {
           id: "doc:b",
-          vector: Float32Array.from([0, 1, 0]),
+          vectors: { default: Float32Array.from([0, 1, 0]) },
           metadata: { kind: "note", status: "draft" },
         },
       },
@@ -396,13 +396,13 @@ describe("@mirk/migrate", () => {
         collection: "documents",
         document: {
           id: "doc:c",
-          vector: Float32Array.from([0.8, 0, 0.2]),
+          vectors: { default: Float32Array.from([0.8, 0, 0.2]) },
           metadata: { kind: "report", status: "published" },
         },
       },
     ];
     await expect(
-      copyVectorManifest(manifest(vectorEntries), vector, {
+      copyVectorManifest({spaces:[{name:"default",dimensions:3,metric:"cosine",encoding:"float32"}],entries:manifest(vectorEntries)}, vector, {
         batchSize: 2,
         onCheckpoint(value) {
           checkpoints[value.lane] = value.processed;
@@ -410,7 +410,7 @@ describe("@mirk/migrate", () => {
         },
       })
     ).rejects.toBe(interruption);
-    await copyVectorManifest(manifest(vectorEntries), vector, {
+    await copyVectorManifest({spaces:[{name:"default",dimensions:3,metric:"cosine",encoding:"float32"}],entries:manifest(vectorEntries)}, vector, {
       resume: checkpoints,
       onCheckpoint(value) {
         checkpoints[value.lane] = value.processed;
@@ -557,7 +557,7 @@ describe("@mirk/migrate", () => {
     expect(await vector.count("documents")).toBe(3);
     expect(
       (
-        await vector.search("documents", Float32Array.from([1, 0, 0]), {
+        await vector.search("documents", {space:"default",vector:Float32Array.from([1, 0, 0])}, {
           where: { status: "published" },
           topK: 2,
         })
