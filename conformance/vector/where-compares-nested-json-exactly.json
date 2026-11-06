@@ -7,16 +7,27 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsert",
       "args": [
         "docs",
         {
           "id": "a",
-          "vector": [
-            1,
-            0,
-            0
-          ],
+          "vectors": {
+            "default": [
+              1,
+              0,
+              0
+            ]
+          },
           "metadata": {
             "spec": {
               "a": 1,
@@ -34,11 +45,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "spec": {
@@ -58,11 +72,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "spec": {
@@ -80,11 +97,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "tags": [
@@ -102,11 +122,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "tags": "x"

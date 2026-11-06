@@ -1,0 +1,172 @@
+{
+  "id": "jobs/cancel-expiry-and-blocked-reconciliation",
+  "title": "expired attempts retain provider uncertainty and cancellation while fencing completion",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "job",
+        "renders",
+        null
+      ]
+    },
+    {
+      "op": "claim",
+      "args": [
+        "job",
+        10
+      ]
+    },
+    {
+      "op": "checkpoint",
+      "args": [
+        "job",
+        {
+          "providerId": "remote"
+        }
+      ]
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 110,
+          "generation": 1,
+          "id": "job",
+          "ownerToken": "owner-1",
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "leased",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "job",
+        "late"
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "setNow",
+      "args": [
+        110
+      ]
+    },
+    {
+      "op": "complete",
+      "args": [
+        "job",
+        "late"
+      ],
+      "expect": {
+        "throws": "stale-claim"
+      }
+    },
+    {
+      "op": "recoverExpired",
+      "args": [
+        "job"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "blocked",
+          "updatedAt": 110
+        }
+      }
+    },
+    {
+      "op": "resolveBlocked",
+      "args": [
+        "job",
+        {
+          "state": "queued",
+          "availableAt": 110
+        }
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "resolveBlocked",
+      "args": [
+        "job",
+        {
+          "state": "cancelled"
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "cancelled",
+          "updatedAt": 110
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "id": "jobs/admin-priority-and-terminal-requeue",
+  "title": "administrative queue edits and explicit terminal retries preserve fencing",
+  "ports": [
+    "jobs"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "job",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "updateQueued",
+      "args": [
+        "job",
+        {
+          "priority": 9
+        }
+      ],
+      "expect": {
+        "value": {
+          "attempt": 0,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "queued",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "job",
+        10
+      ]
+    },
+    {
+      "op": "fail",
+      "args": [
+        "job",
+        "bad"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": "bad",
+          "expiresAt": null,
+          "generation": 1,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "failed",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "requeueTerminal",
+      "args": [
+        "job",
+        {}
+      ],
+      "expect": {
+        "value": {
+          "attempt": 1,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 1,
+          "state": "queued",
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "job",
+        10
+      ],
+      "expect": {
+        "value": {
+          "jobId": "job",
+          "ownerToken": "owner-2",
+          "generation": 3
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "job",
+        "ok"
+      ],
+      "expect": {
+        "value": {
+          "attempt": 2,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 3,
+          "id": "job",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": "ok",
+          "schemaVersion": 1,
+          "state": "succeeded",
+          "updatedAt": 100
+        }
+      }
+    }
+  ]
+}

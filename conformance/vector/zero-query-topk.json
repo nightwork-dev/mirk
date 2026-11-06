@@ -7,33 +7,48 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsertMany",
       "args": [
         "docs",
         [
           {
             "id": "z",
-            "vector": [
-              1,
-              0,
-              0
-            ]
+            "vectors": {
+              "default": [
+                1,
+                0,
+                0
+              ]
+            }
           },
           {
             "id": "a",
-            "vector": [
-              0,
-              1,
-              0
-            ]
+            "vectors": {
+              "default": [
+                0,
+                1,
+                0
+              ]
+            }
           },
           {
             "id": "b",
-            "vector": [
-              0,
-              0,
-              1
-            ]
+            "vectors": {
+              "default": [
+                0,
+                0,
+                1
+              ]
+            }
           }
         ]
       ]
@@ -42,11 +57,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          0,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            0,
+            0,
+            0
+          ]
+        },
         {
           "topK": 1
         }

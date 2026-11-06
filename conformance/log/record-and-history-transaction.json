@@ -1,0 +1,148 @@
+{
+  "id": "log/record-and-history-transaction",
+  "title": "application record and explicit history changes commit or roll back together",
+  "ports": [
+    "kv",
+    "log"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        "queued"
+      ],
+      "expect": {
+        "value": {
+          "record": {
+            "id": "a",
+            "value": "queued"
+          },
+          "history": [
+            {
+              "sequence": 1,
+              "record": "queued"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        "record failure",
+        false,
+        1
+      ],
+      "expect": {
+        "value": {
+          "record": {
+            "id": "a",
+            "value": "queued"
+          },
+          "history": [
+            {
+              "sequence": 1,
+              "record": "queued"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        "history failure",
+        false,
+        2
+      ],
+      "expect": {
+        "value": {
+          "record": {
+            "id": "a",
+            "value": "queued"
+          },
+          "history": [
+            {
+              "sequence": 1,
+              "record": "queued"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        null,
+        true,
+        2
+      ],
+      "expect": {
+        "value": {
+          "record": {
+            "id": "a",
+            "value": "queued"
+          },
+          "history": [
+            {
+              "sequence": 1,
+              "record": "queued"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        null,
+        true
+      ],
+      "expect": {
+        "value": {
+          "record": null,
+          "history": []
+        }
+      }
+    },
+    {
+      "op": "changeRecordHistory",
+      "args": [
+        "jobs",
+        "a",
+        "job/a",
+        "new incarnation"
+      ],
+      "expect": {
+        "value": {
+          "record": {
+            "id": "a",
+            "value": "new incarnation"
+          },
+          "history": [
+            {
+              "sequence": 1,
+              "record": "new incarnation"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

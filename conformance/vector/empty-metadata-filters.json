@@ -7,16 +7,27 @@
   "capabilities": [],
   "steps": [
     {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
       "op": "upsert",
       "args": [
         "docs",
         {
           "id": "absent",
-          "vector": [
-            1,
-            0,
-            0
-          ]
+          "vectors": {
+            "default": [
+              1,
+              0,
+              0
+            ]
+          }
         }
       ]
     },
@@ -26,11 +37,13 @@
         "docs",
         {
           "id": "empty",
-          "vector": [
-            1,
-            0,
-            0
-          ],
+          "vectors": {
+            "default": [
+              1,
+              0,
+              0
+            ]
+          },
           "metadata": {}
         }
       ]
@@ -41,11 +54,13 @@
         "docs",
         {
           "id": "null",
-          "vector": [
-            1,
-            0,
-            0
-          ],
+          "vectors": {
+            "default": [
+              1,
+              0,
+              0
+            ]
+          },
           "metadata": {
             "value": null
           }
@@ -56,11 +71,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {}
         }
@@ -76,11 +94,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "whereNot": {}
         }
@@ -95,11 +116,14 @@
       "op": "search",
       "args": [
         "docs",
-        [
-          1,
-          0,
-          0
-        ],
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
         {
           "where": {
             "value": null

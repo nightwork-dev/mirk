@@ -19,7 +19,7 @@ export type BackendName = "memory" | "sqlite" | "node-sqlite" | "markdown";
  *  pure, backend-independent target: canonical JSON and SHA-256. `fixtures`
  *  binds an authored-data loader over the backend store, so a store-source
  *  scenario runs against the real backend. */
-export type TargetKind = "store" | "vector" | "search" | "log" | "graph" | "hash" | "fixtures" | "artifact" | "store_markdown";
+export type TargetKind = "store" | "vector" | "search" | "log" | "graph" | "hash" | "fixtures" | "artifact" | "store_markdown" | "coordination" | "jobs";
 
 export interface Target {
   kind: TargetKind;
@@ -35,14 +35,16 @@ export type StepOutcome =
  *  runners FAIL on it and name the port. Skipping would let a typo in `ports`
  *  silently retire a scenario from every backend at once. */
 const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
-  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact"],
-  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact"],
-  "node-sqlite": ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact"],
+  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "jobs"],
+  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "jobs"],
+  "node-sqlite": ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "jobs"],
   markdown: ["store_markdown"],
 };
 
 export function backendsForPorts(ports: readonly string[]): BackendName[] {
-  return ports.includes("store_markdown") ? ["markdown"] : ["memory", "sqlite", "node-sqlite"];
+  if (ports.includes("store_markdown")) return ["markdown"];
+  if (ports.includes("coordination")) return ["memory", "sqlite"];
+  return ["memory", "sqlite", "node-sqlite"];
 }
 
 /** The ports a scenario names that this backend cannot bind. Empty is the only
@@ -56,7 +58,7 @@ export function unsupportedPorts(backend: BackendName, ports: readonly string[])
  *  target rather than competing for it. */
 const STORE_PORTS = new Set(["store", "kv", "collection", "atomic"]);
 
-const NON_STORE_KINDS = new Set<string>(["fixtures", "hash", "vector", "search", "log", "graph", "artifact", "store_markdown"]);
+const NON_STORE_KINDS = new Set<string>(["fixtures", "hash", "vector", "search", "log", "graph", "artifact", "store_markdown", "coordination", "jobs"]);
 
 /** The single target a scenario's steps are dispatched onto.
  *
@@ -82,24 +84,6 @@ export function targetKindFor(ports: readonly string[]): TargetKind {
 
 function isNumberArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.length > 0 && value.every((n) => typeof n === "number");
-}
-
-/** Vector dimensions for a scenario: the length of the first vector-shaped
- *  argument, either a bare number array or a `vector` field on a document. */
-export function vectorDimensionsFor(steps: ReadonlyArray<{ args: unknown[] }>): number {
-  for (const step of steps) {
-    for (const arg of step.args) {
-      if (isNumberArray(arg)) return arg.length;
-      const candidates = Array.isArray(arg) ? arg : [arg];
-      for (const candidate of candidates) {
-        if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-          const vector = (candidate as Record<string, unknown>).vector;
-          if (isNumberArray(vector)) return vector.length;
-        }
-      }
-    }
-  }
-  throw new Error("a vector scenario must carry at least one vector argument.");
 }
 
 function withVectorField(value: unknown): unknown {

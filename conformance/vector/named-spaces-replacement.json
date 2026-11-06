@@ -1,0 +1,239 @@
+{
+  "id": "vector/named-spaces-replacement",
+  "title": "spaces share document identity and replacement removes omitted embeddings",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureSpace",
+      "args": [
+        "text",
+        {
+          "dimensions": 2
+        }
+      ]
+    },
+    {
+      "op": "ensureSpace",
+      "args": [
+        "image",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
+      "op": "ensureSpace",
+      "args": [
+        "text",
+        {
+          "dimensions": 2
+        }
+      ]
+    },
+    {
+      "op": "listSpaces",
+      "args": [],
+      "expect": {
+        "value": [
+          {
+            "name": "image",
+            "dimensions": 3,
+            "metric": "cosine",
+            "encoding": "float32"
+          },
+          {
+            "name": "text",
+            "dimensions": 2,
+            "metric": "cosine",
+            "encoding": "float32"
+          }
+        ]
+      }
+    },
+    {
+      "op": "ensureSpace",
+      "args": [
+        "text",
+        {
+          "dimensions": 3
+        }
+      ],
+      "expect": {
+        "throws": "Space text already has 2 dimensions"
+      }
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "assets",
+        {
+          "id": "a",
+          "vectors": {
+            "text": [
+              1,
+              0
+            ],
+            "image": [
+              0,
+              1,
+              0
+            ]
+          },
+          "metadata": {
+            "kind": "art"
+          }
+        }
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "assets",
+        {
+          "space": "image",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "expect": {
+        "ids": [
+          "a"
+        ]
+      }
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "assets",
+        {
+          "id": "a",
+          "vectors": {
+            "text": [
+              0,
+              1
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "assets",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vectors": {
+            "text": [
+              0,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "assets",
+        {
+          "space": "image",
+          "vector": [
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    },
+    {
+      "op": "upsertMany",
+      "args": [
+        "assets",
+        [
+          {
+            "id": "a",
+            "vectors": {
+              "text": [
+                1,
+                0
+              ]
+            }
+          },
+          {
+            "id": "b",
+            "vectors": {
+              "missing": [
+                1
+              ]
+            }
+          }
+        ]
+      ],
+      "expect": {
+        "throws": "Unknown vector space: missing"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "assets",
+        "a"
+      ],
+      "expect": {
+        "value": {
+          "id": "a",
+          "vectors": {
+            "text": [
+              0,
+              1
+            ]
+          }
+        }
+      }
+    },
+    {
+      "op": "upsert",
+      "args": [
+        "assets",
+        {
+          "id": "empty",
+          "vectors": {}
+        }
+      ],
+      "expect": {
+        "throws": "A document needs at least one vector"
+      }
+    },
+    {
+      "op": "remove",
+      "args": [
+        "assets",
+        "a"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "assets"
+      ],
+      "expect": {
+        "value": 0
+      }
+    }
+  ]
+}
