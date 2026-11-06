@@ -45,6 +45,7 @@ export class NodeSqliteAdapter extends SqliteAdapterCore {
     const ownsDb = opts.db === undefined;
     const db = opts.db ?? new DatabaseSync(opts.path, {
       timeout: opts.busyTimeoutMs ?? 30_000,
+      allowExtension: opts.vectorEngine !== undefined,
     });
     const driver = new NodeSqliteDriver(db);
     const core: SqliteAdapterCoreOptions = {

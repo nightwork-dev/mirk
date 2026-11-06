@@ -28,6 +28,7 @@ export interface SqliteDb {
   transaction<T>(work: () => T): SqliteTransaction<T>;
   transaction<T, A>(work: (arg: A) => T): SqliteTransaction<T, A>;
   readonly inTransaction: boolean;
+  loadExtension(path: string): void;
   close(): void;
 }
 
@@ -42,6 +43,7 @@ export interface BetterSqliteConnection {
     exclusive(...args: unknown[]): unknown;
   };
   readonly inTransaction: boolean;
+  loadExtension(path: string): void;
   close(): void;
 };
 
@@ -69,6 +71,10 @@ export class BetterSqliteDriver implements SqliteDb {
     return this.raw.inTransaction;
   }
 
+  loadExtension(path: string): void {
+    this.raw.loadExtension(path);
+  }
+
   close(): void {
     this.raw.close();
   }
@@ -78,6 +84,8 @@ export interface NodeSqliteConnection {
   prepare(sql: string): SqliteStatement;
   exec(sql: string): void;
   readonly isTransaction: boolean;
+  enableLoadExtension(allow: boolean): void;
+  loadExtension(path: string): void;
   close(): void;
 }
 
@@ -144,6 +152,12 @@ export class NodeSqliteDriver implements SqliteDb {
 
   get inTransaction(): boolean {
     return this.raw.isTransaction;
+  }
+
+  loadExtension(path: string): void {
+    this.raw.enableLoadExtension(true);
+    try { this.raw.loadExtension(path); }
+    finally { this.raw.enableLoadExtension(false); }
   }
 
   close(): void {
