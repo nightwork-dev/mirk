@@ -325,7 +325,7 @@ export function hashName(s: string): string {
 // six-line driver in its own execution model.
 
 /** The `_mirk_meta.schema_version` this build writes and understands. */
-export const MIRK_SCHEMA_VERSION = 2;
+export const MIRK_SCHEMA_VERSION = 3;
 
 export const MIRK_REGISTRY_DDL = `
   CREATE TABLE IF NOT EXISTS _mirk_tables (
@@ -465,3 +465,15 @@ export function isTableRegistryConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("constraint failed") && message.includes("_mirk_tables");
 }
+
+export const VECTOR_FORMAT_DDL = `
+CREATE TABLE IF NOT EXISTS _mirk_vector_spaces (
+ namespace TEXT NOT NULL, name TEXT NOT NULL, dimensions INTEGER NOT NULL CHECK(dimensions>0),
+ metric TEXT NOT NULL CHECK(metric='cosine'), encoding TEXT NOT NULL CHECK(encoding='float32'), PRIMARY KEY(namespace,name));
+CREATE TABLE IF NOT EXISTS _mirk_vector_documents (
+ namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, metadata TEXT, PRIMARY KEY(namespace,collection,id));
+CREATE TABLE IF NOT EXISTS _mirk_vector_values (
+ namespace TEXT NOT NULL, collection TEXT NOT NULL, id TEXT NOT NULL, space TEXT NOT NULL, vec BLOB NOT NULL,
+ PRIMARY KEY(namespace,collection,id,space),
+ FOREIGN KEY(namespace,collection,id) REFERENCES _mirk_vector_documents(namespace,collection,id) ON DELETE CASCADE,
+ FOREIGN KEY(namespace,space) REFERENCES _mirk_vector_spaces(namespace,name));`;
