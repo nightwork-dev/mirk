@@ -15,6 +15,29 @@ const FIVE = ["a", "b", "c", "d", "e"].map((step) => ({
 
 export const scenarios = [
   defineScenario({
+    id: "log/incarnation-cursors",
+    title: "generation cursors refuse deleted, recreated, and different streams",
+    ports: ["log"],
+    steps: [
+      { op: "lastCursor", args: ["s"], expect: { value: true } },
+      { op: "append", args: ["s", "one"] },
+      { op: "append", args: ["s", "two"] },
+      { op: "lastCursor", args: ["s"], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 1 }, limit: 1 }], expect: { value: true } },
+      { op: "append", args: ["other", "independent"] },
+      { op: "list", args: ["other", { after: { generation: 1, sequence: 0 } }], expect: { throws: true } },
+      { op: "deleteRolledBack", args: ["s", "uncommitted replacement"] },
+      { op: "lastCursor", args: ["s"], expect: { value: true } },
+      { op: "deleteStream", args: ["s"] },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 1 }, limit: 0 }], expect: { throws: true } },
+      { op: "append", args: ["s", "replacement"] },
+      { op: "lastCursor", args: ["s"], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 1 } }], expect: { throws: true } },
+      { op: "list", args: ["s", { after: { generation: 3, sequence: 0 } }], expect: { value: true } },
+      { op: "list", args: ["missing", { after: { generation: 1, sequence: 0 } }], expect: { throws: true } },
+    ],
+  }),
+  defineScenario({
     id: "log/record-and-history-transaction",
     title: "application record and explicit history changes commit or roll back together",
     ports: ["kv", "log"],
@@ -111,13 +134,13 @@ export const scenarios = [
     steps: [
       ...FIVE,
       { op: "list", args: ["s", {}], expect: { value: true } },
-      { op: "list", args: ["s", { after: 2 }], expect: { value: true } },
-      { op: "list", args: ["s", { after: 2, limit: 2 }], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 2 } }], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 2 }, limit: 2 }], expect: { value: true } },
       { op: "list", args: ["s", { limit: 1 }], expect: { value: true } },
-      { op: "list", args: ["s", { after: 3, limit: 100 }], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 3 }, limit: 100 }], expect: { value: true } },
       { op: "list", args: ["s", { limit: 0 }], expect: { value: true } },
-      { op: "list", args: ["s", { after: 5 }], expect: { value: true } },
-      { op: "list", args: ["s", { after: 99, limit: 3 }], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 5 } }], expect: { value: true } },
+      { op: "list", args: ["s", { after: { generation: 1, sequence: 99 }, limit: 3 }], expect: { value: true } },
     ],
   }),
 
@@ -127,7 +150,7 @@ export const scenarios = [
     ports: ["log"],
     steps: [
       { op: "list", args: ["never"], expect: { value: true } },
-      { op: "list", args: ["never", { after: 0, limit: 10 }], expect: { value: true } },
+      { op: "list", args: ["never", { limit: 10 }], expect: { value: true } },
       { op: "lastSequence", args: ["never"], expect: { value: true } },
       { op: "append", args: ["other", 1] },
       { op: "lastSequence", args: ["never"], expect: { value: true } },

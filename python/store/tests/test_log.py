@@ -53,7 +53,7 @@ def test_records_json_cannot_carry_are_refused_and_consume_no_sequence(log: LogS
 
 def test_integral_floats_read_back_as_typescript_writes_them(log: LogStore) -> None:
     log.append("n", {"whole": 2.0, "half": 0.5})
-    assert log.get("n", 1) == {"sequence": 1, "record": {"whole": 2, "half": 0.5}}
+    assert log.get("n", 1) == {"generation": 1, "sequence": 1, "record": {"whole": 2, "half": 0.5}}
 
 
 def test_a_failed_record_write_consumes_no_sequence(tmp_path: Path) -> None:
@@ -69,7 +69,7 @@ def test_a_failed_record_write_consumes_no_sequence(tmp_path: Path) -> None:
             log.append("s", "boom")
         assert log.lastSequence("s") == 1
         assert log.append("s", "b") == 2
-        assert log.get("s", 2) == {"sequence": 2, "record": "b"}
+        assert log.get("s", 2) == {"generation": 1, "sequence": 2, "record": "b"}
         _expect_contiguous(log, "s")
 
 
@@ -113,11 +113,11 @@ def test_integral_floats_are_accepted_where_typescript_accepts_them(log: LogStor
     for step in ("a", "b", "c", "d"):
         log.append("s", step)
     one: Any = 1.0
-    bounds: Any = {"after": 2.0, "limit": 1.0}
+    bounds: Any = {"after": {"generation": 1.0, "sequence": 2.0}, "limit": 1.0}
     entry = log.get("s", one)
-    assert entry == {"sequence": 1, "record": "a"}
+    assert entry == {"generation": 1, "sequence": 1, "record": "a"}
     assert entry is not None and type(entry["sequence"]) is int
-    assert log.list("s", bounds) == [{"sequence": 3, "record": "c"}]
+    assert log.list("s", bounds) == [{"generation": 1, "sequence": 3, "record": "c"}]
     bad_sequences: list[Any] = [1.5, True, float(2**53), math.nan, math.inf]
     for bad in bad_sequences:
         with pytest.raises(LogInputError):
@@ -140,7 +140,7 @@ def test_a_read_then_append_deferred_transaction_raises_the_typed_busy_error(
             a.append("s", "y")
         first.connection.execute("ROLLBACK")
         assert raised.value.retryable is True
-        assert a.list("s") == [{"sequence": 1, "record": "x"}]
+        assert a.list("s") == [{"generation": 1, "sequence": 1, "record": "x"}]
         assert a.append("s", "y") == 2
 
 

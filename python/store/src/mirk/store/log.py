@@ -11,17 +11,31 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Literal, Protocol, TypedDict, cast
+from typing import Any, cast
 
-from .canonical import canonical_json
-from .filter import dumps_json
+from .log_types import (
+    MAX_SAFE_INTEGER,
+    LogCursor,
+    LogEntry,
+    LogInputError,
+    LogInputErrorCode,
+    LogListOptions,
+    LogStore,
+    LogTransactionError,
+    assert_generation,
+    assert_sequence,
+    assert_stream,
+    encode_record,
+    list_bounds,
+)
 
 __all__ = [
     "MAX_SAFE_INTEGER",
     "InMemoryLogStore",
+    "LogCursor",
     "LogEntry",
     "LogInputError",
     "LogInputErrorCode",
@@ -35,110 +49,10 @@ __all__ = [
     "list_bounds",
 ]
 
-MAX_SAFE_INTEGER = 2**53 - 1
-
-LogInputErrorCode = Literal[
-    "invalid-stream", "invalid-sequence", "invalid-after", "invalid-limit", "invalid-record"
-]
-
-
-class LogInputError(ValueError):
-    """Raised when a log call's arguments are unusable. Nothing is written."""
-
-    def __init__(self, code: LogInputErrorCode, message: str) -> None:
-        super().__init__(message)
-        self.code: LogInputErrorCode = code
-
-
-class LogTransactionError(RuntimeError):
-    """Raised when a call reaches an in-memory log whose transaction another
-    task or thread holds open."""
-
-
-class LogEntry(TypedDict):
-    """One committed record and the sequence it was given."""
-
-    sequence: int
-    record: Any
-
-
-class LogListOptions(TypedDict, total=False):
-    """``after``: return entries whose sequence is greater (default 0).
-    ``limit``: return at most this many (default: no limit)."""
-
-    after: int
-    limit: int
-
-
-class LogStore(Protocol):
-    def append(self, stream: str, record: Any) -> int: ...
-    def get(self, stream: str, sequence: int) -> LogEntry | None: ...
-    def list(self, stream: str, options: LogListOptions | None = None) -> list[LogEntry]: ...
-    def lastSequence(self, stream: str) -> int: ...
-    def deleteStream(self, stream: str) -> bool: ...
-
-
-def _safe_integer(value: object) -> int | None:
-    """``value`` as an ``int`` when ``Number.isSafeInteger`` would accept it, else
-    ``None``. An integral float such as ``2.0`` counts, as it does in TypeScript;
-    a bool never does."""
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, float):
-        if not value.is_integer():
-            return None
-        value = int(value)
-    if isinstance(value, int) and -MAX_SAFE_INTEGER <= value <= MAX_SAFE_INTEGER:
-        return value
-    return None
-
-
-def assert_stream(stream: object) -> str:
-    if not isinstance(stream, str) or len(stream) == 0:
-        raise LogInputError("invalid-stream", "log stream must be a non-empty string")
-    return stream
-
-
-def assert_sequence(sequence: object) -> int:
-    value = _safe_integer(sequence)
-    if value is None or value < 1:
-        raise LogInputError("invalid-sequence", "log sequence must be a positive safe integer")
-    return value
-
-
-def list_bounds(options: Mapping[str, Any] | None) -> tuple[int, int | None]:
-    """The validated ``after`` and ``limit``; ``limit`` is ``None`` for no limit.
-
-    A key that is present with ``None`` is refused, as TypeScript refuses ``null``.
-    """
-    given: Mapping[str, Any] = options or {}
-    after = _safe_integer(given.get("after", 0))
-    if after is None or after < 0:
-        raise LogInputError("invalid-after", "log after must be a non-negative safe integer")
-    if "limit" not in given:
-        return (after, None)
-    limit = _safe_integer(given["limit"])
-    if limit is None or limit < 0:
-        raise LogInputError("invalid-limit", "log limit must be a non-negative safe integer")
-    return (after, limit)
-
-
-def encode_record(record: Any) -> str:
-    """The stored text of a record: the strict JSON rules atomic writes use, encoded
-    the way ``JSON.stringify`` encodes it."""
-    try:
-        canonical_json(record)
-    except (TypeError, ValueError) as error:
-        raise LogInputError("invalid-record", f"log record is not JSON-safe: {error}") from error
-    return dumps_json(record)
-
 
 class InMemoryLogStore:
-    """The in-memory reference log. Records are kept as their JSON text, so a
-    read returns a fresh copy, exactly as the SQLite facet does."""
-
     def __init__(self) -> None:
-        self._streams: dict[str, list[str]] = {}
+        self._streams: dict[str, tuple[int, list[str]]] = {}
         self._generation = 0
         self._owner: tuple[int, object] | None = None
         self._depth = 0
@@ -148,7 +62,7 @@ class InMemoryLogStore:
         return deepcopy((self._generation, self._streams))
 
     def _transaction_restore(self, state: object) -> None:
-        self._generation, self._streams = cast(tuple[int, dict[str, list[str]]], state)
+        self._generation, self._streams = cast(tuple[int, dict[str, tuple[int, list[str]]]], state)
 
     def _check_caller(self) -> None:
         if self._transaction_domain is not None:
@@ -162,34 +76,54 @@ class InMemoryLogStore:
         self._check_caller()
         assert_stream(stream)
         text = encode_record(record)
-        entries = self._streams.setdefault(stream, [])
-        entries.append(text)
-        return len(entries)
+        live = self._streams.get(stream)
+        if live is None:
+            if self._generation == MAX_SAFE_INTEGER:
+                raise LogInputError("generation-exhausted", "log generation counter exhausted")
+            self._generation += 1
+            entries: list[str] = []
+            live = (self._generation, entries)
+            self._streams[stream] = live
+        live[1].append(text)
+        return len(live[1])
 
     def get(self, stream: str, sequence: int) -> LogEntry | None:
         self._check_caller()
         assert_stream(stream)
         sequence = assert_sequence(sequence)
-        entries = self._streams.get(stream, [])
-        if sequence > len(entries):
+        live = self._streams.get(stream)
+        if live is None or sequence > len(live[1]):
             return None
-        return {"sequence": sequence, "record": json.loads(entries[sequence - 1])}
+        return {
+            "generation": live[0],
+            "sequence": sequence,
+            "record": json.loads(live[1][sequence - 1]),
+        }
 
     def list(self, stream: str, options: LogListOptions | None = None) -> list[LogEntry]:
         self._check_caller()
         assert_stream(stream)
         after, limit = list_bounds(options)
-        entries = self._streams.get(stream, [])
-        end = len(entries) if limit is None else min(len(entries), after + limit)
+        live = self._streams.get(stream)
+        assert_generation(after, live[0] if live else None)
+        if live is None:
+            return []
+        start = after["sequence"] if after else 0
+        end = len(live[1]) if limit is None else min(len(live[1]), start + limit)
         return [
-            {"sequence": index + 1, "record": json.loads(entries[index])}
-            for index in range(after, end)
+            {"generation": live[0], "sequence": index + 1, "record": json.loads(live[1][index])}
+            for index in range(start, end)
         ]
 
-    def lastSequence(self, stream: str) -> int:
+    def lastCursor(self, stream: str) -> LogCursor | None:
         self._check_caller()
         assert_stream(stream)
-        return len(self._streams.get(stream, []))
+        live = self._streams.get(stream)
+        return {"generation": live[0], "sequence": len(live[1])} if live else None
+
+    def lastSequence(self, stream: str) -> int:
+        cursor = self.lastCursor(stream)
+        return cursor["sequence"] if cursor else 0
 
     def deleteStream(self, stream: str) -> bool:
         self._check_caller()
@@ -198,15 +132,6 @@ class InMemoryLogStore:
 
     @contextmanager
     def transaction(self) -> Generator[None]:
-        """Undo every append made inside the block if it raises, the in-memory
-        counterpart of a SQLite transaction. A rolled-back append's sequence goes
-        to the next append.
-
-        The block belongs to the asyncio task (or, outside a loop, the thread)
-        that opened it. While it is open, a call from any other task or thread
-        raises `LogTransactionError`, so an ``await`` inside the block can never
-        let another task's append be rolled back with it. Blocks nest within
-        their own task."""
         self._check_caller()
         checkpoint = self._transaction_checkpoint()
         self._owner = _caller()
@@ -263,6 +188,9 @@ class _ConformanceLog:
 
     def lastSequence(self, stream: str) -> int:
         return self._log.lastSequence(stream)
+
+    def lastCursor(self, stream: str) -> LogCursor | None:
+        return self._log.lastCursor(stream)
 
     def deleteStream(self, stream: str) -> bool:
         return self._log.deleteStream(stream)

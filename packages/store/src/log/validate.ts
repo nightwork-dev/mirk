@@ -1,10 +1,12 @@
 import { canonicalJson } from "../canonical.js";
-import type { LogListOptions } from "./types.js";
+import type { LogCursor, LogListOptions } from "./types.js";
 
 export type LogInputErrorCode =
   | "invalid-stream"
   | "invalid-sequence"
-  | "invalid-after"
+  | "invalid-cursor"
+  | "stale-cursor"
+  | "generation-exhausted"
   | "invalid-limit"
   | "invalid-record";
 
@@ -38,18 +40,26 @@ export function assertSequence(sequence: unknown): asserts sequence is number {
 /** The validated `after` and `limit` of a list call. `limit` is undefined for
  *  no limit. */
 export function listBounds(options: LogListOptions | undefined): {
-  after: number;
+  after: LogCursor | undefined;
   limit: number | undefined;
 } {
-  const after = options?.after === undefined ? 0 : options.after;
+  const after = options?.after;
   const limit = options?.limit;
-  if (!Number.isSafeInteger(after) || after < 0) {
-    throw new LogInputError("invalid-after", "log after must be a non-negative safe integer");
+  if (after !== undefined && (
+    after === null || typeof after !== "object" || Array.isArray(after) ||
+    !Number.isSafeInteger(after.generation) || after.generation < 1 ||
+    !Number.isSafeInteger(after.sequence) || after.sequence < 0
+  )) {
+    throw new LogInputError("invalid-cursor", "log after must be a cursor with positive safe generation and non-negative safe sequence");
   }
   if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
     throw new LogInputError("invalid-limit", "log limit must be a non-negative safe integer");
   }
   return { after, limit };
+}
+
+export function assertGeneration(cursor: LogCursor | undefined, generation: number | undefined): void {
+  if (cursor && cursor.generation !== generation) throw new LogInputError("stale-cursor", "log cursor belongs to a missing or replaced stream");
 }
 
 /** The stored text of a record: the strict JSON rules atomic writes use, then

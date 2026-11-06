@@ -1,6 +1,6 @@
 import { runMemoryOperation } from "../memory-participant.js";
 import type { JsonCompatible, JsonValue } from "../atomic.js";
-import type { AsyncLogStore, LogEntry, LogListOptions, LogStore } from "./types.js";
+import type { AsyncLogStore, LogCursor, LogEntry, LogListOptions, LogStore } from "./types.js";
 
 class AsyncLogStoreAdapter implements AsyncLogStore {
   constructor(private readonly sync: LogStore) {}
@@ -21,6 +21,10 @@ class AsyncLogStoreAdapter implements AsyncLogStore {
 
   async deleteStream(stream: string): Promise<boolean> {
     return runMemoryOperation(this.sync, () => this.sync.deleteStream(stream));
+  }
+
+  async lastCursor(stream: string): Promise<LogCursor | null> {
+    return runMemoryOperation(this.sync, () => this.sync.lastCursor(stream));
   }
 
   async lastSequence(stream: string): Promise<number> {
