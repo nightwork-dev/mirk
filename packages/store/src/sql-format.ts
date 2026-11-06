@@ -162,7 +162,8 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
       )
         continue;
       const name = physical.slice(tablePrefix.length);
-      const expected = legacy[name] ?? malformed("Unrecognized unversioned Mirk layout");
+      const expected =
+        legacy[name] ?? malformed("Unrecognized unversioned Mirk layout");
       const actual = yield* columns(name);
       if (!expected.every((column) => actual.includes(column)))
         malformed("Unrecognized unversioned Mirk layout");
@@ -191,9 +192,13 @@ export function* mirkFormatMigration(tablePrefix = ""): Plan {
       )
     )
       malformed("Unrecognized legacy vectors layout");
-    const lengths = yield* query(
+    const lengthRows = yield* query(
       `SELECT DISTINCT length(vec) AS n, typeof(vec) AS kind FROM ${table("vectors")}`,
     );
+    const lengths = lengthRows.map((row) => ({
+      n: Number(row.n),
+      kind: row.kind,
+    }));
     if (
       lengths.some(
         (row) =>
