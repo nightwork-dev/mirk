@@ -89,7 +89,7 @@ async def run_claim[T](
                 await clock.sleep(renew_every_ms, sleeper)
                 if not stopped:
                     renew()
-        except (Exception, asyncio.CancelledError) as error:
+        except Exception as error:
             if not stopped:
                 abort(error)
 
