@@ -51,6 +51,7 @@
       ],
       "expect": {
         "value": {
+          "generation": 1,
           "sequence": 1,
           "record": {
             "step": "a"
@@ -66,6 +67,7 @@
       ],
       "expect": {
         "value": {
+          "generation": 1,
           "sequence": 3,
           "record": {
             "step": "c"

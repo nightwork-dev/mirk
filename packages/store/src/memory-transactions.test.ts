@@ -28,7 +28,7 @@ describe("shared memory transactions", () => {
       throw new Error("reject");
     })).rejects.toThrow("reject");
     expect(kv.getVersioned({ kind: "record", collection: "jobs", id: "a" })).toEqual(original);
-    expect(log.list("a")).toEqual([{ sequence: 1, record: { state: "queued" } }]);
+    expect(log.list("a")).toEqual([{ generation: 1, sequence: 1, record: { state: "queued" } }]);
   });
 
   it("restores receipts and nested state while ordering only committed notifications", async () => {

@@ -23,6 +23,7 @@
           },
           "history": [
             {
+              "generation": 1,
               "sequence": 1,
               "record": "queued"
             }
@@ -48,6 +49,7 @@
           },
           "history": [
             {
+              "generation": 1,
               "sequence": 1,
               "record": "queued"
             }
@@ -73,6 +75,7 @@
           },
           "history": [
             {
+              "generation": 1,
               "sequence": 1,
               "record": "queued"
             }
@@ -98,6 +101,7 @@
           },
           "history": [
             {
+              "generation": 1,
               "sequence": 1,
               "record": "queued"
             }
@@ -137,6 +141,7 @@
           },
           "history": [
             {
+              "generation": 2,
               "sequence": 1,
               "record": "new incarnation"
             }

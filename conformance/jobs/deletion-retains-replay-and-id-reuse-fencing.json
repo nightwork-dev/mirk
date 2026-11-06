@@ -18,6 +18,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 0,
           "availableAt": 100,
           "cancellation": null,
@@ -27,13 +28,15 @@
           "expiresAt": null,
           "generation": 0,
           "id": "job",
+          "kind": null,
           "ownerToken": null,
           "payload": "first",
           "priority": 0,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "queued",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -77,6 +80,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 0,
           "availableAt": 100,
           "cancellation": null,
@@ -86,13 +90,15 @@
           "expiresAt": null,
           "generation": 0,
           "id": "job",
+          "kind": null,
           "ownerToken": null,
           "payload": "first",
           "priority": 0,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "queued",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -115,6 +121,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 0,
           "availableAt": 100,
           "cancellation": null,
@@ -124,13 +131,15 @@
           "expiresAt": null,
           "generation": 2,
           "id": "job",
+          "kind": null,
           "ownerToken": null,
           "payload": "replacement",
           "priority": 0,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "queued",
+          "subject": null,
           "updatedAt": 100
         }
       }
@@ -166,6 +175,7 @@
       ],
       "expect": {
         "value": {
+          "activeKey": null,
           "attempt": 1,
           "availableAt": 100,
           "cancellation": null,
@@ -175,13 +185,15 @@
           "expiresAt": 110,
           "generation": 3,
           "id": "job",
+          "kind": null,
           "ownerToken": "owner-2",
           "payload": "replacement",
           "priority": 0,
           "queue": "q",
           "result": null,
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "state": "leased",
+          "subject": null,
           "updatedAt": 100
         }
       }

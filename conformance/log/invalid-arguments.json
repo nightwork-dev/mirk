@@ -80,11 +80,97 @@
       "args": [
         "s",
         {
+          "after": 0
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 0,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1,
+            "sequence": -1
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1.5,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 9007199254740992,
+            "sequence": 0
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
+          "after": {
+            "generation": 1
+          }
+        }
+      ],
+      "expect": {
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "s",
+        {
           "after": -1
         }
       ],
       "expect": {
-        "throws": "log after must be a non-negative safe integer"
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
       }
     },
     {
@@ -96,7 +182,7 @@
         }
       ],
       "expect": {
-        "throws": "log after must be a non-negative safe integer"
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
       }
     },
     {
@@ -108,7 +194,7 @@
         }
       ],
       "expect": {
-        "throws": "log after must be a non-negative safe integer"
+        "throws": "log after must be a cursor with positive safe generation and non-negative safe sequence"
       }
     },
     {

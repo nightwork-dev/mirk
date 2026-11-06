@@ -101,18 +101,21 @@
       "expect": {
         "value": [
           {
+            "generation": 1,
             "sequence": 1,
             "record": {
               "n": 1
             }
           },
           {
+            "generation": 1,
             "sequence": 2,
             "record": {
               "n": 2
             }
           },
           {
+            "generation": 1,
             "sequence": 3,
             "record": {
               "n": 3
@@ -129,6 +132,7 @@
       "expect": {
         "value": [
           {
+            "generation": 2,
             "sequence": 1,
             "record": {
               "n": 1
