@@ -135,7 +135,7 @@ describe("memory lease transaction participation", () => {
     );
   });
 
-  it("rejects foreign synchronous handles and queues async acquire, renew and release", async () => {
+  it("rejects foreign synchronous handles, refuses immediate acquisition and queues renew/release", async () => {
     const s = setup();
     const lease = await s.acquire();
     let ready!: () => void;
@@ -155,9 +155,9 @@ describe("memory lease transaction participation", () => {
     expect(() => lease.assertOwned()).toThrow("another transaction");
     expect(() => lease.expiresAt).toThrow("another transaction");
     let finished = 0;
-    const acquiring = s.acquire("other").then((x) => {
-      finished++;
-      return x;
+    expect(await s.coordinator.tryAcquire("other")).toEqual({
+      status: "unavailable",
+      retryable: true,
     });
     const renewing = lease.renew(100).then((x) => {
       finished++;
@@ -173,7 +173,7 @@ describe("memory lease transaction participation", () => {
     await running;
     expect(await renewing).toBe(true);
     expect(await releasing).toBe(true);
-    (await acquiring).assertOwned();
+    (await s.acquire("other")).assertOwned();
   });
 
   it("leaves unenlisted coordination independently committed and rejects double enlistment", async () => {

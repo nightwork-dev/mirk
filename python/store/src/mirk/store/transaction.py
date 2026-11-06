@@ -62,6 +62,12 @@ class Transactions:
                 "Store is inside a transaction owned by another task or thread"
             )
 
+    def available(self) -> bool:
+        scope = self._context.get()
+        if scope is not None and not scope.active:
+            raise TransactionScopeError("The transaction has ended")
+        return self._owner is None or self._owner == _caller()
+
     def transaction(self) -> _TransactionContext:
         return _TransactionContext(self)
 

@@ -910,8 +910,11 @@ still throws immediately. Rollback discards those aborts and preserves a previou
 The clock and external cancellation are not rolled back. Callers can observe provisional results;
 external work started from them cannot be undone by this transaction.
 
-Async lease operations on enlisted state use the domain's admission queue; foreign synchronous
-`assertOwned()` and `expiresAt` access fail during a transaction. Without explicit enlistment,
+On enlisted state, `tryAcquire` returns `unavailable` immediately when a foreign transaction or
+nested sibling scope prevents admission, without inspecting provisional lease state. `runExclusive`
+uses its normal clock-driven retry, cancellation, and timeout loop. Renewal and release use the
+domain's admission queue; foreign synchronous `assertOwned()` and `expiresAt` access fail during
+a transaction. Without explicit enlistment,
 shared memory coordination remains independently committed. A state can belong to only one domain.
 
 ## Async coordination
@@ -951,8 +954,8 @@ release cannot affect a successor. Checking ownership before an unconditional ap
 does not fence that write: the application must enforce the generation or record version itself.
 
 For manual ownership, `await coordinator.tryAcquire(key, { leaseMs, signal })` makes one atomic
-attempt without lease contention polling or sleeping. Explicitly enlisted memory state first takes
-transaction admission. Results are `{ status: "acquired", lease }`,
+attempt without queuing, lease contention polling, or sleeping. Explicitly enlisted memory state
+returns `unavailable` if its transaction domain cannot admit the attempt immediately. Results are `{ status: "acquired", lease }`,
 `{ status: "held", expiresAt }`, or `{ status: "unavailable", retryable: true }`. The SQLite
 source uses a non-waiting native lock attempt; a busy database is unavailable, never evidence of
 a held lease. Other backend errors propagate. A manual lease adds `expiresAt`,

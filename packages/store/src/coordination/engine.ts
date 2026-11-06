@@ -58,20 +58,12 @@ export class LeaseCoordinator implements AsyncCoordinator {
     key: string,
     options: CoordinationAcquireOptions = {},
   ): Promise<CoordinationAcquireResult> {
-    const acquire = () => this.#tryAcquire(key, options);
-    return this.backend.participation
-      ? this.backend.participation.run(acquire)
-      : acquire();
-  }
-
-  async #tryAcquire(
-    key: string,
-    options: CoordinationAcquireOptions,
-  ): Promise<CoordinationAcquireResult> {
     if (typeof key !== "string" || !key)
       throw new Error("coordination key must not be empty.");
     const leaseMs = positiveInteger(options.leaseMs ?? 5000, "leaseMs");
     this.#checkAbort(key, options.signal);
+    if (this.backend.participation && !this.backend.participation.available())
+      return { status: "unavailable", retryable: true };
     const ownerToken = this.#token();
     const result = this.backend.acquire(key, ownerToken, leaseMs);
     if (result.status !== "acquired") return result;
