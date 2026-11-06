@@ -240,3 +240,44 @@ it("rolls back copied vectors and table drops when the final version write fails
   ).toBeUndefined();
   check.close();
 });
+
+for (const Adapter of [SqliteAdapter, NodeSqliteAdapter]) {
+  it.each([true, false])(
+    `${Adapter.name} rejects unsafe legacy dimensions with empty vector table: %s`,
+    (hasVectorTable) => {
+      const file = path();
+      fixture(file);
+      const raw = new Database(file);
+      raw.exec("DELETE FROM vectors");
+      if (!hasVectorTable) raw.exec("DROP TABLE vectors");
+      const dimensions = "9007199254740992";
+      raw
+        .prepare("UPDATE _vec_meta SET value=? WHERE key='dimensions'")
+        .run(dimensions);
+      const schema = raw
+        .prepare("SELECT name,sql FROM sqlite_master ORDER BY name")
+        .all();
+      expect(() => new Adapter({ path: file })).toThrow(
+        expect.objectContaining({
+          code: "malformed-schema",
+          message: "Invalid legacy vector dimensions",
+        }),
+      );
+      expect(
+        raw.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
+      ).toEqual(schema);
+      expect(
+        raw
+          .prepare("SELECT value FROM _mirk_meta WHERE key='schema_version'")
+          .get(),
+      ).toEqual({ value: "2" });
+      expect(
+        raw.prepare("SELECT value FROM _vec_meta WHERE key='dimensions'").get(),
+      ).toEqual({ value: dimensions });
+      expect(raw.prepare("SELECT value FROM application_data").get()).toEqual({
+        value: "preserved",
+      });
+      raw.close();
+    },
+  );
+}
