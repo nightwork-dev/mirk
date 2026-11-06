@@ -10,9 +10,12 @@ from typing import Any, Protocol
 
 from mirk.store.canonical import canonical_json
 
+from .discovery import JobDiscovery
 from .errors import JobsError
 from .validation import (
     generation,
+    normalize_job,
+    normalize_outcome,
     validate_enqueue,
     validate_job,
     validate_outcome,
@@ -46,7 +49,7 @@ def _order(job: Record) -> tuple[int, int, str]:
     return (-job["priority"], job["enqueuedAt"], job["id"])
 
 
-class JobsCore:
+class JobsCore(JobDiscovery):
     def __init__(
         self,
         *,
@@ -91,25 +94,7 @@ class JobsCore:
             validate_job(result["value"])
             if result["value"]["id"] != id:
                 raise JobsError("invalid-input")
-        return result
-
-    def list(self, filter: Record | None = None) -> list[Record]:
-        filter = filter or {}
-        limit = filter.get("limit")
-        if limit is not None:
-            validate_time(limit)
-        with self.transactions.transaction():
-            records = self.store.list(self.collection)
-            for job in records:
-                validate_job(job)
-            jobs = [
-                j
-                for j in records
-                if ("queue" not in filter or j["queue"] == filter["queue"])
-                and ("state" not in filter or j["state"] == filter["state"])
-            ]
-            jobs.sort(key=_order)
-            return [self._require(j["id"]) for j in jobs[:limit]]
+        return {**result, "value": normalize_job(result["value"])} if result else None
 
     def _command(self, name: str, input: Any, command: Record, work: Callable[[], Any]) -> Any:
         _text(command["key"])
@@ -122,7 +107,7 @@ class JobsCore:
                 validate_outcome(name, receipt["outcome"])
                 if receipt["intent"] != intent:
                     raise JobsError("idempotency-conflict")
-                return copy.deepcopy(receipt["outcome"])
+                return normalize_outcome(name, copy.deepcopy(receipt["outcome"]))
             outcome = work()
             validate_outcome(name, outcome)
             result = self.store.mutateAtomically(
@@ -139,13 +124,17 @@ class JobsCore:
 
     def _save(self, job: Record, prior: Record | None, event: str) -> Record:
         validate_job(job)
+        slot_conditions, slot_operations = self._slot_mutation(job)
         condition = {"target": self._target(job["id"]), "expected": "missing"}
         if prior:
             condition.update(expected="version", version=prior["version"])
         result = self.store.mutateAtomically(
             {
-                "conditions": [condition],
-                "operations": [{"op": "put", "collection": self.collection, "item": job}],
+                "conditions": [condition, *slot_conditions],
+                "operations": [
+                    {"op": "put", "collection": self.collection, "item": job},
+                    *slot_operations,
+                ],
             }
         )
         if result["status"] != "applied":
@@ -182,37 +171,44 @@ class JobsCore:
             or abs(priority) > 9007199254740991
         ):
             raise JobsError("invalid-input")
+        for field in ("subject", "kind"):
+            if field in input and not isinstance(input[field], str):
+                raise JobsError("invalid-input")
         if "availableAt" in input:
             validate_time(input["availableAt"])
 
         def work() -> Record:
-            retained_generation = self.store.get(self._generation_key(input["id"]))
-            initial_generation = (
-                0
-                if retained_generation is None
-                else validate_time(generation(retained_generation) + 1)
-            )
-            now = validate_time(self.now())
-            job = {
-                **input,
-                "schemaVersion": 1,
-                "state": "queued",
-                "priority": priority,
-                "availableAt": input.get("availableAt", now),
-                "enqueuedAt": now,
-                "updatedAt": now,
-                "attempt": 0,
-                "generation": initial_generation,
-                "ownerToken": None,
-                "expiresAt": None,
-                "checkpoint": None,
-                "cancellation": None,
-                "result": None,
-                "error": None,
-            }
-            return self._save(job, None, "enqueue")
+            return self._create(input, None)
 
         return self._command("enqueue", input, command, work)
+
+    def _create(self, input: Record, active_key: str | None) -> Record:
+        retained_generation = self.store.get(self._generation_key(input["id"]))
+        initial_generation = (
+            0 if retained_generation is None else validate_time(generation(retained_generation) + 1)
+        )
+        now = validate_time(self.now())
+        job = {
+            **input,
+            "schemaVersion": 2,
+            "activeKey": active_key,
+            "subject": input.get("subject"),
+            "kind": input.get("kind"),
+            "state": "queued",
+            "priority": input.get("priority", 0),
+            "availableAt": input.get("availableAt", now),
+            "enqueuedAt": now,
+            "updatedAt": now,
+            "attempt": 0,
+            "generation": initial_generation,
+            "ownerToken": None,
+            "expiresAt": None,
+            "checkpoint": None,
+            "cancellation": None,
+            "result": None,
+            "error": None,
+        }
+        return self._save(job, None, "enqueue")
 
     def _claim(self, id: str, lease_ms: int) -> Record | None:
         prior = self.get(id)

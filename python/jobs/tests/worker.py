@@ -12,7 +12,11 @@ path, action, id, key = sys.argv[1:]
 store = SqliteStore(path)
 jobs = JobsStore(store=store, transactions=SqliteTransactions(store), now=lambda: 100)
 try:
-    if action == "claim":
+    if action == "start":
+        result = jobs.start(
+            {"id": id, "queue": "q", "key": "shared", "payload": None}, {"key": key}
+        )
+    elif action == "claim":
         result = jobs.claim(id, {"key": key, "leaseMs": 50})
     elif action == "complete":
         job = jobs.get(id)

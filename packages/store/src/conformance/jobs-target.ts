@@ -1,6 +1,6 @@
 import type { JsonValue } from '@mirk/store/atomic';
 import { JobsStore } from '@mirk/jobs';
-import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord } from '@mirk/jobs';
+import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord, StartInput, JobListOptions } from '@mirk/jobs';
 
 export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) => void): Record<string, unknown> {
   const claims = new Map<string, JobClaim>();
@@ -13,6 +13,10 @@ export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) =
     enqueueCommand: async (input: EnqueueInput, commandKey: string) => (await jobs.enqueue(input,{key:commandKey})).value,
     rememberClaim: (id: string, alias: string) => { claims.set(alias,claim(id)); return null; },
     corruptRecord: async (id: string, patch: Partial<JobRecord>) => { const record = (await jobs.get(id))!.value; await jobs.options.store.put(jobs.collection,{...record,...patch}); return null; },
+    start: async (input: StartInput, commandKey: string) => {const result=await jobs.start(input,{key:commandKey}); return {...result,job:result.job.value};},
+    listFiltered: async (filter: JobListOptions) => (await jobs.list(filter)).map(j=>j.value),
+    corruptActiveSlot: async (queue: string, activeKey: string, id: string) => {await jobs.options.store.set('mirk-jobs-active:'+JSON.stringify([jobs.collection,queue,activeKey]),id); return null;},
+    seedLegacy: async (id: string) => {const job=(await jobs.get(id))!.value; const {activeKey:_k,subject:_s,kind:_t,...legacy}=job;await jobs.options.store.put(jobs.collection,{...legacy,schemaVersion:1});return null;},
     get: async (id: string) => (await jobs.get(id))?.value ?? null,
     list: async (queue: string) => (await jobs.list({queue})).map(j => j.value),
     claim: async (id: string, leaseMs: number) => { const value = await jobs.claim(id,{...key(),leaseMs}); if(value) claims.set(value.jobId,value); return value; },

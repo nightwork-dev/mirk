@@ -1,11 +1,11 @@
 import { compareCodePoints } from '@mirk/store/vector';
-import { generation, validateClaim, validateEnqueue, validateJob, validateOutcome, validateReceipt } from './validation.js';
+import { generation, normalizeJob, normalizeOutcome, validateClaim, validateEnqueue, validateJob, validateOutcome, validateReceipt } from './validation.js';
 import { canonicalJson } from '@mirk/store/atomic';
 import type { JsonObject, JsonValue, StoreTarget, StoreVersion } from '@mirk/store/atomic';
-import type { BlockedDecision, ClaimOptions, EnqueueInput, JobClaim, JobCommand, JobListOptions, JobRecord, JobsOptions, VersionedJob } from './types.js';
+import type { BlockedDecision, ClaimOptions, EnqueueInput, JobClaim, JobCommand, JobListOptions, JobRecord, JobsOptions, StartInput, StartResult, VersionedJob } from './types.js';
 import { JobsError } from './types.js';
 export { JobsError } from './types.js';
-export type { BlockedDecision, ClaimOptions, EnqueueInput, JobClaim, JobCommand, JobListOptions, JobRecord, JobState, JobsOptions, VersionedJob } from './types.js';
+export type { BlockedDecision, ClaimOptions, EnqueueInput, JobClaim, JobCommand, JobListOptions, JobRecord, JobState, JobsOptions, StartInput, StartResult, VersionedJob } from './types.js';
 
 const terminal = (job: JobRecord) => ['succeeded', 'failed', 'cancelled'].includes(job.state);
 const order = (a: JobRecord, b: JobRecord) => b.priority - a.priority || a.enqueuedAt - b.enqueuedAt || compareCodePoints(a.id, b.id);
@@ -34,16 +34,23 @@ export class JobsStore {
   async get(id: string): Promise<VersionedJob | null> {
     text(id); const result = await this.options.store.getVersioned<JobRecord>(this.#target(id));
     if (result) { validateJob(result.value); if (result.value.id !== id) throw new JobsError('invalid-input'); }
-    return result;
+    return result ? {...result,value:normalizeJob(result.value)} : null;
   }
   async list(filter: JobListOptions = {}): Promise<VersionedJob[]> {
     if (filter.limit !== undefined && (!Number.isSafeInteger(filter.limit) || filter.limit < 0)) throw new JobsError('invalid-input');
+    const sortBy = filter.sortBy ?? 'updatedAt'; const sortDir = filter.sortDir ?? 'desc';
+    if (!['updatedAt','enqueuedAt','priority'].includes(sortBy) || !['asc','desc'].includes(sortDir)) throw new JobsError('invalid-input');
+    const indexed = this.options.store as typeof this.options.store & {ensureIndex?(collection:string,field:string):Promise<void>};
+    if (!indexed.ensureIndex) throw new JobsError('invalid-input','Job listing requires ensureIndex');
     return this.options.transactions.transaction(async () => {
-      const records = (await this.options.store.list<JobRecord>(this.collection)).map(j => { validateJob(j); return j; }).filter(j => (filter.queue === undefined || j.queue === filter.queue) && (filter.state === undefined || j.state === filter.state)).sort(order);
-      const selected = filter.limit === undefined ? records : records.slice(0, filter.limit);
-      return Promise.all(selected.map(async j => (await this.get(j.id))!));
+      const where: Record<string,unknown> = {};
+      for (const field of ['queue','subject','kind','state'] as const) if(filter[field] !== undefined) { where[field]=filter[field]; await indexed.ensureIndex!(this.collection,field); }
+      await indexed.ensureIndex!(this.collection,sortBy);
+      const records = await this.options.store.list<JobRecord>(this.collection,{where,sortBy,sortDir,...(filter.limit===undefined?{}:{limit:filter.limit})});
+      return Promise.all(records.map(async j => {validateJob(j); return (await this.get(j.id))!;}));
     });
   }
+
   async #command<T>(name: string, input: unknown, command: JobCommand, work: () => Promise<T>): Promise<T> {
     text(command.key); const intent = canonicalJson({ name, input });
     const key = `mirk-jobs-command:${canonicalJson([this.collection, command.key])}`;
@@ -52,7 +59,7 @@ export class JobsStore {
       if (receipt !== null) {
         validateReceipt(receipt); validateOutcome(name, receipt.outcome);
         if (receipt.intent !== intent) throw new JobsError('idempotency-conflict');
-        return structuredClone(receipt.outcome) as T;
+        return normalizeOutcome(name, structuredClone(receipt.outcome)) as T;
       }
       const outcome = await work(); validateOutcome(name, outcome);
       const result = await this.options.store.mutateAtomically({ conditions: [{ target: { kind: 'key', key }, expected: 'missing' }], operations: [{ op: 'set', key, value: { intent, outcome: JSON.parse(canonicalJson(outcome)) as JsonValue } }] });
@@ -62,8 +69,9 @@ export class JobsStore {
   }
   async #save(job: JobRecord, prior: VersionedJob | null, event: string): Promise<VersionedJob> {
     validateJob(job);
+    const slot = await this.#slotMutation(job);
     const target = this.#target(job.id);
-    const result = await this.options.store.mutateAtomically({ conditions: [prior ? { target, expected: 'version', version: prior.version } : { target, expected: 'missing' }], operations: [{ op: 'put', collection: this.collection, item: job as unknown as { id: string } & JsonObject }] });
+    const result = await this.options.store.mutateAtomically({ conditions: [prior ? { target, expected: 'version', version: prior.version } : { target, expected: 'missing' }, ...slot.conditions], operations: [{ op: 'put', collection: this.collection, item: job as unknown as { id: string } & JsonObject },...slot.operations] });
     if (result.status !== 'applied') throw new JobsError('conflict');
     if (this.options.log) await this.options.log.append(await this.#stream(job.id), { event, job } as unknown as JsonValue);
     return (await this.get(job.id))!;
@@ -75,14 +83,50 @@ export class JobsStore {
   enqueue(input: EnqueueInput, command: JobCommand): Promise<VersionedJob> {
     validateEnqueue(input); text(input.id); text(input.queue); canonicalJson(input.payload); input = structuredClone(input);
     if (!Number.isSafeInteger(input.priority ?? 0)) throw new JobsError('invalid-input');
+    for(const value of [input.subject,input.kind]) if(value !== undefined && typeof value !== 'string') throw new JobsError('invalid-input');
     if (input.availableAt !== undefined) time(input.availableAt);
     return this.#command('enqueue', input, command, async () => {
+      return this.#create(input,null);
+    });
+  }
+  async #create(input: EnqueueInput, activeKey: string | null) {
       const retainedGeneration = await this.options.store.get<unknown>(this.#generationKey(input.id));
       const initialGeneration = retainedGeneration === null ? 0 : time(generation(retainedGeneration) + 1);
       const now = time(this.#now());
-      const job: JobRecord = { ...input, schemaVersion: 1, state: 'queued', priority: input.priority ?? 0, availableAt: input.availableAt ?? now, enqueuedAt: now, updatedAt: now, attempt: 0, generation: initialGeneration, ownerToken: null, expiresAt: null, checkpoint: null, cancellation: null, result: null, error: null };
+      const job: JobRecord = { ...input, schemaVersion: 2, activeKey, subject:input.subject ?? null, kind:input.kind ?? null, state: 'queued', priority: input.priority ?? 0, availableAt: input.availableAt ?? now, enqueuedAt: now, updatedAt: now, attempt: 0, generation: initialGeneration, ownerToken: null, expiresAt: null, checkpoint: null, cancellation: null, result: null, error: null };
       return this.#save(job, null, 'enqueue');
+  }
+  start(input: StartInput, command: JobCommand): Promise<StartResult> {
+    input = structuredClone(input); text(input.key); text(input.queue);
+    const {key,...candidate} = input; validateEnqueue({...candidate,id:candidate.id ?? 'pending'});
+    if(input.id !== undefined) text(input.id);
+    for(const value of [input.subject,input.kind]) if(value !== undefined && typeof value !== 'string') throw new JobsError('invalid-input');
+    canonicalJson(input.payload); if(!Number.isSafeInteger(input.priority ?? 0)) throw new JobsError('invalid-input');
+    if(input.availableAt !== undefined) time(input.availableAt);
+    return this.#command('start',input,command,async () => {
+      const pointer = await this.options.store.get<string>(this.#slotKey(input.queue,key));
+      if(pointer !== null) {
+        text(pointer); const existing = await this.get(pointer);
+        if(existing && !terminal(existing.value)) {
+          if(existing.value.queue !== input.queue || existing.value.activeKey !== key) throw new JobsError('conflict');
+          return {started:false,job:existing};
+        }
+      }
+      const id = input.id ?? this.#token(); text(id);
+      return {started:true,job:await this.#create({...candidate,id},key)};
     });
+  }
+  #slotKey(queue: string,key: string) {return `mirk-jobs-active:${canonicalJson([this.collection,queue,key])}`;}
+  async #slotMutation(job: JobRecord): Promise<{conditions: import('@mirk/store/atomic').StoreCondition[];operations:import('@mirk/store/atomic').AtomicStoreOperation[]}> {
+    if(job.activeKey === null) return {conditions:[],operations:[]};
+    const key = this.#slotKey(job.queue,job.activeKey); const target = {kind:'key' as const,key};
+    const slot = await this.options.store.getVersioned<string>(target);
+    if(terminal(job)) return slot?.value === job.id ? {conditions:[{target,expected:'version',version:slot.version}],operations:[{op:'delete',key}]} : {conditions:[],operations:[]};
+    if(slot) {
+      text(slot.value); if(slot.value === job.id) return {conditions:[],operations:[]};
+      const other = await this.get(slot.value); if(other && !terminal(other.value)) throw new JobsError('conflict');
+    }
+    return {conditions:[slot?{target,expected:'version',version:slot.version}:{target,expected:'missing'}],operations:[{op:'set',key,value:job.id}]};
   }
   async #claim(id: string, leaseMs: number): Promise<JobClaim | null> {
     const prior = await this.get(id); const now = time(this.#now());

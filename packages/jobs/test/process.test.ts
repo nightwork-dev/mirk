@@ -21,6 +21,8 @@ it('arbitrates real competing processes and continues the SQLite file in both la
   const db = new NodeSqliteAdapter({path}); let now=100;
   const jobs = new JobsStore({store:db.asyncKv,transactions:{transaction:w=>db.asyncTransaction(w),afterCommit:n=>db.afterCommit(n)},now:()=>now});
   try {
+    const starts=await Promise.all([run('node',path,'start','node-job','node-start'),run('python',path,'start','python-job','python-start')]);
+    expect(starts.filter(s=>s.started)).toHaveLength(1);expect(starts[0].job.value.id).toBe(starts[1].job.value.id);
     await jobs.enqueue({id:'race',queue:'q',payload:null},{key:'e'});
     const claims = await Promise.all([run('node',path,'claim','race','node-claim'),run('python',path,'claim','race','python-claim')]);
     expect(claims.filter(Boolean)).toHaveLength(1);
