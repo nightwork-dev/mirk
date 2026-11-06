@@ -78,7 +78,7 @@ describe("sqlite-vec native ordered float64 scoring", () => {
     const f=fixture();
     try {
       for(const id of ["a","b","c"]) f.put(id,[1]);
-      for(const limit of [2.5,-2.5,.5,-.5,NaN,Infinity,-Infinity]) {
+      for(const limit of [2.5,-2.5,.5,-.5,NaN,Infinity,-Infinity,1e100,-1e100]) {
         expect(f.search(new Float32Array([1]),{topK:limit}).map(hit=>hit.id))
           .toEqual(["a","b","c"].slice(0,limit));
       }
