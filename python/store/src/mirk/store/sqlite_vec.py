@@ -8,6 +8,7 @@ import math
 import sqlite3
 from typing import Any, Protocol, cast
 
+from .filter import dumps_json
 from .vector import VectorSearchOptions, VectorSearchResult, VectorSearchResultList, vector_to_bytes
 
 
@@ -21,7 +22,7 @@ def _match(metadata: dict[str, Any], params: list[Any]) -> str:
         params.append(key)
         if isinstance(value, (dict, list)):
             params.extend(("array" if isinstance(value, list) else "object",
-                           json.dumps(value, ensure_ascii=False, separators=(",", ":"))))
+                           dumps_json(value)))
             conditions.append("EXISTS (SELECT 1 FROM json_each(d.metadata) f "
                               "WHERE f.key=? AND f.type=? AND f.value=?)")
         elif value is None:

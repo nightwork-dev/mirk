@@ -1,4 +1,4 @@
-import { getLoadablePath } from "sqlite-vec";
+import { createRequire } from "node:module";
 import { vectorToBuffer } from "./vector/cosine.js";
 import type { SqliteDb } from "./adapters/sqlite-driver.js";
 import type { SqliteVectorEngine, SqliteVectorSearchRequest } from "./adapters/sqlite-vector-engine.js";
@@ -123,7 +123,8 @@ export function sqliteVecEngine(): SqliteVectorEngine {
     name: "sqlite-vec",
     initialize(db) {
       try {
-        db.loadExtension(getLoadablePath());
+        const extension = createRequire(import.meta.url)("sqlite-vec") as { getLoadablePath(): string };
+        db.loadExtension(extension.getLoadablePath());
         const row = db.prepare("SELECT vec_version() version,sqrt(4.0) root").get() as {version:string;root:number};
         if (row.version !== "v0.1.6" || row.root !== 2) throw new Error("Expected sqlite-vec v0.1.6 and SQLite math functions");
       } catch (cause) {

@@ -77,7 +77,7 @@ describe("sqlite-vec native ordered float64 refinement", () => {
   it("surfaces initialization and execution failures without fallback", () => {
     const f=fixture();
     try {
-      expect(()=>f.engine.initialize({...f.db,loadExtension(){throw new Error("broken load");}} as NodeSqliteDriver)).toThrow(SqliteVecError);
+      expect(()=>f.engine.initialize({...f.db,loadExtension(){throw new Error("broken load");}} as unknown as NodeSqliteDriver)).toThrow(SqliteVecError);
       f.db.exec("DROP TABLE _mirk_vector_values");
       expect(()=>f.search(new Float32Array([1,0]))).toThrow(SqliteVecError);
     } finally {f.db.close();}
