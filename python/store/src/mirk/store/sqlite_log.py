@@ -35,13 +35,14 @@ class SqliteLogFacet:
             self._db.execute("BEGIN IMMEDIATE" if own else "SAVEPOINT mirk_log_write")
             try:
                 result = work()
+                self._db.execute("COMMIT" if own else "RELEASE SAVEPOINT mirk_log_write")
+                return result
             except BaseException:
-                self._db.execute("ROLLBACK" if own else "ROLLBACK TO SAVEPOINT mirk_log_write")
-                if not own:
-                    self._db.execute("RELEASE SAVEPOINT mirk_log_write")
+                if self._db.in_transaction:
+                    self._db.execute("ROLLBACK" if own else "ROLLBACK TO SAVEPOINT mirk_log_write")
+                    if not own:
+                        self._db.execute("RELEASE SAVEPOINT mirk_log_write")
                 raise
-            self._db.execute("COMMIT" if own else "RELEASE SAVEPOINT mirk_log_write")
-            return result
         except sqlite3.OperationalError as error:
             if (error.sqlite_errorcode & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 raise AtomicMutationBackendError(
