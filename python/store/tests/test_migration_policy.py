@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -214,4 +215,45 @@ def test_migration_failure_restores_its_savepoint_inside_a_caller_transaction(
         is None
     )
     connection.execute("COMMIT")
+    connection.close()
+
+
+@pytest.mark.parametrize("malformation", ["duplicate-version", "numeric-version", "log-view"])
+def test_current_format_rejects_malformed_admission_without_writes(
+    tmp_path: Path, malformation: str,
+) -> None:
+    path = tmp_path / "malformed.db"
+    SqliteStore(str(path)).close()
+    connection = sqlite3.connect(path, isolation_level=None)
+    if malformation == "log-view":
+        connection.execute("ALTER TABLE _mirk_log RENAME TO retained_log")
+        connection.execute("CREATE VIEW _mirk_log AS SELECT * FROM retained_log")
+    else:
+        connection.execute("DROP TABLE _mirk_meta")
+        connection.execute("CREATE TABLE _mirk_meta(key TEXT, value)")
+        if malformation == "numeric-version":
+            connection.execute("INSERT INTO _mirk_meta VALUES('schema_version',4)")
+        else:
+            connection.execute("INSERT INTO _mirk_meta VALUES('schema_version','4')")
+            connection.execute("INSERT INTO _mirk_meta VALUES('schema_version','3')")
+    original = list(connection.iterdump())
+    with pytest.raises(SqliteAdapterError) as caught:
+        ensure_registry(connection)
+    assert caught.value.code == "malformed-schema"
+    script = """
+import { SqliteAdapter } from './packages/store/dist/adapters/sqlite.js';
+try {
+    const store = new SqliteAdapter({path: process.argv[1]});
+    store.close();
+    throw new Error('Malformed file was accepted');
+} catch (error) {
+    if (error.code !== 'malformed-schema') throw error;
+}
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", script, str(path)],
+        cwd=Path(__file__).resolve().parents[3], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert list(connection.iterdump()) == original
     connection.close()

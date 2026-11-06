@@ -64,19 +64,24 @@ def _registry_write(connection: sqlite3.Connection) -> Generator[sqlite3.Connect
         connection.execute("RELEASE SAVEPOINT mirk_format_migration" if nested else "COMMIT")
 
 
-def table_exists(connection: sqlite3.Connection, table: str) -> bool:
+def table_exists(
+    connection: sqlite3.Connection, table: str, *, include_views: bool = True
+) -> bool:
+    kind = "type IN ('table', 'view')" if include_views else "type = 'table'"
     row = connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = ?",
+        f"SELECT 1 FROM sqlite_master WHERE {kind} AND name = ?",
         (table,),
     ).fetchone()
     return row is not None
 
 
 def _stored_schema_version(connection: sqlite3.Connection) -> str | None:
-    row = connection.execute(
+    rows = connection.execute(
         f"SELECT value FROM {META_TABLE} WHERE key = 'schema_version'"
-    ).fetchone()
-    return None if row is None else str(row[0])
+    ).fetchall()
+    if len(rows) != 1 or type(rows[0][0]) is not str:
+        raise SqliteAdapterError("malformed-schema", "Malformed Mirk schema version")
+    return rows[0][0]
 
 
 class SqliteMigrationResult(TypedDict):
@@ -128,7 +133,7 @@ def ensure_registry(
             )
 
     def version() -> int | None:
-        if not table_exists(connection, META_TABLE):
+        if not table_exists(connection, META_TABLE, include_views=False):
             return None
         found = _stored_schema_version(connection)
         if found is None or not re.fullmatch(r"[1-9][0-9]*", found):
@@ -153,13 +158,13 @@ def ensure_registry(
             "_mirk_vector_values": ("namespace", "collection", "id", "space", "vec"),
         }
         for table, expected in tables.items():
-            if not table_exists(connection, table):
+            if not table_exists(connection, table, include_views=False):
                 raise SqliteAdapterError("malformed-schema", f"Missing Mirk table {table}")
             columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
             if not set(expected).issubset(columns):
                 raise SqliteAdapterError("malformed-schema", f"Malformed Mirk table {table}")
 
-        if table_exists(connection, "_mirk_atomic_receipts"):
+        if table_exists(connection, "_mirk_atomic_receipts", include_views=False):
             actual = connection.execute("PRAGMA table_info(_mirk_atomic_receipts)").fetchall()
             if not {"idempotency_key", "request_digest", "result_json", "created_at"}.issubset(
                 {row[1] for row in actual}
@@ -246,7 +251,7 @@ def ensure_registry(
                 migrate_vectors(connection, legacy_vector_space)
             except ValueError as error:
                 raise SqliteAdapterError("malformed-schema", str(error)) from error
-            if table_exists(connection, "_mirk_atomic_receipts"):
+            if table_exists(connection, "_mirk_atomic_receipts", include_views=False):
                 columns = {
                     row[1] for row in connection.execute("PRAGMA table_info(_mirk_atomic_receipts)")
                 }
