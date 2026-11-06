@@ -57,6 +57,13 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      - name: Test immutable SQLite formats and pinned Rust reader
+        if: matrix.node != '22.23.4'
+        run: |
+          command -v rustc
+          rustc --version
+          pnpm test:format
+
       - name: Test release verification
         run: pnpm test:release-checks
 

@@ -30,7 +30,7 @@ store merely because it can be initialized as one.
 | Core 2, early | Commit `36f0c9b8210026a990a48ec04800d593b9e1f1ca` introduced the marker **2** and registry together. Receipts had three columns, without `created_at`. |
 | Core 2, later | Snapshot `e746b39269b85e905611377391f94601d20a0e9c` includes log storage, declared expression indexes, and nullable receipt `created_at`. These additions historically retained marker 2. Both receipt shapes must be considered when reading historical files. |
 | Core 3 | Snapshot `ddeeac88663eda7b54e9bfb7c38ccbb3251ab81f` replaces legacy vectors with namespace/space/document/value tables. Log rows still have no persistent stream generation. |
-| Core 4 | Keeps named vectors and adds durable log generations. The eager log layout is defined by `sql-log-format.ts`, introduced in `9480bf2fc3d81cce3a1c9ce348c20201a94e51e4`. Policy snapshot `441f6ff271a01b70d2ce90b039ad885611f5ec7a` commits marker 4 after log and receipt migration. Existing receipt tables acquire missing `created_at` before that marker is committed. |
+| Core 4 | Keeps named vectors and adds durable log generations. The eager log layout is defined by `sql-log-format.ts`, introduced in `5380d6d09a9ce9589a5dfbd769e8d13f963c7b19`. Policy snapshot `3862332b4755eb1df10de1c1b5795f6f741ac487` commits marker 4 after log and receipt migration. Existing receipt tables acquire missing `created_at` before that marker is committed. |
 
 The historical additions under marker 2 are facts about old files, not permission to repeat that
 practice. From this contract onward, adding, removing, or changing a canonical column requires a

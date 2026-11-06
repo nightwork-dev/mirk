@@ -19,7 +19,8 @@
     "conformance:gen": "pnpm --filter @mirk/store conformance:gen",
     "conformance:current": "pnpm --filter @mirk/store conformance:current",
     "audit:dependencies": "pnpm audit --registry=https://registry.npmjs.org",
-    "test:release-checks": "node --test scripts/verify-package-release.test.mjs"
+    "test:release-checks": "node --test scripts/verify-package-release.test.mjs",
+    "test:format": "python3 scripts/test-sqlite-format-goldens.py"
   },
   "pnpm": {
     "overrides": {

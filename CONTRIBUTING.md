@@ -72,6 +72,21 @@ interpreter with installed wheels; the harness verifies that its imports come fr
 For an existing test service, set `MIRK_QDRANT_URL` when running either adapter's tests directly.
 Each test creates and removes its own physical collection.
 
+## SQLite format goldens
+
+Run `pnpm test:format` on Node 24 or 26 to compare the immutable SQLite files with their expected
+contents and hashes. Python and Node read the files without opening a Mirk adapter. The Rust probe
+pins core format 2, reads a little-endian vector, and refuses newer formats. Install Rust and a
+linkable system SQLite library to run that proof. CI checks `rustc` explicitly on both Node lines;
+local runs report a skipped Rust proof when the compiler is unavailable.
+
+The files live in `testdata/sqlite-format`, outside the generated conformance corpus. Do not open
+historical goldens with an automatically migrating adapter or replace them during normal tests.
+The [format specification](docs/format.md) describes their history and provenance. To reproduce
+fixtures explicitly, run `python3 scripts/generate-sqlite-format-goldens.py --out <new-empty-dir>`.
+The generator refuses an occupied destination. Adding a future format preserves the old binaries
+and their hashes; it does not rewrite history to match the current writer.
+
 ## The conformance corpus
 
 `conformance/**/*.json` is generated from `packages/store/scripts/scenarios/` and replayed by both

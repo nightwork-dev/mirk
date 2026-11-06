@@ -17,7 +17,7 @@ PROVENANCE = {
     "v2-early": "36f0c9b8210026a990a48ec04800d593b9e1f1ca",
     "v2": "e746b39269b85e905611377391f94601d20a0e9c",
     "v3": "ddeeac88663eda7b54e9bfb7c38ccbb3251ab81f",
-    "v4": "441f6ff271a01b70d2ce90b039ad885611f5ec7a",
+    "v4": "3862332b4755eb1df10de1c1b5795f6f741ac487",
 }
 STAMP = "2026-11-06 00:00:00"
 UNICODE = {"text": "café 雪 🌱", "lone": "\ud800", "n": 9007199254740991, "fraction": 0.125, "boolean": True, "null": None}
