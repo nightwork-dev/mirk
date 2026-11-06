@@ -5,7 +5,7 @@
 
 import type { JsonCompatible, JsonValue } from "../atomic.js";
 
-/** One committed record and the sequence number it was given. */
+/** One record and its incarnation-bound sequence position. */
 export interface LogCursor {
   generation: number;
   sequence: number;

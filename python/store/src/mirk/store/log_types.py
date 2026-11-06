@@ -35,6 +35,8 @@ class LogTransactionError(RuntimeError):
 
 
 class LogCursor(TypedDict):
+    """A sequence position within one stream incarnation."""
+
     generation: int
     sequence: int
 
@@ -47,8 +49,8 @@ class LogEntry(LogCursor):
 
 
 class LogListOptions(TypedDict, total=False):
-    """``after``: return entries whose sequence is greater (default 0).
-    ``limit``: return at most this many (default: no limit)."""
+    """``after`` resumes an incarnation cursor; omission starts at the first entry.
+    ``limit`` returns at most this many entries; omission has no limit."""
 
     after: LogCursor
     limit: int
