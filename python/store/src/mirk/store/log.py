@@ -1,9 +1,7 @@
-"""Append-only, per-stream ordered log of JSON records: the port and its memory reference.
+"""Generation-aware JSON log streams and their in-memory reference.
 
-Python port of ``@mirk/store/log``. Sequences are per stream, start at 1, and
-increase by exactly 1 for each committed append. An append that does not commit
-leaves no trace, and its sequence goes to the next append. Records are never
-changed or removed through this port.
+Individual entries are immutable. Whole-stream deletion invalidates committed
+resume cursors; an uncommitted cursor remains provisional until commit.
 """
 
 from __future__ import annotations
