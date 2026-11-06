@@ -6,16 +6,20 @@
 import type { JsonCompatible, JsonValue } from "../atomic.js";
 
 /** One committed record and the sequence number it was given. */
-export interface LogEntry<T = JsonValue> {
+export interface LogCursor {
+  generation: number;
+  sequence: number;
+}
+
+export interface LogEntry<T = JsonValue> extends LogCursor {
   /** Position in its stream. The first append to a stream gets 1. */
   sequence: number;
   record: T;
 }
 
 export interface LogListOptions {
-  /** Return entries whose sequence is greater than this. Default 0, which
-   *  starts at the first entry. */
-  after?: number;
+  /** Resume within this stream incarnation. A stale generation is refused. */
+  after?: LogCursor;
   /** Return at most this many entries. Default: no limit. */
   limit?: number;
 }
@@ -42,6 +46,7 @@ export interface LogStore {
   list<T = JsonValue>(stream: string, options?: LogListOptions): LogEntry<T>[];
   /** The highest committed sequence in `stream`, or 0 when it is empty. */
   lastSequence(stream: string): number;
+  lastCursor(stream: string): LogCursor | null;
   deleteStream(stream: string): boolean;
 }
 
@@ -52,5 +57,6 @@ export interface AsyncLogStore {
   get<T = JsonValue>(stream: string, sequence: number): Promise<LogEntry<T> | null>;
   list<T = JsonValue>(stream: string, options?: LogListOptions): Promise<LogEntry<T>[]>;
   lastSequence(stream: string): Promise<number>;
+  lastCursor(stream: string): Promise<LogCursor | null>;
   deleteStream(stream: string): Promise<boolean>;
 }

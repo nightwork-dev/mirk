@@ -3,7 +3,7 @@
 // ZERO native deps. Source adapters (e.g. @mirk/store/sqlite) implement
 // LogStore; they are NOT re-exported here.
 
-export type { LogStore, AsyncLogStore, LogEntry, LogListOptions } from "./log/types.js";
+export type { LogStore, AsyncLogStore, LogEntry, LogCursor, LogListOptions } from "./log/types.js";
 export { InMemoryLogStore } from "./log/memory.js";
 export { toAsyncLog } from "./log/to-async-log.js";
 export { LogInputError } from "./log/validate.js";

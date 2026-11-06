@@ -7,7 +7,7 @@ import { NodeSqliteAdapter } from "./adapters/node-sqlite.js";
 import { SqliteAdapter } from "./adapters/sqlite.js";
 import { AtomicMutationBackendError } from "./atomic.js";
 import { InMemoryLogStore, LogInputError, toAsyncLog } from "./log.js";
-import type { JsonValue, LogStore } from "./log.js";
+import type { JsonValue, LogCursor, LogStore } from "./log.js";
 
 const adapters = [
   ["better-sqlite3", SqliteAdapter],
@@ -85,7 +85,7 @@ describe.each(adapters)("SQLite log facet (%s)", (_name, Adapter) => {
       expect(() => adapter.log.append("s", "boom")).toThrow("injected record failure");
       expect(adapter.log.lastSequence("s")).toBe(1);
       expect(adapter.log.append("s", "b")).toBe(2);
-      expect(adapter.log.get("s", 2)).toEqual({ sequence: 2, record: "b" });
+      expect(adapter.log.get("s", 2)).toEqual({ generation: 1, sequence: 2, record: "b" });
       expectContiguous(adapter.log, "s");
     } finally {
       adapter.close();
@@ -129,8 +129,8 @@ describe.each(adapters)("SQLite log facet (%s)", (_name, Adapter) => {
       await adapter.asyncTransaction(async () => {
         expect(await adapter.asyncLog.append("s", "second")).toBe(2);
       });
-      expect(await adapter.asyncLog.list("s", { after: 1 })).toEqual([
-        { sequence: 2, record: "second" },
+      expect(await adapter.asyncLog.list("s", { after: { generation: 1, sequence: 1 } })).toEqual([
+        { generation: 1, sequence: 2, record: "second" },
       ]);
     } finally {
       adapter.close();
@@ -190,10 +190,10 @@ describe.each(adapters)("SQLite log facet (%s)", (_name, Adapter) => {
     try {
       const runBatch = () =>
         db.transaction(() => {
-          const cursor = db.kv.get<number>("cursor:mailer") ?? 0;
+          const cursor = db.kv.get<LogCursor>("cursor:mailer") ?? undefined;
           const batch = db.log.list("deliveries", { after: cursor, limit: 100 });
           for (const entry of batch) db.log.append("sent", { delivery: entry.sequence });
-          db.kv.set("cursor:mailer", batch.at(-1)?.sequence ?? cursor);
+          db.kv.set("cursor:mailer", batch.at(-1) ?? cursor);
           return batch.length;
         }, "immediate");
       other.log.append("deliveries", { id: "d1" });
@@ -289,7 +289,7 @@ describe("InMemoryLogStore.transaction", () => {
   it("keeps appends when the work returns", async () => {
     const log = new InMemoryLogStore();
     expect(log.transaction(() => log.append("s", "kept"))).toBe(1);
-    expect(await toAsyncLog(log).list("s")).toEqual([{ sequence: 1, record: "kept" }]);
+    expect(await toAsyncLog(log).list("s")).toEqual([{ generation: 1, sequence: 1, record: "kept" }]);
   });
 });
 
@@ -308,7 +308,7 @@ describe.each(adapters)("whole-stream deletion (%s)", (_name, Adapter) => {
         throw new Error("rollback");
       }, "immediate")).toThrow("rollback");
       expect(first.log.list("s")).toEqual([
-        { sequence: 1, record: "one" }, { sequence: 2, record: "two" },
+        { generation: 1, sequence: 1, record: "one" }, { generation: 1, sequence: 2, record: "two" },
       ]);
       first.transaction(() => {
         first.log.deleteStream("s");
