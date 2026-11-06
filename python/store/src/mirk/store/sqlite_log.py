@@ -112,10 +112,23 @@ class SqliteLogFacet:
         check_sqlite_caller(self._db)
         assert_stream(stream)
         try:
-            return (
-                self._db.execute(f"DELETE FROM {LOG_TABLE} WHERE stream = ?", (stream,)).rowcount
-                > 0
-            )
+            own_transaction = not self._db.in_transaction
+            if own_transaction:
+                self._db.execute("BEGIN IMMEDIATE")
+            try:
+                removed = (
+                    self._db.execute(
+                        f"DELETE FROM {LOG_TABLE} WHERE stream = ?", (stream,)
+                    ).rowcount
+                    > 0
+                )
+            except BaseException:
+                if own_transaction:
+                    self._db.execute("ROLLBACK")
+                raise
+            if own_transaction:
+                self._db.execute("COMMIT")
+            return removed
         except sqlite3.OperationalError as error:
             if (error.sqlite_errorcode & 0xFF) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
                 raise AtomicMutationBackendError(
