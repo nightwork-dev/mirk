@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -32,7 +32,12 @@ it('arbitrates real competing processes and continues the SQLite file in both la
     await jobs.complete(reverse,{artifactId:'node-output'},{key:'reverse-complete'});
     expect((await run('python',path,'get','reverse','unused')).result).toEqual({artifactId:'node-output'});
     await jobs.enqueue({id:'expired',queue:'q',payload:null},{key:'expired-e'});
-    const stale = (await run('node',path,'claim','expired','expired-c'))!;
+    const worker = spawn(process.execPath,[nodeWorker,path,'hold','expired','expired-c'],{stdio:['ignore','pipe','pipe']});
+    const stale = await new Promise<{jobId:string;ownerToken:string;generation:number}>((done,fail) => {
+      worker.once('error',fail); worker.stdout.once('data',data => done(JSON.parse(String(data))));
+    });
+    worker.kill('SIGKILL');
+    await new Promise<void>(done => worker.once('exit',() => done()));
     now=150; const blocked = await jobs.recoverExpired('expired',stale.generation,{key:'recover'});
     expect(blocked.value.state).toBe('blocked');
     await expect(jobs.complete(stale,'stale',{key:'late'})).rejects.toMatchObject({code:'stale-claim'});

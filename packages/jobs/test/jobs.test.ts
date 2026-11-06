@@ -70,4 +70,17 @@ describe.each(['memory','sqlite'])('durable jobs %s', backend => {
     await expect(jobs.complete(claim,'stale',{key:'stale'})).rejects.toMatchObject({code:'stale-claim'});
   });
 
+  it('serializes cancellation against competing completion at writer admission', async () => {
+    const {jobs} = setup(); await jobs.enqueue(input,{key:'e'});
+    const claim = (await jobs.claim('job',{leaseMs:10,key:'c'}))!;
+    const cancelled = await Promise.allSettled([jobs.requestCancel('job',{key:'cancel'}),jobs.complete(claim,'result',{key:'complete'})]);
+    expect(cancelled[0]!.status).toBe('fulfilled'); expect(cancelled[1]!.status).toBe('rejected');
+    expect((await jobs.get('job'))!.value.cancellation).not.toBeNull();
+    const acknowledged = await jobs.acknowledgeCancel(claim,{key:'ack'});
+    await jobs.requeueTerminal('job',acknowledged.version,{}, {key:'requeue'});
+    const next = (await jobs.claim('job',{leaseMs:10,key:'next'}))!;
+    const completed = await Promise.all([jobs.complete(next,'winner',{key:'winner'}),jobs.requestCancel('job',{key:'late-cancel'})]);
+    expect(completed.map(j => j.value.state)).toEqual(['succeeded','succeeded']);
+  });
+
 });
