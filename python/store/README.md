@@ -264,3 +264,51 @@ printed.
 The shared corpus covers the memory and SQLite store backends. Cross-language
 tests also exchange SQLite files with TypeScript. Contributor setup and test
 commands are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+
+## Async coordination
+
+`mirk.store.coordination` defines the portable coordinator, guard, manual lease, abort signal,
+clock, and errors. `createMemoryCoordinator(state=createMemoryCoordinationState())` from
+`mirk.store.coordination_memory` shares cooperative ownership among handles given the same state.
+`SqliteCoordinator(path="leases.db")` from `mirk.store.coordination_sqlite` uses durable leases.
+Both use the same lease state machine. The SQLite source has `close()`.
+
+`await coordinator.tryAcquire(key, leaseMs=5000, signal=signal)` makes one atomic attempt and
+returns a dictionary: `{"status": "acquired", "lease": lease}`, `{"status": "held", "expiresAt": ms}`,
+or `{"status": "unavailable", "retryable": True}`. SQLite lock contention is unavailable;
+other failures are errors. No sleep, local queue, or native lock wait occurs in this operation.
+A lease exposes `key`, `ownerToken`, `fencingGeneration`, `expiresAt`, `signal`, `assertOwned()`,
+`await renew(leaseMs)`, and `await release()`. Manual leases do not renew automatically.
+Renewal and release succeed only for the current unexpired token and generation; repeat release
+returns false. Expiry cannot be revived. Generations increase across release and reacquisition.
+
+`await coordinator.runExclusive(key, work, waitMs=30000, leaseMs=5000, renewEveryMs=...)` manages
+renewal and release around an async callback. Ownership loss aborts the guard signal. A positive
+wait checks its deadline before another acquisition attempt; zero wait makes one immediate
+attempt. Cancellation wakes waits without advancing time and prevents callback admission.
+The supplied `CoordinationAbortSignal` supports `abort(reason)`. Async task cancellation also
+cleans up managed renewal and release.
+
+Inject `clock` with `now() -> int` and `async sleep(ms, signal=None)` to control every lease,
+retry, deadline, and renewal. Sleep must honor cancellation and remove its pending work on exit.
+The default uses epoch milliseconds. All handles over one durable state need comparable epoch
+clocks. Frozen clocks leave timed waits pending; missed renewals cannot extend expired leases.
+`busyTimeoutMs` bounds constructor schema initialization separately; lease operations never wait
+for a native SQLite lock. Leases coordinate cooperative work and do not roll back application data.
+Application writes require a generation or record-version condition to enforce fencing.
+
+Renewal and release retry transient native lock contention through the injected clock, stopping
+at the current lease expiry. These retries never use a native busy wait. A busy operation does
+not by itself establish ownership loss.
+
+The standalone coordination format is version 1, independently of `_mirk_meta.schema_version`.
+`_mirk_coordination_meta(schema_version INTEGER NOT NULL)` contains exactly one row with value 1.
+Unsupported or malformed metadata fails before mutation. Recognized legacy tables without metadata
+are adopted atomically under `BEGIN IMMEDIATE`; unrecognized or incomplete layouts are rejected.
+`_mirk_coordination_generations(namespace TEXT NOT NULL, key TEXT NOT NULL,
+last_generation INTEGER NOT NULL)` retains history after release, with primary key `(namespace,key)`.
+`_mirk_coordination_leases` has primary key `(namespace,key)`, both non-null TEXT, followed by
+`owner_token TEXT NOT NULL`, `fencing_generation INTEGER NOT NULL`, `acquired_at_ms INTEGER NOT NULL`,
+`expires_at_ms INTEGER NOT NULL`, and `updated_at_ms INTEGER NOT NULL`. Times are epoch milliseconds;
+expiry is inclusive at `expires_at_ms <= now`. The default namespace is `default`.
+These are the same tables used by the TypeScript source; they can coexist with store tables.

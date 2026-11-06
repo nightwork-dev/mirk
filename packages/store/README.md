@@ -105,7 +105,9 @@ Each capability is its own import, so you load only what you use.
 | `@mirk/store/graph`        | graph helpers over collections (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters         | none                        |
 | `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                        |
 | `@mirk/store/encrypted`    | WebCrypto AES-256-GCM encrypted record envelopes for caller-owned vault keys                                                                     | none                        |
-| `@mirk/store/coordination` | a SQLite-backed async lock for cooperating writers, with leases, renewal, fencing generations, and ownership-loss checks                         | `better-sqlite3` (peer)     |
+| `@mirk/store/coordination` | portable async lease contracts, guard errors, and clock types | none |
+| `@mirk/store/coordination/memory` | explicitly shared in-memory lease state | none |
+| `@mirk/store/coordination/sqlite` | durable SQLite leases for cooperating processes | `better-sqlite3` (peer) |
 | `@mirk/store/sqlite`       | `SqliteAdapter`, the SQLite source adapter on better-sqlite3: one connection with `.kv`, `.vector`, `.search`, and `.log`                        | `better-sqlite3` (peer)     |
 | `@mirk/store/node-sqlite`  | `NodeSqliteAdapter`, the same facets and file schema on Node's built-in `node:sqlite` `DatabaseSync`                                             | Node.js 24+ (`node:sqlite`) |
 
@@ -796,7 +798,7 @@ Markdown files, calling git, or talking to an object store. `@mirk/store/coordin
 cooperating writers one critical-section primitive for that work:
 
 ```ts
-import { createSqliteCoordinator } from "@mirk/store/coordination";
+import { createSqliteCoordinator } from "@mirk/store/coordination/sqlite";
 
 const coordinator = createSqliteCoordinator({
   path: "var/coordination.sqlite",
@@ -814,23 +816,61 @@ await coordinator.runExclusive(
 );
 ```
 
-Each successful owner receives a unique `ownerToken`, a monotonic `fencingGeneration`, an
-`AbortSignal`, and `assertOwned()`. The coordinator renews the lease while the callback runs. If
-the process stalls past expiry and another owner takes over, the stale guard is aborted and
-`assertOwned()` throws `CoordinationOwnershipLostError`. Release and renewal only affect the
-current owner token and generation, so a stale owner cannot delete or renew a successor's lease.
+Each owner receives a unique `ownerToken`, a monotonic `fencingGeneration`, a guard `signal`,
+and `assertOwned()`. `runExclusive` renews while its callback runs and releases in `finally`.
+Ownership loss aborts the signal. Renewal cannot revive an expired lease, and stale renewal or
+release cannot affect a successor. Checking ownership before an unconditional application write
+does not fence that write: the application must enforce the generation or record version itself.
 
-The SQLite database stores lease metadata only. Acquisition, renewal, stale recovery, and release
-use short synchronous SQLite statements; no database transaction is held while the callback awaits.
-Use it to serialize cooperating writers and make ownership loss visible. It is not a transaction
-over Markdown files, arbitrary filesystem writes, object stores, or git commits, and it cannot roll
-back partial external side effects after a crash. Call `assertOwned()` around each external
-mutation phase, and keep your own revision or idempotency checks where those semantics matter.
+For manual ownership, `await coordinator.tryAcquire(key, { leaseMs, signal })` makes one atomic
+attempt without queuing, polling, or sleeping. Results are `{ status: "acquired", lease }`,
+`{ status: "held", expiresAt }`, or `{ status: "unavailable", retryable: true }`. The SQLite
+source uses a non-waiting native lock attempt; a busy database is unavailable, never evidence of
+a held lease. Other backend errors propagate. A manual lease adds `expiresAt`,
+`renew(leaseMs): Promise<boolean>`, and `release(): Promise<boolean>` to the guard. It never starts
+automatic renewal. Release is idempotent and succeeds only for the current unexpired lease.
 
-Defaults are `waitMs` 30 s and `leaseMs` 5 s. A wait that runs out throws
-`CoordinationTimeoutError`; an aborted wait throws `CoordinationAbortedError`. Release succeeds
-only while the lease is still unexpired. The coordination file is runtime state: keep it outside
-authored or versioned content, at a path the host chooses.
+`createMemoryCoordinator({ state: createMemoryCoordinationState() })` from
+`@mirk/store/coordination/memory` implements the same contract. Pass the same state to independent
+handles to make them contend. Distinct states are isolated. Generation history survives release
+for the lifetime of the shared state. Memory leases do not provide transaction rollback.
+
+Both sources accept `clock: { now(), sleep(ms, signal?) }`. The default uses epoch milliseconds
+and real timers. An injected clock controls acquisition deadlines, retry sleeps, and renewal.
+Its sleep must wake on cancellation and remove pending timers/listeners on completion. Frozen
+time leaves waits pending. A wake reevaluates the clock; missed renewal cannot extend an expired
+lease retroactively. Contenders on the same handle can take over an expired callback. There is
+no local queue hiding expired ownership. All handles sharing a file need comparable epoch clocks.
+
+Defaults are `waitMs` 30 s and `leaseMs` 5 s. Positive waits time out before another attempt at
+or after their deadline; `waitMs: 0` makes exactly one immediate attempt. Timeout throws
+`CoordinationTimeoutError`; cancelled admission throws `CoordinationAbortedError` without
+entering caller work. `busyTimeoutMs` controls constructor schema initialization only, separately
+from lease time. Call `close()` on SQLite handles when finished.
+
+SQLite transactions cover lease metadata only; they never remain open while callback work awaits.
+Coordination cannot roll back files, object-store writes, or other external effects. A live lease
+shows cooperative ownership, not operating-system process liveness.
+
+Renewal and release retry transient native lock contention through the injected clock, stopping
+at the current lease expiry. These retries never use a native busy wait. A busy operation does
+not by itself establish ownership loss.
+
+### Coordination file format
+
+The source can open a standalone file or coexist with store tables. Its independent format is
+version 1: `_mirk_coordination_meta` has exactly one `schema_version INTEGER NOT NULL` row.
+Unsupported or malformed versions fail before schema or lease mutations. Recognized unversioned
+legacy lease tables are adopted atomically under `BEGIN IMMEDIATE`, preserving leases and generation
+history. An unrecognized or incomplete layout is rejected. This version is separate from
+`_mirk_meta.schema_version`.
+
+`_mirk_coordination_generations(namespace TEXT NOT NULL, key TEXT NOT NULL,
+last_generation INTEGER NOT NULL)` has primary key `(namespace, key)` and retains history after
+release. `_mirk_coordination_leases` has the same primary key, followed by `owner_token TEXT NOT NULL`,
+`fencing_generation INTEGER NOT NULL`, `acquired_at_ms INTEGER NOT NULL`, `expires_at_ms INTEGER NOT NULL`,
+and `updated_at_ms INTEGER NOT NULL`. Timestamps are epoch milliseconds. A lease is expired when
+`expires_at_ms <= now`. The default namespace is `default`. TypeScript and Python use these same tables.
 
 ## Sync by design
 
