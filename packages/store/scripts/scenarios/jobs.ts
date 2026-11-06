@@ -1,0 +1,73 @@
+import { defineScenario } from '../../src/conformance/define.js';
+
+export const scenarios = [
+  defineScenario({
+    id: 'jobs/stable-claim-and-terminal-cleanup',
+    title: 'renewal and checkpoint preserve the worker claim through completion',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueue',args:['job','renders',{asset:'17'}],expect:{value:true}},
+      {op:'claim',args:['job',10],expect:{value:true}},
+      {op:'renew',args:['job',20],expect:{value:true}},
+      {op:'checkpoint',args:['job',{providerId:'remote'}],expect:{value:true}},
+      {op:'complete',args:['job',{artifact:'out'}],expect:{value:true}},
+      {op:'removeTerminal',args:['job'],expect:{value:true}},
+      {op:'get',args:['job'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'jobs/cancel-expiry-and-blocked-reconciliation',
+    title: 'expired attempts retain provider uncertainty and cancellation while fencing completion',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueue',args:['job','renders',null]},
+      {op:'claim',args:['job',10]},
+      {op:'checkpoint',args:['job',{providerId:'remote'}]},
+      {op:'requestCancel',args:['job'],expect:{value:true}},
+      {op:'complete',args:['job','late'],expect:{throws:true}},
+      {op:'setNow',args:[110]},
+      {op:'complete',args:['job','late'],expect:{throws:true}},
+      {op:'recoverExpired',args:['job'],expect:{value:true}},
+      {op:'resolveBlocked',args:['job',{state:'queued',availableAt:110}],expect:{throws:true}},
+      {op:'resolveBlocked',args:['job',{state:'cancelled'}],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'jobs/order-retry-block-and-cancel',
+    title: 'queue ordering precedes selection and retries respect availability',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueue',args:['z','q',null,0]},
+      {op:'enqueue',args:['b','q',null,3]},
+      {op:'enqueue',args:['a','q',null,3]},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'retry',args:['a',200],expect:{value:true}},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'block',args:['b',{providerId:'b'}],expect:{value:true}},
+      {op:'resolveBlocked',args:['b',{state:'queued',availableAt:100}],expect:{value:true}},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'requestCancel',args:['b']},
+      {op:'acknowledgeCancel',args:['b'],expect:{value:true}},
+      {op:'requestCancel',args:['z'],expect:{value:true}},
+      {op:'setNow',args:[200]},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'fail',args:['a',{message:'failure'}],expect:{value:true}},
+      {op:'list',args:['q'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'jobs/admin-priority-and-terminal-requeue',
+    title: 'administrative queue edits and explicit terminal retries preserve fencing',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueue',args:['job','q',null]},
+      {op:'updateQueued',args:['job',{priority:9}],expect:{value:true}},
+      {op:'claim',args:['job',10]},
+      {op:'fail',args:['job','bad'],expect:{value:true}},
+      {op:'requeueTerminal',args:['job',{}],expect:{value:true}},
+      {op:'claim',args:['job',10],expect:{value:true}},
+      {op:'complete',args:['job','ok'],expect:{value:true}},
+    ],
+  }),
+
+];

@@ -12,6 +12,7 @@ members = [
     "mirk-artifact",
     "mirk-artifact-opendal",
     "mirk-fixtures",
+    "mirk-jobs",
     "mirk-store",
     "mirk-store-markdown",
     "mirk-vector-qdrant",
@@ -293,6 +294,33 @@ dev = [
 name = "mirk-fixtures"
 version = "0.14.0"
 source = { editable = "fixtures" }
+dependencies = [
+    { name = "mirk-store" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "jsonschema" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mirk-store", editable = "store" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = ">=4" },
+    { name = "pyright", specifier = ">=1.1" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "mirk-jobs"
+version = "0.14.0"
+source = { editable = "jobs" }
 dependencies = [
     { name = "mirk-store" },
 ]
