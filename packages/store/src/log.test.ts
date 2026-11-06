@@ -292,3 +292,35 @@ describe("InMemoryLogStore.transaction", () => {
     expect(await toAsyncLog(log).list("s")).toEqual([{ sequence: 1, record: "kept" }]);
   });
 });
+
+describe.each(adapters)("whole-stream deletion (%s)", (_name, Adapter) => {
+  it("rolls back deletion and replacement, then orders a competing append after deletion", () => {
+    const path = tempFile();
+    const first = new Adapter({ path, busyTimeoutMs: 1 });
+    const second = new Adapter({ path, busyTimeoutMs: 1 });
+    try {
+      expect(first.log.deleteStream("absent")).toBe(false);
+      first.log.append("s", "one");
+      first.log.append("s", "two");
+      expect(() => first.transaction(() => {
+        expect(first.log.deleteStream("s")).toBe(true);
+        expect(first.log.append("s", "replacement")).toBe(1);
+        throw new Error("rollback");
+      }, "immediate")).toThrow("rollback");
+      expect(first.log.list("s")).toEqual([
+        { sequence: 1, record: "one" }, { sequence: 2, record: "two" },
+      ]);
+      first.transaction(() => {
+        first.log.deleteStream("s");
+        expect(() => second.log.append("s", "blocked")).toThrow(AtomicMutationBackendError);
+      }, "immediate");
+      expect(second.log.lastSequence("s")).toBe(0);
+      expect(second.log.get("s", 1)).toBeNull();
+      expect(second.log.list("s")).toEqual([]);
+      expect(second.log.append("s", "successor")).toBe(1);
+    } finally {
+      second.close();
+      first.close();
+    }
+  });
+});

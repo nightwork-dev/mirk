@@ -97,7 +97,7 @@ log.lastSequence("deliveries")  # 1
 ```
 
 `InMemoryLogStore` is the in-memory reference; its `transaction()` context
-manager undoes the appends made inside a block that raises. The block belongs
+manager restores appends and whole-stream deletions inside a block that raises. The block belongs
 to the asyncio task (or, outside an event loop, the thread) that opened it:
 while it is open, any call from another task or thread raises
 `LogTransactionError`, so an `await` inside the block cannot let another task's
@@ -113,6 +113,24 @@ integral float such as `2.0`, as TypeScript does, and return `int`. The
 facet reads and writes the same `_mirk_log` table as the TypeScript adapter, so
 either language can continue a log the other wrote. The guarantees and limits
 are in the [`@mirk/store` README](../../packages/store/README.md#append-only-log).
+
+`deleteStream(stream)` atomically deletes all entries and returns whether the stream existed.
+After deletion, `get` returns `None`, `list` returns `[]`, and `lastSequence` returns 0. Recreating
+it starts at sequence 1. Deletion rolls back with the caller's transaction, including deletion
+followed by append. Applications explicitly coordinate record and history deletion; no inferred
+stream-name cascade exists. Use a new stream incarnation in the name when reusing a record ID.
+
+`create_memory_transactions(kv=kv, log=log)` from `mirk.store.transaction` binds the supplied
+`InMemoryStore` and `InMemoryLogStore`. `SqliteTransactions(store)` provides the same contract over
+an existing SQLite connection. Use `with transactions.transaction():` or
+`async with transactions.transaction():`; call `transactions.after_commit(callback)` inside the
+block to register a notification. Nested blocks roll back to savepoints. An exception, including
+cancellation, restores all participants and discards that scope's notifications. Memory rollback
+restores values, insertion order, versions and receipts; version allocation continues forward.
+Callbacks run in registration order after outer commit and unlock; their failures cannot undo
+committed data. Foreign task or thread calls fail while a block owns the stores. Async transaction
+admission waits for the prior owner. A store belongs to one domain. Keep blocks to short storage
+work; run provider and network calls outside them.
 
 ## Threads and transactions
 

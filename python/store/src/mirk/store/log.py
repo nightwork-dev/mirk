@@ -74,6 +74,7 @@ class LogStore(Protocol):
     def get(self, stream: str, sequence: int) -> LogEntry | None: ...
     def list(self, stream: str, options: LogListOptions | None = None) -> list[LogEntry]: ...
     def lastSequence(self, stream: str) -> int: ...
+    def deleteStream(self, stream: str) -> bool: ...
 
 
 def _safe_integer(value: object) -> int | None:
@@ -139,8 +140,11 @@ class InMemoryLogStore:
         self._streams: dict[str, list[str]] = {}
         self._owner: tuple[int, object] | None = None
         self._depth = 0
+        self._transaction_domain: Any = None
 
     def _check_caller(self) -> None:
+        if self._transaction_domain is not None:
+            self._transaction_domain.check()
         if self._owner is not None and self._owner != _caller():
             raise LogTransactionError(
                 "InMemoryLogStore is inside a transaction opened by another task or thread"
@@ -179,6 +183,11 @@ class InMemoryLogStore:
         assert_stream(stream)
         return len(self._streams.get(stream, []))
 
+    def deleteStream(self, stream: str) -> bool:
+        self._check_caller()
+        assert_stream(stream)
+        return self._streams.pop(stream, None) is not None
+
     @contextmanager
     def transaction(self) -> Generator[None]:
         """Undo every append made inside the block if it raises, the in-memory
@@ -191,17 +200,13 @@ class InMemoryLogStore:
         let another task's append be rolled back with it. Blocks nest within
         their own task."""
         self._check_caller()
-        lengths = {stream: len(entries) for stream, entries in self._streams.items()}
+        checkpoint = {stream: entries.copy() for stream, entries in self._streams.items()}
         self._owner = _caller()
         self._depth += 1
         try:
             yield
         except BaseException:
-            for stream in list(self._streams):
-                if stream in lengths:
-                    del self._streams[stream][lengths[stream] :]
-                else:
-                    del self._streams[stream]
+            self._streams = checkpoint
             raise
         finally:
             self._depth -= 1
@@ -231,9 +236,13 @@ class _ConformanceLog:
         self,
         log: LogStore,
         rolled_back: Callable[[Callable[[], int]], int],
+        kv: Any = None,
+        transactions: Any = None,
     ) -> None:
         self._log = log
         self._rolled_back = rolled_back
+        self._kv: Any = kv
+        self._transactions: Any = transactions
 
     def append(self, stream: str, record: Any) -> int:
         return self._log.append(stream, record)
@@ -246,6 +255,49 @@ class _ConformanceLog:
 
     def lastSequence(self, stream: str) -> int:
         return self._log.lastSequence(stream)
+
+    def deleteStream(self, stream: str) -> bool:
+        return self._log.deleteStream(stream)
+
+    def deleteRolledBack(self, stream: str, *record: Any) -> bool:
+        removed = False
+
+        def delete() -> int:
+            nonlocal removed
+            removed = self._log.deleteStream(stream)
+            if record:
+                self._log.append(stream, record[0])
+            return 0
+
+        self._rolled_back(delete)
+        return removed
+
+    def changeRecordHistory(
+        self,
+        collection: str,
+        id: str,
+        stream: str,
+        value: Any,
+        remove: bool = False,
+        failAfter: int = 0,
+    ) -> dict[str, Any]:
+        try:
+            with self._transactions.transaction():
+                if remove:
+                    self._kv.remove(collection, id)
+                else:
+                    self._kv.put(collection, {"id": id, "value": value})
+                if failAfter == 1:
+                    raise _RollBackError
+                if remove:
+                    self._log.deleteStream(stream)
+                else:
+                    self._log.append(stream, value)
+                if failAfter == 2:
+                    raise _RollBackError
+        except _RollBackError:
+            pass
+        return {"record": self._kv.getById(collection, id), "history": self._log.list(stream)}
 
     def appendRolledBack(self, stream: str, record: Any) -> int:
         return self._rolled_back(lambda: self._log.append(stream, record))
@@ -267,7 +319,11 @@ def conformance_target(backend: str, connection: object) -> object:
             finally:
                 db.execute("ROLLBACK")
 
-        return _ConformanceLog(facet, sqlite_rolled_back)
+        from .transaction import SqliteTransactions
+
+        return _ConformanceLog(
+            facet, sqlite_rolled_back, connection, SqliteTransactions(connection)
+        )
 
     memory = InMemoryLogStore()
 
@@ -281,4 +337,10 @@ def conformance_target(backend: str, connection: object) -> object:
             pass
         return sequence
 
-    return _ConformanceLog(memory, memory_rolled_back)
+    from .memory import InMemoryStore
+    from .transaction import create_memory_transactions
+
+    kv = InMemoryStore(version_identity="conformance")
+    return _ConformanceLog(
+        memory, memory_rolled_back, kv, create_memory_transactions(kv=kv, log=memory)
+    )

@@ -653,14 +653,22 @@ class SqliteStore:
 
     @contextmanager
     def _write(self) -> Generator[sqlite3.Connection]:
-        self._db.execute("BEGIN IMMEDIATE")
+        nested = self._db.in_transaction
+        if nested:
+            self._db.execute("SAVEPOINT mirk_write")
+        else:
+            self._db.execute("BEGIN IMMEDIATE")
         try:
             yield self._db
         except BaseException:
-            self._db.execute("ROLLBACK")
+            if nested:
+                self._db.execute("ROLLBACK TO SAVEPOINT mirk_write")
+                self._db.execute("RELEASE SAVEPOINT mirk_write")
+            else:
+                self._db.execute("ROLLBACK")
             raise
         else:
-            self._db.execute("COMMIT")
+            self._db.execute("RELEASE SAVEPOINT mirk_write" if nested else "COMMIT")
 
     @contextmanager
     def _write_scope(self) -> Generator[sqlite3.Connection]:
@@ -722,12 +730,18 @@ class SqliteStore:
 
     # ── Key-value ────────────────────────────────────────────────────────
     def get(self, key: str) -> Any:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         row = self._db.execute("SELECT value FROM _kv WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
         return json.loads(row[0])
 
     def set(self, key: str, value: Any) -> None:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         encoded = dumps_json(value)
         with self._write():
             self._db.execute(
@@ -739,9 +753,15 @@ class SqliteStore:
             self._write_version("key", "", key)
 
     def has(self, key: str) -> bool:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         return self._db.execute("SELECT 1 FROM _kv WHERE key = ?", (key,)).fetchone() is not None
 
     def delete(self, key: str) -> bool:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         with self._write():
             cursor = self._db.execute("DELETE FROM _kv WHERE key = ?", (key,))
             deleted = cursor.rowcount > 0
@@ -750,6 +770,9 @@ class SqliteStore:
         return deleted
 
     def keys(self, prefix: str | None = None) -> list[str]:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         if prefix:
             escaped = _LIKE_SPECIALS.sub(r"\\\1", prefix)
             rows = self._db.execute(
@@ -762,6 +785,9 @@ class SqliteStore:
 
     # ── Collections ──────────────────────────────────────────────────────
     def list(self, collection: str, filter: StoreFilter | None = None) -> list[Any]:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         table = self._ensure_table(collection)
         where_clause, where_params = build_where_clause(filter)
         order_clause, order_params = build_order_by(filter)
@@ -776,6 +802,9 @@ class SqliteStore:
         values: list[Any],
         filter: StoreFilter | None = None,
     ) -> list[Any]:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         if len(values) == 0:
             return []
         table = self._ensure_table(collection)
@@ -790,12 +819,18 @@ class SqliteStore:
         return [json.loads(row[0]) for row in rows]
 
     def ensureIndex(self, collection: str, field: str) -> None:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         """Declare an expression index on one field, as TypeScript does. Idempotent."""
         table = self._ensure_table(collection)
         with self._write():
             self._db.execute(build_ensure_index_sql(table, field))
 
     def getById(self, collection: str, id: str) -> Any:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         table = self._ensure_table(collection)
         row = self._db.execute(f"SELECT data FROM {table} WHERE id = ?", (id,)).fetchone()
         if row is None:
@@ -803,6 +838,9 @@ class SqliteStore:
         return json.loads(row[0])
 
     def put(self, collection: str, item: JsonObject) -> JsonObject:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         table = self._ensure_table(collection)
         item_id = item.get("id")
         if not isinstance(item_id, str):
@@ -819,6 +857,9 @@ class SqliteStore:
         return item
 
     def remove(self, collection: str, id: str) -> bool:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         table = self._ensure_table(collection)
         with self._write():
             cursor = self._db.execute(f"DELETE FROM {table} WHERE id = ?", (id,))
@@ -828,6 +869,9 @@ class SqliteStore:
         return removed
 
     def count(self, collection: str, filter: StoreFilter | None = None) -> int:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         table = self._ensure_table(collection)
         where = filter.get("where") if filter else None
         narrowed: StoreFilter = {"where": where} if where else {}
@@ -886,10 +930,16 @@ class SqliteStore:
         return {"value": json.loads(encoded), "version": str(version)}
 
     def getVersioned(self, target: dict[str, Any]) -> dict[str, Any] | None:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         """The value at a target and the token identifying this exact revision."""
         return self._read_versioned_target(target)
 
     def mutateAtomically(self, request: dict[str, Any]) -> dict[str, Any]:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         """Apply conditions and operations inside one BEGIN IMMEDIATE transaction."""
         validated = validate_atomic_request(request, self._atomic_limits)
         try:
@@ -993,6 +1043,9 @@ class SqliteStore:
         return self._receipt_retention_ms
 
     def pruneExpiredReceipts(self) -> int:
+        from .transaction import check_sqlite_caller
+
+        check_sqlite_caller(self._db)
         """Delete every expired receipt, one short transaction per batch."""
         if self._receipt_retention_ms is None:
             return 0

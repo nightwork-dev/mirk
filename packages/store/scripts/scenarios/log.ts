@@ -15,6 +15,48 @@ const FIVE = ["a", "b", "c", "d", "e"].map((step) => ({
 
 export const scenarios = [
   defineScenario({
+    id: "log/record-and-history-transaction",
+    title: "application record and explicit history changes commit or roll back together",
+    ports: ["kv", "log"],
+    steps: [
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", "queued"], expect: { value: true } },
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", "record failure", false, 1], expect: { value: true } },
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", "history failure", false, 2], expect: { value: true } },
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", null, true, 2], expect: { value: true } },
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", null, true], expect: { value: true } },
+      { op: "changeRecordHistory", args: ["jobs", "a", "job/a", "new incarnation"], expect: { value: true } },
+    ],
+  }),
+  defineScenario({
+    id: "log/delete-stream-lifecycle",
+    title: "deleting a stream removes its history and recreation begins at one",
+    ports: ["log"],
+    steps: [
+      { op: "deleteStream", args: ["s"], expect: { value: true } },
+      ...FIVE,
+      { op: "deleteStream", args: ["s"], expect: { value: true } },
+      { op: "get", args: ["s", 1], expect: { value: true } },
+      { op: "list", args: ["s"], expect: { value: true } },
+      { op: "lastSequence", args: ["s"], expect: { value: true } },
+      { op: "append", args: ["s", "new incarnation"], expect: { value: true } },
+      { op: "deleteStream", args: [""], expect: { throws: true } },
+    ],
+  }),
+  defineScenario({
+    id: "log/delete-stream-rollback",
+    title: "rollback restores deleted streams even after a replacement append",
+    ports: ["log"],
+    steps: [
+      ...FIVE,
+      { op: "deleteRolledBack", args: ["s"], expect: { value: true } },
+      { op: "list", args: ["s"], expect: { value: true } },
+      { op: "deleteRolledBack", args: ["s", "replacement"], expect: { value: true } },
+      { op: "list", args: ["s"], expect: { value: true } },
+      { op: "lastSequence", args: ["s"], expect: { value: true } },
+      { op: "append", args: ["s", "sixth"], expect: { value: true } },
+    ],
+  }),
+  defineScenario({
     id: "log/sequence-starts-at-one-and-increases",
     title: "the first append to a stream gets 1 and each later append gets the next integer",
     ports: ["log"],

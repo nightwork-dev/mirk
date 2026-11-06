@@ -98,7 +98,7 @@ Each capability is its own import, so you load only what you use.
 | `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch` / `toAsyncLog`, `namespaceStore` / `namespaceAsyncStore`, the `AsyncStoreTransactions` contract, graph contract types, cosine helpers | none |
 | `@mirk/store/kv`           | the `SyncStore` interface (key-values and collections), `InMemoryKv`, `toAsync`, `sortAndPageStoreItems`                                         | none                        |
 | `@mirk/store/atomic`       | optional versioned reads, declarative atomic mutations, idempotent receipts, canonical request digests, and capability checks                    | none                        |
-| `@mirk/store/transaction`  | `AsyncTransactionCoordinator`, the shared implementation of `AsyncStoreTransactions` for adapter authors                                       | `node:async_hooks`          |
+| `@mirk/store/transaction`  | `createMemoryTransactions` and `AsyncTransactionCoordinator`, the shared transaction implementation                                       | `node:async_hooks`          |
 | `@mirk/store/vector`       | the `VectorStore` interface, `InMemoryVectorStore`, cosine helpers, `compareCodePoints`                                                          | none                        |
 | `@mirk/store/search`       | the `SearchStore` / `AsyncSearchStore` interfaces, `InMemorySearchStore`, `toAsyncSearch`, BM25-style keyword search                             | none                        |
 | `@mirk/store/log`          | the `LogStore` / `AsyncLogStore` interfaces, `InMemoryLogStore`, `toAsyncLog`: an append-only log of JSON records in per-stream sequence  | none                        |
@@ -265,9 +265,14 @@ Guarantees, in the in-memory reference, both SQLite adapters, and the Python por
 
 Limits:
 
-- The log is append-only. Nothing in the port changes or removes an entry, and there is no
-  trimming: a stream grows until you delete the database. Trimming would need a kept high-water
-  mark, so that a stream emptied by a trim does not restart its numbering at 1.
+- Individual entries are immutable. `deleteStream(stream)` atomically removes a whole stream
+  and returns whether it existed. Reads then return no entries and `lastSequence` returns 0;
+  a later append receives 1. Deletion joins the caller's transaction, including rollback of a
+  delete followed by append. There is no trimming or permanent writer exclusion. Use a new stream
+  incarnation in its name when reusing an application record ID: old sequence cursors cannot
+  distinguish recreated history. Applications explicitly delete their record and history together;
+  deleting a record never infers a stream name or cascades to its history. A permanent application
+  deletion must also invalidate its writer's record version or job generation in that transaction.
 - It is storage, not messaging. There is no consumer cursor, acknowledgement, delivery status, or
   wake-up. Keep a consumer's position yourself, for example as a `kv` value written in the same
   `"immediate"` transaction as the work it records, as shown below.
@@ -758,6 +763,31 @@ The caller owns:
 - serializing and validating the payload schema, and protecting any decrypted local indexes.
 
 Encrypted artifacts, key distribution, and sync are not provided.
+
+## Transactions across memory stores
+
+`createMemoryTransactions({ kv, log })` from `@mirk/store/transaction` binds an existing
+`InMemoryKv` and `InMemoryLogStore` to one transaction domain. It implements
+`AsyncStoreTransactions`; synchronous calls to those supplied stores participate directly:
+
+```ts
+const transactions = createMemoryTransactions({ kv, log });
+await transactions.transaction(() => {
+  kv.put("jobs", { id: "job-17", state: "queued" });
+  log.append("job/job-17", { type: "queued" });
+  transactions.afterCommit(() => notify());
+});
+```
+
+An exception or rejection restores KV values, collections and their ordering, versions, receipts,
+and complete log streams. Nested transactions use savepoints; rolled-back scopes discard their
+notifications. Committed callbacks run in registration order after the outermost commit and unlock.
+Version allocation continues forward on rollback so an exposed rolled-back token is not reused.
+A store can belong to only one domain. During an active transaction, foreign synchronous calls
+throw; calls through the existing `toAsync` and `toAsyncLog` bridges queue until it ends. Ended
+transaction contexts reject further calls. Keep transactions limited to short storage work and
+run provider or network calls outside them. Plain memory imports remain free of native bindings
+and Node async-context imports; this factory uses the existing Node transaction engine.
 
 ## Async coordination
 
