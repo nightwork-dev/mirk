@@ -48,7 +48,7 @@ function search(db: SqliteDb, request: SqliteVectorSearchRequest) {
   if (floor) params.push(minimum);
   const requested = options?.topK ?? 10;
   const limit = Number.isNaN(requested) ? 0 : Math.trunc(requested);
-  const limitSql = !Number.isFinite(limit) ? (limit > 0 ? "-1" : "0") : limit < 0
+  const limitSql = !Number.isSafeInteger(limit) ? (limit > 0 ? "-1" : "0") : limit < 0
     ? `max((SELECT count(*) FROM accepted) + ${limit},0)` : String(limit);
   const sql = `WITH population AS NOT MATERIALIZED (
       SELECT v.id,v.vec,d.metadata FROM _mirk_vector_values v
