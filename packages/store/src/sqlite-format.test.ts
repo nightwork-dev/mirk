@@ -189,7 +189,7 @@ it("concurrent process openers converge on one migration", async () => {
     raw
       .prepare("SELECT value FROM _mirk_meta WHERE key='schema_version'")
       .get(),
-  ).toEqual({ value: "3" });
+  ).toEqual({ value: "4" });
   expect(
     raw.prepare("SELECT COUNT(*) AS n FROM _mirk_vector_values").get(),
   ).toEqual({ n: 2 });

@@ -308,7 +308,7 @@ def test_a_legacy_file_stamps_the_current_schema_version(tmp_path: Path) -> None
         row = store.connection.execute(
             "SELECT value FROM _mirk_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert row is not None and row[0] == "3"
+        assert row is not None and row[0] == "4"
     finally:
         store.close()
 
@@ -317,7 +317,7 @@ def test_a_file_from_a_newer_adapter_is_refused(tmp_path: Path) -> None:
     path = str(tmp_path / "future.db")
     SqliteStore(path).close()
     connection = sqlite3.connect(path, isolation_level=None)
-    connection.execute("UPDATE _mirk_meta SET value = '4' WHERE key = 'schema_version'")
+    connection.execute("UPDATE _mirk_meta SET value = '5' WHERE key = 'schema_version'")
     connection.close()
 
     with pytest.raises(SqliteAdapterError) as caught:

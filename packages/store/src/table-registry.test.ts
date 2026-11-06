@@ -251,7 +251,7 @@ describe("search read paths", () => {
 });
 
 describe("schema version", () => {
-  it("stamps schema_version 3 on a file it creates", () => {
+  it("stamps schema_version 4 on a file it creates", () => {
     const path = tempDb("version");
     new SqliteAdapter({ path }).close();
     const db = new Database(path, { readonly: true });
@@ -259,14 +259,14 @@ describe("schema version", () => {
       .prepare("SELECT value FROM _mirk_meta WHERE key = 'schema_version'")
       .get() as { value: string };
     db.close();
-    expect(row.value).toBe("3");
+    expect(row.value).toBe("4");
   });
 
   it("refuses to open a file written by a newer adapter", () => {
     const path = tempDb("future");
     new SqliteAdapter({ path }).close();
     const db = new Database(path);
-    db.prepare("UPDATE _mirk_meta SET value = '4' WHERE key = 'schema_version'").run();
+    db.prepare("UPDATE _mirk_meta SET value = '5' WHERE key = 'schema_version'").run();
     db.close();
 
     expect(() => new SqliteAdapter({ path })).toThrow(

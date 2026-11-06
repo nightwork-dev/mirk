@@ -55,13 +55,14 @@ export class NodeSqliteAdapter extends SqliteAdapterCore {
       return ensureMirkFormat(
         driver,
         (code, message) => new SqliteAdapterError(code, message),
-        { ...opts, migration: "auto" },
+        opts,
         (path) =>
           sqliteSnapshot(
             driver,
             path,
             (source) => new DatabaseSync(source, { readOnly: true }),
           ),
+        true,
       );
     } finally {
       if (!opts.db) db.close();

@@ -322,3 +322,24 @@ the native-capable root import.
 ## License
 
 Apache-2.0
+
+### Migration policy and local snapshots
+
+`LibsqlAdapter.open` accepts `migration: "auto" | "explicit" | "refuse"` (default `auto`),
+`legacyVectorSpace` (default `default`), and `backupPath`. Ordinary `explicit` opens reject older
+files with `migration-required`; `refuse` raises `migration-refused`. New files initialize under
+all policies. `LibsqlAdapter.migrate(options)` is the separate explicit operation and returns
+`{ fromVersion, toVersion, changed, backupPath? }`. A `refuse` pin is honored by this operation too.
+Current files do not rename spaces or create backups. Future and malformed formats always fail.
+
+The shared migration plan upgrades to format 4, preserving vector bytes, metadata and all other
+facets. `legacyVectorSpace` is nonempty and selects the old implicit vector's name in namespace
+`default`. Existing destination conflicts abort atomically rather than merging.
+
+Migration backups are available only through the Node entry point for local `file:` URLs. Under
+the same writer admission as migration, a read-only SQLite connection runs `VACUUM INTO`, including
+committed WAL records. Existing destinations are never overwritten; a backup failure prevents the
+upgrade. Remote URLs, the web entry point, and memory databases reject `backupPath` explicitly with
+`unsupported-backup` before database mutation. Remote backup and restore belong to the host.
+
+Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.

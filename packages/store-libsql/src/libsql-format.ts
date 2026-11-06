@@ -22,9 +22,10 @@ export async function ensureMirkRegistry(
   failure: FormatFailure,
   options: SqliteMigrationOptions = {},
   backup?: (source: string, destination: string) => void,
+  explicitInvocation = false,
 ): Promise<SqliteMigrationResult> {
   const prefix = names.meta.slice(0, -"_mirk_meta".length);
-  const migration = mirkFormatMigration(prefix, options);
+  const migration = mirkFormatMigration(prefix, options, explicitInvocation);
   let rows: SqliteFormatRows = [];
   try {
     let step = migration.next(rows);

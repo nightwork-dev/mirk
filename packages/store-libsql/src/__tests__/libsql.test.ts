@@ -443,14 +443,14 @@ describe("collision-safe collection tables", () => {
       ["collection", A, LEGACY_TABLE],
       ["collection", B, `${LEGACY_TABLE}_2`],
     ]);
-    expect(version.rows[0]?.value).toBe("3");
+    expect(version.rows[0]?.value).toBe("4");
   });
 
   it("refuses to open a file written by a newer adapter", async () => {
     const { url } = fileUrl();
     (await LibsqlAdapter.open({ url })).close();
     const bump = createClient({ url });
-    await bump.execute("UPDATE _mirk_meta SET value = '4' WHERE key = 'schema_version'");
+    await bump.execute("UPDATE _mirk_meta SET value = '5' WHERE key = 'schema_version'");
     bump.close();
 
     await expect(LibsqlAdapter.open({ url })).rejects.toThrow(
