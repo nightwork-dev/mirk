@@ -633,7 +633,10 @@ def test_a_legacy_search_file_has_its_tables_adopted(tmp_path: Path) -> None:
     stripped = sqlite3.connect(path, isolation_level=None)
     stripped.execute("DROP TABLE _mirk_tables")
     stripped.execute("DROP TABLE _mirk_meta")
-    for table in ("_mirk_vector_values", "_mirk_vector_documents", "_mirk_vector_spaces"):
+    for table in (
+        "_mirk_vector_values", "_mirk_vector_documents", "_mirk_vector_spaces",
+        "_mirk_log_streams", "_mirk_log_generation",
+    ):
         stripped.execute(f"DROP TABLE {table}")
     stripped.close()
 

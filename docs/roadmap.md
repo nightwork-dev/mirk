@@ -41,12 +41,12 @@ still open.
 | MR-29  | Private Vercel Blob artifact object adapter              | `@mirk/artifact-vercel-blob`         | shipped       |
 | MR-30 | Named vector spaces per document | `@mirk/store/vector` and vector adapters | unreleased |
 | MR-31 | Exact native SQLite vector search | `@mirk/store/sqlite-vec`, optional native companions | unreleased |
-| MR-32 | Shared SQLite format 3 and atomic migrations | `@mirk/store`, `mirk-store` | unreleased |
-| MR-33 | Whole-stream log deletion | `@mirk/store/log`, `mirk.store.log` | unreleased |
-| MR-34 | Immediate fenced lease acquisition | `@mirk/store/coordination`, Python coordination | unreleased |
-| MR-35 | Shared memory transactions and coordination | `@mirk/store/transaction`, memory coordinator | unreleased |
+| MR-32 | Shared SQLite format 4, migration policy, and backups | `@mirk/store`, `mirk-store` | unreleased |
+| MR-33 | Whole-stream log deletion and generation cursors | `@mirk/store/log`, `mirk.store.log` | unreleased |
+| MR-34 | Immediate fenced lease acquisition | `@mirk/store/coordination/core`, Python coordination | unreleased |
+| MR-35 | Transactional memory leases, KV, and log | `@mirk/store/transaction`, memory coordinator | unreleased |
 | MR-36 | Injected coordinator clock and scheduling | TypeScript and Python coordination | unreleased |
-| MR-37 | Durable jobs storage and transitions | `@mirk/jobs`, `mirk-jobs` | unreleased |
+| MR-37 | Keyed durable jobs, indexed lookup, and claim renewal | `@mirk/jobs`, `mirk-jobs` | unreleased |
 
 "Shipped" means implemented and tested on the default branch. "Unreleased" means that
 the source and tests contain the feature without a release entry for it yet. Published
@@ -85,8 +85,8 @@ silently scanning the collection") fails if search falls back.
 
 Proposed as an addressable no-drop inbox: an append log plus delivery status. The storage-only part
 now exists as `@mirk/store/log`, an append-only log of JSON records with per-stream sequences and no
-gaps among committed appends, in memory, both SQLite adapters, and the Python port. Inbox semantics
-(consumer cursors, acknowledgement, delivery status, wake-up) stay out of scope, as for MR-02.
+gaps among committed appends, in memory, both SQLite adapters, and the Python port. Readers can carry a generation and sequence cursor; deleting and recreating a stream invalidates its old cursor.
+Persisted consumer offsets, acknowledgement, delivery status, and wake-up remain outside this primitive, as for MR-02.
 
 ## Closed
 
