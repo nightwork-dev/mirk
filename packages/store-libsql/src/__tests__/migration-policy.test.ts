@@ -1,3 +1,4 @@
+import { createClient } from "@libsql/client";
 import { afterEach, describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -135,4 +136,22 @@ it("explicit libSQL migration honors a refusal pin", async () => {
   expect(
     await LibsqlAdapter.migrate({ url, migration: "explicit" }),
   ).toMatchObject({ fromVersion: 2, toVersion: 4, changed: true });
+});
+
+it("rejects a remote supplied client even when its options name a file URL", async () => {
+  const { file, backup } = files();
+  const client = createClient({ url: "http://127.0.0.1:1" });
+  try {
+    await expect(
+      LibsqlAdapter.open({
+        url: pathToFileURL(file).href,
+        client,
+        backupPath: backup,
+      }),
+    ).rejects.toMatchObject({ code: "unsupported-backup" });
+    expect(existsSync(file)).toBe(false);
+    expect(existsSync(backup)).toBe(false);
+  } finally {
+    client.close();
+  }
 });
