@@ -27,6 +27,12 @@ it('arbitrates real competing processes and continues the SQLite file in both la
     const claim = claims.find(Boolean)!;
     expect((await run('python',path,'complete','race','python-complete')).state).toBe('succeeded');
     expect((await jobs.get('race'))!.value).toMatchObject({state:'succeeded',result:{artifactId:'python-output'},checkpoint:{providerId:'python-provider'}});
+    const firstTerminal = (await jobs.get('race'))!;
+    await jobs.removeTerminal('race',firstTerminal.version,{key:'race-remove'});
+    await run('python',path,'enqueue','race','race-replacement');
+    const replacement = (await jobs.claim('race',{key:'race-next',leaseMs:50}))!;
+    expect(replacement.generation).toBeGreaterThan(claim.generation);
+    await expect(jobs.complete(claim,'stale',{key:'race-stale'})).rejects.toMatchObject({code:'stale-claim'});
     await run('python',path,'enqueue','reverse','python-enqueue');
     const reverse = (await jobs.claim('reverse',{key:'reverse-claim',leaseMs:50}))!;
     await jobs.complete(reverse,{artifactId:'node-output'},{key:'reverse-complete'});

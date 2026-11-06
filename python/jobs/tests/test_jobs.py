@@ -98,3 +98,89 @@ def test_admin_retry(fixture: Any) -> None:
     assert next_claim["generation"] == 3
     with pytest.raises(JobsError, match="stale-claim"):
         jobs.complete(claim, "stale", {"key": "stale"})
+
+
+def test_reused_id_and_retained_receipts(fixture: Any) -> None:
+    original, _, _ = fixture
+    jobs = JobsStore(
+        store=original.store,
+        transactions=original.transactions,
+        now=original.now,
+        token=lambda: "repeated",
+        log=original.log,
+    )
+    input = {"id": "job", "queue": "q", "payload": None}
+    first = jobs.enqueue(input, {"key": "e"})
+    stale = jobs.claim("job", {"key": "c", "leaseMs": 10})
+    assert stale is not None
+    done = jobs.complete(stale, "ok", {"key": "done"})
+    jobs.removeTerminal("job", done["version"], {"key": "remove"})
+    jobs.enqueue({**input, "payload": "replacement"}, {"key": "replacement"})
+    next_claim = jobs.claim("job", {"key": "next", "leaseMs": 10})
+    assert next_claim is not None
+    assert next_claim["ownerToken"] == stale["ownerToken"]
+    assert next_claim["generation"] > stale["generation"]
+    with pytest.raises(JobsError, match="stale-claim"):
+        jobs.complete(stale, "stale", {"key": "stale"})
+    assert jobs.enqueue(input, {"key": "e"}) == first
+    current = jobs.get("job")
+    assert current is not None
+    assert current["value"]["payload"] == "replacement"
+    assert jobs.log is not None
+    assert len(jobs.log.list('["mirk-jobs","job",0]')) == 3
+    assert len(jobs.log.list('["mirk-jobs","job",2]')) == 2
+
+
+def test_runtime_input_and_corrupt_record(fixture: Any) -> None:
+    jobs, _, _ = fixture
+    input = {"id": "job", "queue": "q", "payload": None}
+    with pytest.raises(JobsError, match="Malformed jobs data"):
+        jobs.enqueue({**input, "state": "succeeded"}, {"key": "smuggled"})
+    queued = jobs.enqueue(input, {"key": "e"})
+    jobs.store.put(jobs.collection, {**queued["value"], "state": "leased", "ownerToken": None})
+    with pytest.raises(JobsError, match="Malformed jobs data"):
+        jobs.get("job")
+    with pytest.raises(JobsError, match="Malformed jobs data"):
+        jobs.claimNext("q", {"key": "c", "leaseMs": 10})
+
+
+def test_log_cleanup_failure_rolls_back(fixture: Any) -> None:
+    jobs, _, _ = fixture
+    jobs.enqueue({"id": "job", "queue": "q", "payload": None}, {"key": "e"})
+    claim = jobs.claim("job", {"key": "c", "leaseMs": 10})
+    done = jobs.complete(claim, "ok", {"key": "done"})
+    log = jobs.log
+    stream = '["mirk-jobs","job",0]'
+    before = log.list(stream)
+
+    class FailingLog:
+        def deleteStream(self, stream: str) -> None:
+            log.deleteStream(stream)
+            raise ValueError("log failure")
+
+    jobs.log = FailingLog()
+    with pytest.raises(ValueError, match="log failure"):
+        jobs.removeTerminal("job", done["version"], {"key": "remove"})
+    assert jobs.get("job") == done
+    assert log.list(stream) == before
+    jobs.log = log
+    assert jobs.removeTerminal("job", done["version"], {"key": "remove"})
+    assert log.list(stream) == []
+    jobs.enqueue({"id": "job", "queue": "q", "payload": "new incarnation"}, {"key": "replacement"})
+    fresh = log.list('["mirk-jobs","job",2]')
+    assert len(fresh) == 1
+    assert fresh[0]["sequence"] == 1
+    assert log.list(stream, {"after": before[-1]["sequence"]}) == []
+
+
+def test_cancel_after_expiry(fixture: Any) -> None:
+    jobs, _, clock = fixture
+    jobs.enqueue({"id": "job", "queue": "q", "payload": None}, {"key": "e"})
+    claim = jobs.claim("job", {"key": "c", "leaseMs": 10})
+    clock[0] = 110
+    jobs.requestCancel("job", {"key": "cancel"})
+    blocked = jobs.recoverExpired("job", claim["generation"], {"key": "recover"})
+    assert blocked["value"]["cancellation"] == {
+        "requestedAt": 110,
+        "generation": claim["generation"],
+    }

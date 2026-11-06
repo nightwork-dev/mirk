@@ -1,6 +1,6 @@
 import type { JsonValue } from '@mirk/store/atomic';
 import { JobsStore } from './index.js';
-import type { BlockedDecision, JobClaim } from './types.js';
+import type { BlockedDecision, EnqueueInput, JobClaim, JobRecord } from './types.js';
 
 export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) => void): Record<string, unknown> {
   const claims = new Map<string, JobClaim>();
@@ -10,6 +10,9 @@ export function jobsConformanceTarget(jobs: JobsStore, setNow: (value: number) =
   return {
     setNow: (value: number) => {setNow(value); return null;},
     enqueue: async (id: string, queue: string, payload: JsonValue, priority = 0) => (await jobs.enqueue({id,queue,payload,priority},key())).value,
+    enqueueCommand: async (input: EnqueueInput, commandKey: string) => (await jobs.enqueue(input,{key:commandKey})).value,
+    rememberClaim: (id: string, alias: string) => { claims.set(alias,claim(id)); return null; },
+    corruptRecord: async (id: string, patch: Partial<JobRecord>) => { const record = (await jobs.get(id))!.value; await jobs.options.store.put(jobs.collection,{...record,...patch}); return null; },
     get: async (id: string) => (await jobs.get(id))?.value ?? null,
     list: async (queue: string) => (await jobs.list({queue})).map(j => j.value),
     claim: async (id: string, leaseMs: number) => { const value = await jobs.claim(id,{...key(),leaseMs}); if(value) claims.set(value.jobId,value); return value; },

@@ -70,4 +70,35 @@ export const scenarios = [
     ],
   }),
 
+  defineScenario({
+    id: 'jobs/deletion-retains-replay-and-id-reuse-fencing',
+    title: 'terminal deletion retains command outcomes and generation history for reused IDs',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'job',queue:'q',payload:'first'},'original'],expect:{value:true}},
+      {op:'claim',args:['job',10]},
+      {op:'rememberClaim',args:['job','old']},
+      {op:'complete',args:['job','done']},
+      {op:'removeTerminal',args:['job']},
+      {op:'enqueueCommand',args:[{id:'job',queue:'q',payload:'first'},'original'],expect:{value:true}},
+      {op:'get',args:['job'],expect:{value:true}},
+      {op:'enqueue',args:['job','q','replacement'],expect:{value:true}},
+      {op:'claim',args:['job',10],expect:{value:true}},
+      {op:'complete',args:['old','stale'],expect:{throws:true}},
+      {op:'get',args:['job'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'jobs/reject-runtime-input-and-malformed-state',
+    title: 'runtime fields and malformed persisted lifecycle state cannot become executable jobs',
+    ports: ['jobs'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'job',queue:'q',payload:null,state:'succeeded'},'smuggled'],expect:{throws:true}},
+      {op:'enqueue',args:['job','q',null]},
+      {op:'corruptRecord',args:['job',{state:'leased',ownerToken:null}]},
+      {op:'get',args:['job'],expect:{throws:true}},
+      {op:'claimNext',args:['q',10],expect:{throws:true}},
+    ],
+  }),
+
 ];
