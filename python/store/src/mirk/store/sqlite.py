@@ -379,6 +379,7 @@ def ensure_registry(connection: sqlite3.Connection) -> None:
             found is None
             and any(name.startswith("_mirk_") for name in names)
             and not table_exists(connection, REGISTRY_TABLE)
+            and not table_exists(connection, "_kv")
         ):
             raise SqliteAdapterError("malformed-schema", "Unrecognized unversioned Mirk layout")
         if found not in (None, 1, 2):

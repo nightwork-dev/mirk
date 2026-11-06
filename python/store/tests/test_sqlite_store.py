@@ -308,7 +308,7 @@ def test_a_legacy_file_stamps_the_current_schema_version(tmp_path: Path) -> None
         row = store.connection.execute(
             "SELECT value FROM _mirk_meta WHERE key = 'schema_version'"
         ).fetchone()
-        assert row is not None and row[0] == "2"
+        assert row is not None and row[0] == "3"
     finally:
         store.close()
 
