@@ -1,3 +1,4 @@
+import { asyncTransactionContract, type TransactionContractHandle } from "./conformance/transaction-contract.js";
 import { describe, expect, it } from "vitest";
 import { InMemoryStore } from "./backends/memory.js";
 import { InMemoryLogStore } from "./log/memory.js";
@@ -91,4 +92,16 @@ describe("shared memory transactions", () => {
     })));
     expect(kv.get("n")).toBe(10);
   });
+});
+
+asyncTransactionContract("Shared memory domain", {
+  async open() {
+    const { kv, tx } = setup();
+    const handle = {
+      kv: toAsync(kv),
+      transaction: (work: () => unknown) => tx.transaction(work),
+      afterCommit: tx.afterCommit.bind(tx),
+    } as TransactionContractHandle;
+    return { first: handle, second: handle, async close() {} };
+  },
 });
