@@ -1,4 +1,4 @@
-import { JobsStore } from "@mirk/jobs";
+import { JobsStore, type JobsOptions } from "@mirk/jobs";
 import { jobsConformanceTarget } from "./jobs-target.js";
 import { coordinationApi } from "../coordination/conformance.js";
 import { createMemoryCoordinator, createMemoryCoordinationState } from "../coordination/memory.js";
@@ -206,18 +206,19 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
   }
 
   if (kind === "jobs") {
+    // Source backends and built jobs carry distinct compile-time version brands.
     let now = 100;
     let token = 0;
     const clock = { now: () => now, token: () => `owner-${++token}` };
     if (backend === "memory") {
       const kv = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
       const log = new InMemoryLogStore();
-      const jobs = new JobsStore({ store: toAsync(kv), transactions: createMemoryTransactions({ kv, log }), ...clock });
+      const jobs = new JobsStore({ store: toAsync(kv) as unknown as JobsOptions["store"], transactions: createMemoryTransactions({ kv, log }), ...clock });
       return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => {} };
     }
     const Adapter = backend === "node-sqlite" ? NodeSqliteAdapter : SqliteAdapter;
     const adapter = new Adapter({ path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY });
-    const jobs = new JobsStore({ store: adapter.asyncKv, transactions: { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }, ...clock });
+    const jobs = new JobsStore({ store: adapter.asyncKv as unknown as JobsOptions["store"], transactions: { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }, ...clock });
     return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => adapter.close() };
   }
 

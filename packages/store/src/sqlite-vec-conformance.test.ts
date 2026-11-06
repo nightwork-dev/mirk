@@ -14,6 +14,20 @@ const scenarios = readdirSync(corpus, { recursive:true }).filter(path=>String(pa
 
 for (const Adapter of [SqliteAdapter,NodeSqliteAdapter]) {
   describe(`${Adapter.name} with sqlite-vec vector corpus`,()=>{
+    it("preserves the ordinary result shape when metadata is absent",()=>{
+      const ordinary=new Adapter({path:":memory:"});
+      const native=new Adapter({path:":memory:",vectorEngine:sqliteVecEngine()});
+      const query={space:"text",vector:new Float32Array([1,0])};
+      try {
+        for(const db of [ordinary,native]) {
+          db.vector.ensureSpace("text",{dimensions:2});
+          db.vector.upsert("docs",{id:"absent",vectors:{text:query.vector}});
+          db.vector.upsert("docs",{id:"empty",vectors:{text:query.vector},metadata:{}});
+        }
+        expect(native.vector.search("docs",query)).toStrictEqual(ordinary.vector.search("docs",query));
+      } finally {ordinary.close();native.close();}
+    });
+
     it("runs the named text/image journey on one transactional connection",()=>{
       const native=sqliteVecEngine();
       let resultRows=0;

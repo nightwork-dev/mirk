@@ -1,0 +1,241 @@
+{
+  "id": "vector/fractional-topk",
+  "title": "fractional limits truncate toward zero before slicing the ranked results",
+  "ports": [
+    "vector"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureSpace",
+      "args": [
+        "default",
+        {
+          "dimensions": 3
+        }
+      ]
+    },
+    {
+      "op": "upsertMany",
+      "args": [
+        "docs",
+        [
+          {
+            "id": "d00",
+            "vectors": {
+              "default": [
+                1,
+                0,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d01",
+            "vectors": {
+              "default": [
+                1,
+                0.08333333333333333,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d02",
+            "vectors": {
+              "default": [
+                1,
+                0.16666666666666666,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d03",
+            "vectors": {
+              "default": [
+                1,
+                0.25,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d04",
+            "vectors": {
+              "default": [
+                1,
+                0.3333333333333333,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d05",
+            "vectors": {
+              "default": [
+                1,
+                0.4166666666666667,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d06",
+            "vectors": {
+              "default": [
+                1,
+                0.5,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d07",
+            "vectors": {
+              "default": [
+                1,
+                0.5833333333333334,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d08",
+            "vectors": {
+              "default": [
+                1,
+                0.6666666666666666,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d09",
+            "vectors": {
+              "default": [
+                1,
+                0.75,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d10",
+            "vectors": {
+              "default": [
+                1,
+                0.8333333333333334,
+                0
+              ]
+            }
+          },
+          {
+            "id": "d11",
+            "vectors": {
+              "default": [
+                1,
+                0.9166666666666666,
+                0
+              ]
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "topK": 2.5
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "topK": -2.5
+        }
+      ],
+      "expect": {
+        "ids": [
+          "d00",
+          "d01",
+          "d02",
+          "d03",
+          "d04",
+          "d05",
+          "d06",
+          "d07",
+          "d08",
+          "d09"
+        ]
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "topK": 0.5
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    },
+    {
+      "op": "search",
+      "args": [
+        "docs",
+        {
+          "space": "default",
+          "vector": [
+            1,
+            0,
+            0
+          ]
+        },
+        {
+          "topK": -0.5
+        }
+      ],
+      "expect": {
+        "ids": []
+      }
+    }
+  ]
+}
