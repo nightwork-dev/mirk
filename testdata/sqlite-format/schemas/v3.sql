@@ -1,0 +1,12 @@
+CREATE TABLE _kv(key TEXT PRIMARY KEY,value TEXT NOT NULL,created_at TEXT DEFAULT (datetime('now')),updated_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE _mirk_atomic_versions(kind TEXT NOT NULL,collection TEXT NOT NULL,target_key TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(kind,collection,target_key));
+CREATE TABLE _mirk_atomic_sequence(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER NOT NULL);
+CREATE TABLE _mirk_atomic_identity(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
+CREATE TABLE _mirk_atomic_receipts(idempotency_key TEXT PRIMARY KEY,request_digest TEXT NOT NULL,result_json TEXT NOT NULL,created_at INTEGER);
+CREATE TABLE _mirk_search_schema(collection TEXT PRIMARY KEY,fields_json TEXT NOT NULL);
+CREATE TABLE _mirk_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE _mirk_tables(kind TEXT NOT NULL,name TEXT NOT NULL,table_name TEXT NOT NULL UNIQUE,PRIMARY KEY(kind,name));
+CREATE TABLE _mirk_vector_spaces(namespace TEXT NOT NULL,name TEXT NOT NULL,dimensions INTEGER NOT NULL CHECK(dimensions>0),metric TEXT NOT NULL CHECK(metric='cosine'),encoding TEXT NOT NULL CHECK(encoding='float32'),PRIMARY KEY(namespace,name));
+CREATE TABLE _mirk_vector_documents(namespace TEXT NOT NULL,collection TEXT NOT NULL,id TEXT NOT NULL,metadata TEXT,PRIMARY KEY(namespace,collection,id));
+CREATE TABLE _mirk_vector_values(namespace TEXT NOT NULL,collection TEXT NOT NULL,id TEXT NOT NULL,space TEXT NOT NULL,vec BLOB NOT NULL,PRIMARY KEY(namespace,collection,id,space),FOREIGN KEY(namespace,collection,id) REFERENCES _mirk_vector_documents(namespace,collection,id) ON DELETE CASCADE,FOREIGN KEY(namespace,space) REFERENCES _mirk_vector_spaces(namespace,name));
+CREATE TABLE _mirk_log(stream TEXT NOT NULL,sequence INTEGER NOT NULL CHECK(sequence>=1),record TEXT NOT NULL,PRIMARY KEY(stream,sequence)) WITHOUT ROWID;

@@ -1,0 +1,11 @@
+CREATE TABLE _kv(key TEXT PRIMARY KEY,value TEXT NOT NULL,created_at TEXT DEFAULT (datetime('now')),updated_at TEXT DEFAULT (datetime('now')));
+CREATE TABLE _mirk_atomic_versions(kind TEXT NOT NULL,collection TEXT NOT NULL,target_key TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(kind,collection,target_key));
+CREATE TABLE _mirk_atomic_sequence(id INTEGER PRIMARY KEY CHECK(id=1),value INTEGER NOT NULL);
+CREATE TABLE _mirk_atomic_identity(id INTEGER PRIMARY KEY CHECK(id=1),value TEXT NOT NULL);
+CREATE TABLE _mirk_atomic_receipts(idempotency_key TEXT PRIMARY KEY,request_digest TEXT NOT NULL,result_json TEXT NOT NULL);
+CREATE TABLE _mirk_search_schema(collection TEXT PRIMARY KEY,fields_json TEXT NOT NULL);
+CREATE TABLE _mirk_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TABLE _mirk_tables(kind TEXT NOT NULL,name TEXT NOT NULL,table_name TEXT NOT NULL UNIQUE,PRIMARY KEY(kind,name));
+CREATE TABLE vectors(collection TEXT NOT NULL,id TEXT NOT NULL,vec BLOB NOT NULL,metadata TEXT,PRIMARY KEY(collection,id));
+CREATE INDEX vectors_collection ON vectors(collection);
+CREATE TABLE _vec_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
