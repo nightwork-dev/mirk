@@ -1,0 +1,165 @@
+{
+  "id": "queue/admin-priority-and-terminal-requeue",
+  "title": "administrative queue edits and explicit terminal retries preserve fencing",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "updateQueued",
+      "args": [
+        "item",
+        {
+          "priority": 9
+        }
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ]
+    },
+    {
+      "op": "fail",
+      "args": [
+        "item",
+        "bad"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": "bad",
+          "expiresAt": null,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "failed",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "requeueTerminal",
+      "args": [
+        "item",
+        {}
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ],
+      "expect": {
+        "value": {
+          "itemId": "item",
+          "ownerToken": "owner-2",
+          "generation": 3
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "item",
+        "ok"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 2,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 3,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 9,
+          "queue": "q",
+          "result": "ok",
+          "schemaVersion": 2,
+          "state": "succeeded",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    }
+  ]
+}

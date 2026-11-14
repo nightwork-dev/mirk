@@ -1,0 +1,234 @@
+{
+  "id": "queue/indexed-discovery-and-legacy-upgrade",
+  "title": "filters and recency precede limits and legacy records normalize safely",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "old",
+          "queue": "q",
+          "payload": null,
+          "subject": "asset",
+          "kind": "render"
+        },
+        "old"
+      ]
+    },
+    {
+      "op": "setNow",
+      "args": [
+        101
+      ]
+    },
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "b",
+          "queue": "q",
+          "payload": null,
+          "subject": "asset",
+          "kind": "render"
+        },
+        "b"
+      ]
+    },
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "a",
+          "queue": "q",
+          "payload": null,
+          "subject": "asset",
+          "kind": "render"
+        },
+        "a"
+      ]
+    },
+    {
+      "op": "listFiltered",
+      "args": [
+        {
+          "subject": "asset",
+          "kind": "render",
+          "state": "queued",
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "activeKey": null,
+            "availableAt": 101,
+            "cancellation": null,
+            "checkpoint": null,
+            "claimCount": 0,
+            "enqueuedAt": 101,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "b",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": "asset",
+            "updatedAt": 101
+          },
+          {
+            "activeKey": null,
+            "availableAt": 101,
+            "cancellation": null,
+            "checkpoint": null,
+            "claimCount": 0,
+            "enqueuedAt": 101,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "a",
+            "kind": "render",
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": "asset",
+            "updatedAt": 101
+          }
+        ]
+      }
+    },
+    {
+      "op": "seedLegacy",
+      "args": [
+        "old"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "old"
+      ],
+      "expect": {
+        "value": {
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "old",
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "updatedAt": 100,
+          "activeKey": null,
+          "subject": null,
+          "kind": null
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "old",
+        10
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "old"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 111,
+          "generation": 1,
+          "id": "old",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 101
+        }
+      }
+    },
+    {
+      "op": "corruptActiveSlot",
+      "args": [
+        "q",
+        "repair",
+        "missing"
+      ]
+    },
+    {
+      "op": "start",
+      "args": [
+        {
+          "key": "repair",
+          "id": "repaired",
+          "queue": "q",
+          "payload": null
+        },
+        "repair"
+      ],
+      "expect": {
+        "value": {
+          "started": true,
+          "item": {
+            "activeKey": "repair",
+            "availableAt": 101,
+            "cancellation": null,
+            "checkpoint": null,
+            "claimCount": 0,
+            "enqueuedAt": 101,
+            "error": null,
+            "expiresAt": null,
+            "generation": 0,
+            "id": "repaired",
+            "kind": null,
+            "ownerToken": null,
+            "payload": null,
+            "priority": 0,
+            "queue": "q",
+            "result": null,
+            "schemaVersion": 2,
+            "state": "queued",
+            "subject": null,
+            "updatedAt": 101
+          }
+        }
+      }
+    }
+  ]
+}

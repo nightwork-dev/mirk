@@ -105,10 +105,10 @@ jobs:
         working-directory: python/store
         run: uv run pytest -q
 
-      - name: Python tests (jobs and native companion)
+      - name: Python tests (queue and native companion)
         working-directory: python
         run: |
-          (cd jobs && uv run pytest -q)
+          (cd queue && uv run pytest -q)
           (cd sqlite-vec-native && uv run pytest -q)
 
       - name: Python tests (fixtures)
@@ -131,10 +131,10 @@ jobs:
         working-directory: python/store
         run: uv run pyright
 
-      - name: Python typecheck (jobs and native companion)
+      - name: Python typecheck (queue and native companion)
         working-directory: python
         run: |
-          (cd jobs && uv run pyright)
+          (cd queue && uv run pyright)
           (cd sqlite-vec-native && uv run pyright)
 
       - name: Python typecheck (fixtures)
@@ -155,7 +155,7 @@ jobs:
 
       - name: Python lint
         working-directory: python
-        run: uv run ruff check store fixtures artifact store-markdown artifact-opendal jobs sqlite-vec-native
+        run: uv run ruff check store fixtures artifact store-markdown artifact-opendal queue sqlite-vec-native
 
       - name: Verify packed package releases
         run: pnpm release:verify -- --all --skip-build --skip-test --skip-typecheck --skip-conformance --receipt-dir .mirk-release

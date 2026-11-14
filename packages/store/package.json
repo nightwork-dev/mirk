@@ -131,7 +131,7 @@
     "typescript": "^5.7.0",
     "vitest": "^4.1.12",
     "@mirk/sqlite-vec-native": "workspace:^",
-    "@mirk/jobs": "workspace:^"
+    "@mirk/queue": "workspace:^"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

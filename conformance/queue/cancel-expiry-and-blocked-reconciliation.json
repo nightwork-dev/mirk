@@ -1,0 +1,181 @@
+{
+  "id": "queue/cancel-expiry-and-blocked-reconciliation",
+  "title": "expired claims retain provider uncertainty and cancellation while fencing completion",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "renders",
+        null
+      ]
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ]
+    },
+    {
+      "op": "checkpoint",
+      "args": [
+        "item",
+        {
+          "providerId": "remote"
+        }
+      ]
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 110,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "item",
+        "late"
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "setNow",
+      "args": [
+        110
+      ]
+    },
+    {
+      "op": "complete",
+      "args": [
+        "item",
+        "late"
+      ],
+      "expect": {
+        "throws": "stale-claim"
+      }
+    },
+    {
+      "op": "recoverExpired",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "blocked",
+          "subject": null,
+          "updatedAt": 110
+        }
+      }
+    },
+    {
+      "op": "resolveBlocked",
+      "args": [
+        "item",
+        {
+          "state": "queued",
+          "availableAt": 110
+        }
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "resolveBlocked",
+      "args": [
+        "item",
+        {
+          "state": "cancelled"
+        }
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "cancelled",
+          "subject": null,
+          "updatedAt": 110
+        }
+      }
+    }
+  ]
+}

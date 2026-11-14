@@ -1,0 +1,187 @@
+{
+  "id": "queue/stable-claim-and-terminal-cleanup",
+  "title": "renewal and checkpoint preserve the worker claim through completion",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "renders",
+        {
+          "asset": "17"
+        }
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ],
+      "expect": {
+        "value": {
+          "itemId": "item",
+          "ownerToken": "owner-1",
+          "generation": 1
+        }
+      }
+    },
+    {
+      "op": "renew",
+      "args": [
+        "item",
+        20
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "checkpoint",
+      "args": [
+        "item",
+        {
+          "providerId": "remote"
+        }
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "item",
+        {
+          "artifact": "out"
+        }
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": {
+            "providerId": "remote"
+          },
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": {
+            "asset": "17"
+          },
+          "priority": 0,
+          "queue": "renders",
+          "result": {
+            "artifact": "out"
+          },
+          "schemaVersion": 2,
+          "state": "succeeded",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "removeTerminal",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

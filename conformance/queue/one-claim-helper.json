@@ -1,0 +1,118 @@
+{
+  "id": "queue/one-claim-helper",
+  "title": "one claim helper renews without terminal policy and refuses cancelled work",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ]
+    },
+    {
+      "op": "runClaimNoop",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": "work-done"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 120,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": "owner-1",
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "requestCancel",
+      "args": [
+        "item"
+      ]
+    },
+    {
+      "op": "runClaimNoop",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "throws": "cancel-requested"
+      }
+    },
+    {
+      "op": "acknowledgeCancel",
+      "args": [
+        "item"
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": {
+            "generation": 1,
+            "requestedAt": 100
+          },
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 1,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": null,
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "cancelled",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    }
+  ]
+}

@@ -19,7 +19,7 @@ export type BackendName = "memory" | "sqlite" | "node-sqlite" | "markdown";
  *  pure, backend-independent target: canonical JSON and SHA-256. `fixtures`
  *  binds an authored-data loader over the backend store, so a store-source
  *  scenario runs against the real backend. */
-export type TargetKind = "store" | "vector" | "search" | "log" | "graph" | "hash" | "fixtures" | "artifact" | "store_markdown" | "coordination" | "jobs" | "memory_transaction";
+export type TargetKind = "store" | "vector" | "search" | "log" | "graph" | "hash" | "fixtures" | "artifact" | "store_markdown" | "coordination" | "queue" | "memory_transaction";
 
 export interface Target {
   kind: TargetKind;
@@ -35,9 +35,9 @@ export type StepOutcome =
  *  runners FAIL on it and name the port. Skipping would let a typo in `ports`
  *  silently retire a scenario from every backend at once. */
 const BACKEND_PORTS: Record<BackendName, readonly string[]> = {
-  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "jobs", "memory_transaction"],
-  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "jobs"],
-  "node-sqlite": ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "jobs"],
+  memory: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "queue", "memory_transaction"],
+  sqlite: ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "coordination", "queue"],
+  "node-sqlite": ["kv", "collection", "atomic", "hash", "vector", "search", "log", "graph", "fixtures", "artifact", "queue"],
   markdown: ["store_markdown"],
 };
 
@@ -59,7 +59,7 @@ export function unsupportedPorts(backend: BackendName, ports: readonly string[])
  *  target rather than competing for it. */
 const STORE_PORTS = new Set(["store", "kv", "collection", "atomic"]);
 
-const NON_STORE_KINDS = new Set<string>(["fixtures", "hash", "vector", "search", "log", "graph", "artifact", "store_markdown", "coordination", "jobs", "memory_transaction"]);
+const NON_STORE_KINDS = new Set<string>(["fixtures", "hash", "vector", "search", "log", "graph", "artifact", "store_markdown", "coordination", "queue", "memory_transaction"]);
 
 /** The single target a scenario's steps are dispatched onto.
  *

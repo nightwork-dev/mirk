@@ -1,0 +1,62 @@
+{
+  "id": "queue/reject-runtime-input-and-malformed-state",
+  "title": "runtime fields and malformed persisted lifecycle state cannot become executable queue",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "item",
+          "queue": "q",
+          "payload": null,
+          "state": "succeeded"
+        },
+        "smuggled"
+      ],
+      "expect": {
+        "throws": "Malformed queue data"
+      }
+    },
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "q",
+        null
+      ]
+    },
+    {
+      "op": "corruptRecord",
+      "args": [
+        "item",
+        {
+          "state": "leased",
+          "ownerToken": null
+        }
+      ]
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "throws": "Malformed queue data"
+      }
+    },
+    {
+      "op": "claimNext",
+      "args": [
+        "q",
+        10
+      ],
+      "expect": {
+        "throws": "Malformed queue data"
+      }
+    }
+  ]
+}

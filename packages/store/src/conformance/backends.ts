@@ -1,5 +1,5 @@
-import { JobsStore, type JobsOptions } from "@mirk/jobs";
-import { jobsConformanceTarget } from "./jobs-target.js";
+import { QueueStore, type QueueOptions } from "@mirk/queue";
+import { queueConformanceTarget } from "./queue-target.js";
 import { coordinationApi, memoryTransactionApi } from "../coordination/conformance.js";
 import { createMemoryCoordinator, createMemoryCoordinationState } from "../coordination/memory.js";
 import { SqliteCoordinator } from "../coordination/sqlite.js";
@@ -210,21 +210,21 @@ export function openTarget(backend: BackendName, scenario: TargetRequest): OpenT
     return { target: { kind, api }, dispose: () => sqlite?.close() };
   }
 
-  if (kind === "jobs") {
-    // Source backends and built jobs carry distinct compile-time version brands.
+  if (kind === "queue") {
+    // Source backends and the built queue package carry distinct compile-time version brands.
     let now = 100;
     let token = 0;
     const clock = { now: () => now, token: () => `owner-${++token}` };
     if (backend === "memory") {
       const kv = new InMemoryKv({ versionIdentity: CONFORMANCE_VERSION_IDENTITY });
       const log = new InMemoryLogStore();
-      const jobs = new JobsStore({ store: toAsync(kv) as unknown as JobsOptions["store"], transactions: createMemoryTransactions({ kv, log }), ...clock });
-      return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => {} };
+      const queue = new QueueStore({ store: toAsync(kv) as unknown as QueueOptions["store"], transactions: createMemoryTransactions({ kv, log }), ...clock });
+      return { target: { kind, api: queueConformanceTarget(queue, (value) => { now = value; }) }, dispose: () => {} };
     }
     const Adapter = backend === "node-sqlite" ? NodeSqliteAdapter : SqliteAdapter;
     const adapter = new Adapter({ path: ":memory:", versionIdentity: CONFORMANCE_VERSION_IDENTITY });
-    const jobs = new JobsStore({ store: adapter.asyncKv as unknown as JobsOptions["store"], transactions: { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }, ...clock });
-    return { target: { kind, api: jobsConformanceTarget(jobs, (value) => { now = value; }) }, dispose: () => adapter.close() };
+    const queue = new QueueStore({ store: adapter.asyncKv as unknown as QueueOptions["store"], transactions: { transaction: (work) => adapter.asyncTransaction(work), afterCommit: (notify) => adapter.afterCommit(notify) }, ...clock });
+    return { target: { kind, api: queueConformanceTarget(queue, (value) => { now = value; }) }, dispose: () => adapter.close() };
   }
 
   if (backend === "memory") {

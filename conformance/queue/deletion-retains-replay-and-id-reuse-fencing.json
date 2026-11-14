@@ -1,0 +1,202 @@
+{
+  "id": "queue/deletion-retains-replay-and-id-reuse-fencing",
+  "title": "terminal deletion retains command outcomes and generation history for reused IDs",
+  "ports": [
+    "queue"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "item",
+          "queue": "q",
+          "payload": "first"
+        },
+        "original"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": "first",
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ]
+    },
+    {
+      "op": "rememberClaim",
+      "args": [
+        "item",
+        "old"
+      ]
+    },
+    {
+      "op": "complete",
+      "args": [
+        "item",
+        "done"
+      ]
+    },
+    {
+      "op": "removeTerminal",
+      "args": [
+        "item"
+      ]
+    },
+    {
+      "op": "enqueueCommand",
+      "args": [
+        {
+          "id": "item",
+          "queue": "q",
+          "payload": "first"
+        },
+        "original"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 0,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": "first",
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "enqueue",
+      "args": [
+        "item",
+        "q",
+        "replacement"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 0,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": null,
+          "generation": 2,
+          "id": "item",
+          "kind": null,
+          "ownerToken": null,
+          "payload": "replacement",
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "queued",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    },
+    {
+      "op": "claim",
+      "args": [
+        "item",
+        10
+      ],
+      "expect": {
+        "value": {
+          "itemId": "item",
+          "ownerToken": "owner-2",
+          "generation": 3
+        }
+      }
+    },
+    {
+      "op": "complete",
+      "args": [
+        "old",
+        "stale"
+      ],
+      "expect": {
+        "throws": "stale-claim"
+      }
+    },
+    {
+      "op": "get",
+      "args": [
+        "item"
+      ],
+      "expect": {
+        "value": {
+          "activeKey": null,
+          "availableAt": 100,
+          "cancellation": null,
+          "checkpoint": null,
+          "claimCount": 1,
+          "enqueuedAt": 100,
+          "error": null,
+          "expiresAt": 110,
+          "generation": 3,
+          "id": "item",
+          "kind": null,
+          "ownerToken": "owner-2",
+          "payload": "replacement",
+          "priority": 0,
+          "queue": "q",
+          "result": null,
+          "schemaVersion": 2,
+          "state": "leased",
+          "subject": null,
+          "updatedAt": 100
+        }
+      }
+    }
+  ]
+}

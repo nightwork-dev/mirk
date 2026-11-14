@@ -128,7 +128,7 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@22.19.21)(@vitest/browser-playwright@4.1.12)(vite@7.3.7(@types/node@22.19.21)(tsx@4.23.13)(yaml@2.9.0))
 
-  packages/jobs:
+  packages/queue:
     dependencies:
       '@mirk/store':
         specifier: workspace:^
@@ -208,9 +208,9 @@ importers:
       '@mirk/fixtures':
         specifier: workspace:^
         version: link:../fixtures
-      '@mirk/jobs':
+      '@mirk/queue':
         specifier: workspace:^
-        version: link:../jobs
+        version: link:../queue
       '@mirk/sqlite-vec-native':
         specifier: workspace:^
         version: link:../sqlite-vec-native

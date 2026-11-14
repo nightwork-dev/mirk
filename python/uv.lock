@@ -12,7 +12,7 @@ members = [
     "mirk-artifact",
     "mirk-artifact-opendal",
     "mirk-fixtures",
-    "mirk-jobs",
+    "mirk-queue",
     "mirk-sqlite-vec-native",
     "mirk-store",
     "mirk-store-markdown",
@@ -319,9 +319,9 @@ dev = [
 ]
 
 [[package]]
-name = "mirk-jobs"
+name = "mirk-queue"
 version = "0.16.0"
-source = { editable = "jobs" }
+source = { editable = "queue" }
 dependencies = [
     { name = "mirk-store" },
 ]

@@ -1,0 +1,151 @@
+import { defineScenario } from '../../src/conformance/define.js';
+
+export const scenarios = [
+  defineScenario({
+    id: 'queue/stable-claim-and-terminal-cleanup',
+    title: 'renewal and checkpoint preserve the worker claim through completion',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueue',args:['item','renders',{asset:'17'}],expect:{value:true}},
+      {op:'claim',args:['item',10],expect:{value:true}},
+      {op:'renew',args:['item',20],expect:{value:true}},
+      {op:'checkpoint',args:['item',{providerId:'remote'}],expect:{value:true}},
+      {op:'complete',args:['item',{artifact:'out'}],expect:{value:true}},
+      {op:'removeTerminal',args:['item'],expect:{value:true}},
+      {op:'get',args:['item'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'queue/cancel-expiry-and-blocked-reconciliation',
+    title: 'expired claims retain provider uncertainty and cancellation while fencing completion',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueue',args:['item','renders',null]},
+      {op:'claim',args:['item',10]},
+      {op:'checkpoint',args:['item',{providerId:'remote'}]},
+      {op:'requestCancel',args:['item'],expect:{value:true}},
+      {op:'complete',args:['item','late'],expect:{throws:true}},
+      {op:'setNow',args:[110]},
+      {op:'complete',args:['item','late'],expect:{throws:true}},
+      {op:'recoverExpired',args:['item'],expect:{value:true}},
+      {op:'resolveBlocked',args:['item',{state:'queued',availableAt:110}],expect:{throws:true}},
+      {op:'resolveBlocked',args:['item',{state:'cancelled'}],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'queue/order-retry-block-and-cancel',
+    title: 'queue ordering precedes selection and retries respect availability',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueue',args:['z','q',null,0]},
+      {op:'enqueue',args:['b','q',null,3]},
+      {op:'enqueue',args:['a','q',null,3]},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'retry',args:['a',200],expect:{value:true}},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'block',args:['b',{providerId:'b'}],expect:{value:true}},
+      {op:'resolveBlocked',args:['b',{state:'queued',availableAt:100}],expect:{value:true}},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'requestCancel',args:['b']},
+      {op:'acknowledgeCancel',args:['b'],expect:{value:true}},
+      {op:'requestCancel',args:['z'],expect:{value:true}},
+      {op:'setNow',args:[200]},
+      {op:'claimNext',args:['q',10],expect:{value:true}},
+      {op:'fail',args:['a',{message:'failure'}],expect:{value:true}},
+      {op:'list',args:['q'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'queue/admin-priority-and-terminal-requeue',
+    title: 'administrative queue edits and explicit terminal retries preserve fencing',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueue',args:['item','q',null]},
+      {op:'updateQueued',args:['item',{priority:9}],expect:{value:true}},
+      {op:'claim',args:['item',10]},
+      {op:'fail',args:['item','bad'],expect:{value:true}},
+      {op:'requeueTerminal',args:['item',{}],expect:{value:true}},
+      {op:'claim',args:['item',10],expect:{value:true}},
+      {op:'complete',args:['item','ok'],expect:{value:true}},
+    ],
+  }),
+
+  defineScenario({
+    id: 'queue/deletion-retains-replay-and-id-reuse-fencing',
+    title: 'terminal deletion retains command outcomes and generation history for reused IDs',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'item',queue:'q',payload:'first'},'original'],expect:{value:true}},
+      {op:'claim',args:['item',10]},
+      {op:'rememberClaim',args:['item','old']},
+      {op:'complete',args:['item','done']},
+      {op:'removeTerminal',args:['item']},
+      {op:'enqueueCommand',args:[{id:'item',queue:'q',payload:'first'},'original'],expect:{value:true}},
+      {op:'get',args:['item'],expect:{value:true}},
+      {op:'enqueue',args:['item','q','replacement'],expect:{value:true}},
+      {op:'claim',args:['item',10],expect:{value:true}},
+      {op:'complete',args:['old','stale'],expect:{throws:true}},
+      {op:'get',args:['item'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id: 'queue/reject-runtime-input-and-malformed-state',
+    title: 'runtime fields and malformed persisted lifecycle state cannot become executable queue',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'item',queue:'q',payload:null,state:'succeeded'},'smuggled'],expect:{throws:true}},
+      {op:'enqueue',args:['item','q',null]},
+      {op:'corruptRecord',args:['item',{state:'leased',ownerToken:null}]},
+      {op:'get',args:['item'],expect:{throws:true}},
+      {op:'claimNext',args:['q',10],expect:{throws:true}},
+    ],
+  }),
+
+  defineScenario({
+    id: 'queue/malformed-blocked-decision-before-command-replay',
+    title: 'blocked decision shape validation precedes lookup of an already used command key',
+    ports: ['queue'],
+    steps: [
+      {op:'enqueueCommand',args:[{id:'item',queue:'q',payload:null},'used-key']},
+      {op:'resolveBlockedCommand',args:['item',{state:'cancelled',result:'unexpected'},'used-key'],expect:{throws:true}},
+      {op:'resolveBlockedCommand',args:['item',{},'used-key'],expect:{throws:true}},
+      {op:'get',args:['item'],expect:{value:true}},
+    ],
+  }),
+
+  defineScenario({
+    id:'queue/keyed-start-active-lifetime',title:'keyed starts retain active and uncertain work and release terminal work',ports:['queue'],steps:[
+      {op:'start',args:[{key:'key',id:'first',queue:'q',payload:null,subject:'asset',kind:'render'},'first'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'ignored',queue:'q',payload:'different'},'reuse'],expect:{value:true}},
+      {op:'claim',args:['first',10]}, {op:'block',args:['first',{providerId:'remote'}]},
+      {op:'start',args:[{key:'key',id:'ignored',queue:'q',payload:null},'blocked'],expect:{value:true}},
+      {op:'requestCancel',args:['first']},
+      {op:'start',args:[{key:'key',id:'next',queue:'q',payload:null},'next'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'first',queue:'q',payload:null,subject:'asset',kind:'render'},'first'],expect:{value:true}},
+      {op:'start',args:[{key:'key',id:'other-queue',queue:'other',payload:null},'other'],expect:{value:true}},
+    ],
+  }),
+  defineScenario({
+    id:'queue/indexed-discovery-and-legacy-upgrade',title:'filters and recency precede limits and legacy records normalize safely',ports:['queue'],steps:[
+      {op:'enqueueCommand',args:[{id:'old',queue:'q',payload:null,subject:'asset',kind:'render'},'old']},
+      {op:'setNow',args:[101]},
+      {op:'enqueueCommand',args:[{id:'b',queue:'q',payload:null,subject:'asset',kind:'render'},'b']},
+      {op:'enqueueCommand',args:[{id:'a',queue:'q',payload:null,subject:'asset',kind:'render'},'a']},
+      {op:'listFiltered',args:[{subject:'asset',kind:'render',state:'queued',limit:2}],expect:{value:true}},
+      {op:'seedLegacy',args:['old']}, {op:'get',args:['old'],expect:{value:true}},
+      {op:'claim',args:['old',10]}, {op:'get',args:['old'],expect:{value:true}},
+      {op:'corruptActiveSlot',args:['q','repair','missing']},
+      {op:'start',args:[{key:'repair',id:'repaired',queue:'q',payload:null},'repair'],expect:{value:true}},
+    ],
+  }),
+
+  defineScenario({
+    id:'queue/one-claim-helper',title:'one claim helper renews without terminal policy and refuses cancelled work',ports:['queue'],steps:[
+      {op:'enqueue',args:['item','q',null]}, {op:'claim',args:['item',10]},
+      {op:'runClaimNoop',args:['item'],expect:{value:true}}, {op:'get',args:['item'],expect:{value:true}},
+      {op:'requestCancel',args:['item']}, {op:'runClaimNoop',args:['item'],expect:{throws:true}},
+      {op:'acknowledgeCancel',args:['item']}, {op:'get',args:['item'],expect:{value:true}},
+    ],
+  }),
+
+];
