@@ -2,7 +2,7 @@ import type { AsyncAtomicStore, JsonValue, StoreVersion } from '@mirk/store/atom
 import type { AsyncStoreTransactions } from '@mirk/store/transaction';
 import type { AsyncLogStore } from '@mirk/store/log';
 
-export type ItemState = 'queued' | 'leased' | 'blocked' | 'succeeded' | 'failed' | 'cancelled';
+export type QueueItemState = 'queued' | 'leased' | 'blocked' | 'succeeded' | 'failed' | 'cancelled';
 export interface QueueItem {
   id: string;
   schemaVersion: 2;
@@ -11,7 +11,7 @@ export interface QueueItem {
   kind: string | null;
   queue: string;
   payload: JsonValue;
-  state: ItemState;
+  state: QueueItemState;
   priority: number;
   enqueuedAt: number;
   availableAt: number;
@@ -25,7 +25,7 @@ export interface QueueItem {
   result: JsonValue;
   error: JsonValue;
 }
-export interface VersionedItem { value: QueueItem; version: StoreVersion }
+export interface VersionedQueueItem { value: QueueItem; version: StoreVersion }
 export interface QueueClaim { itemId: string; ownerToken: string; generation: number }
 export interface QueueCommand { key: string }
 export interface ClaimOptions extends QueueCommand { leaseMs: number }
@@ -33,8 +33,8 @@ export interface EnqueueInput {
   id: string; queue: string; payload: JsonValue; priority?: number; availableAt?: number; subject?: string; kind?: string;
 }
 export interface StartInput extends Omit<EnqueueInput, 'id'> { key: string; id?: string }
-export interface StartResult { started: boolean; item: VersionedItem }
-export interface QueueListOptions { queue?: string; subject?: string; kind?: string; state?: ItemState; sortBy?: 'updatedAt' | 'enqueuedAt' | 'priority'; sortDir?: 'asc' | 'desc'; limit?: number }
+export interface StartResult { started: boolean; item: VersionedQueueItem }
+export interface QueueListOptions { queue?: string; subject?: string; kind?: string; state?: QueueItemState; sortBy?: 'updatedAt' | 'enqueuedAt' | 'priority'; sortDir?: 'asc' | 'desc'; limit?: number }
 export type BlockedDecision =
   | { state: 'queued'; availableAt: number }
   | { state: 'succeeded'; result: JsonValue }

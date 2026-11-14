@@ -2,10 +2,10 @@ import { compareCodePoints } from '@mirk/store/vector';
 import { generation, normalizeItem, normalizeOutcome, validateClaim, validateEnqueue, validateItem, validateOutcome, validateReceipt } from './validation.js';
 import { canonicalJson } from '@mirk/store/atomic';
 import type { JsonObject, JsonValue, StoreTarget, StoreVersion } from '@mirk/store/atomic';
-import type { BlockedDecision, ClaimOptions, EnqueueInput, QueueClaim, QueueCommand, QueueListOptions, QueueItem, QueueOptions, StartInput, StartResult, VersionedItem } from './types.js';
+import type { BlockedDecision, ClaimOptions, EnqueueInput, QueueClaim, QueueCommand, QueueListOptions, QueueItem, QueueOptions, StartInput, StartResult, VersionedQueueItem } from './types.js';
 import { QueueError } from './types.js';
 export { QueueError } from './types.js';
-export type { BlockedDecision, ClaimOptions, EnqueueInput, QueueClaim, QueueCommand, QueueListOptions, QueueItem, ItemState, QueueOptions, StartInput, StartResult, VersionedItem } from './types.js';
+export type { BlockedDecision, ClaimOptions, EnqueueInput, QueueClaim, QueueCommand, QueueListOptions, QueueItem, QueueItemState, QueueOptions, StartInput, StartResult, VersionedQueueItem } from './types.js';
 
 const terminal = (item: QueueItem) => ['succeeded', 'failed', 'cancelled'].includes(item.state);
 const order = (a: QueueItem, b: QueueItem) => b.priority - a.priority || a.enqueuedAt - b.enqueuedAt || compareCodePoints(a.id, b.id);
@@ -31,12 +31,12 @@ export class QueueStore {
     const retained = await this.options.store.get<unknown>(this.#generationKey(id));
     return canonicalJson([this.collection, id, retained === null ? 0 : time(generation(retained) + 1)]);
   }
-  async get(id: string): Promise<VersionedItem | null> {
+  async get(id: string): Promise<VersionedQueueItem | null> {
     text(id); const result = await this.options.store.getVersioned<QueueItem>(this.#target(id));
     if (result) { validateItem(result.value); if (result.value.id !== id) throw new QueueError('invalid-input'); }
     return result ? {...result,value:normalizeItem(result.value)} : null;
   }
-  async list(filter: QueueListOptions = {}): Promise<VersionedItem[]> {
+  async list(filter: QueueListOptions = {}): Promise<VersionedQueueItem[]> {
     if (filter.limit !== undefined && (!Number.isSafeInteger(filter.limit) || filter.limit < 0)) throw new QueueError('invalid-input');
     const sortBy = filter.sortBy ?? 'updatedAt'; const sortDir = filter.sortDir ?? 'desc';
     if (!['updatedAt','enqueuedAt','priority'].includes(sortBy) || !['asc','desc'].includes(sortDir)) throw new QueueError('invalid-input');
@@ -67,7 +67,7 @@ export class QueueStore {
       return outcome;
     });
   }
-  async #save(item: QueueItem, prior: VersionedItem | null, event: string): Promise<VersionedItem> {
+  async #save(item: QueueItem, prior: VersionedQueueItem | null, event: string): Promise<VersionedQueueItem> {
     validateItem(item);
     const slot = await this.#slotMutation(item);
     const target = this.#target(item.id);
@@ -80,7 +80,7 @@ export class QueueStore {
   #owned(item: QueueItem, claim: QueueClaim, now: number) {
     if (item.state !== 'leased' || item.ownerToken !== claim.ownerToken || item.generation !== claim.generation || item.expiresAt === null || item.expiresAt <= now) throw new QueueError('stale-claim');
   }
-  enqueue(input: EnqueueInput, command: QueueCommand): Promise<VersionedItem> {
+  enqueue(input: EnqueueInput, command: QueueCommand): Promise<VersionedQueueItem> {
     validateEnqueue(input); text(input.id); text(input.queue); canonicalJson(input.payload); input = structuredClone(input);
     if (!Number.isSafeInteger(input.priority ?? 0)) throw new QueueError('invalid-input');
     for(const value of [input.subject,input.kind]) if(value !== undefined && typeof value !== 'string') throw new QueueError('invalid-input');
