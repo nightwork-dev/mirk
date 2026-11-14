@@ -159,9 +159,9 @@ Metadata lives in a mirk store. The bytes live on disk, on S3 and other object s
 
 ## Also in the box
 
-- **Durable jobs** — [`@mirk/jobs`](packages/jobs) stores queued work, conditional claims, checkpoints,
-  cancellation, and fenced completion over an injected store and transaction domain. Applications
-  retain their workers and provider calls.
+- **Durable queue** — [`@mirk/queue`](packages/queue) stores queue items, atomic fenced claims with renewal,
+  keyed single-active admission and idempotent commands over an injected store and transaction domain.
+  It runs no workers and holds no policy; the job model belongs to Gonk.
 - **Native SQLite vectors** — [`@mirk/sqlite-vec-native`](packages/sqlite-vec-native) is the optional
   sqlite-vec companion for `@mirk/store/sqlite-vec`. It preserves the float64 search contract and
   computes inside SQLite. The companion compiles during installation, never during a query.
@@ -184,7 +184,7 @@ written by TypeScript, and TypeScript opens theirs.
 | `mirk-store-markdown`   | Markdown file storage                                                |
 | `mirk-artifact-opendal` | file bytes on S3-compatible storage                                  |
 | `mirk-vector-qdrant`    | vectors on Qdrant                                                    |
-| `mirk-jobs`             | durable jobs and fenced lifecycle transitions                       |
+| `mirk-queue`            | durable queue items, fenced claims and keyed admission              |
 | `mirk-sqlite-vec-native` | optional native SQLite vector computation                           |
 
 ## Install

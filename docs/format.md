@@ -1,7 +1,7 @@
 # Mirk SQLite format
 
 This is the normative storage contract for independent SQLite readers and writers. The current
-core format is **4**. Package versions, core file versions, coordination versions, and jobs record
+core format is **4**. Package versions, core file versions, coordination versions, and queue record
 versions are separate numbers. The checked-in [schemas and golden files](../testdata/sqlite-format/)
 provide historical examples. They supplement this document; they are not templates to upgrade in place.
 
@@ -254,13 +254,13 @@ tables are ordinary rowid tables:
   updated_at_ms INTEGER NN)`, PK `(namespace,key)`. Times are epoch milliseconds. A lease generation
   cannot exceed its recorded generation history. Core migration preserves these component tables.
 
-Jobs are ordinary KV/collection JSON records, not a new SQLite table layout. New jobs records have
+Queue items are ordinary KV/collection JSON records, not a new SQLite table layout. New queue records have
 `schemaVersion: 2`, adding nullable `activeKey`, `subject`, and `kind` to record version 1. Valid
 version-1 records and retained outcomes normalize those fields to null on read without rewriting
 the backing record or changing its KV version. A later mutation writes record version 2. Active
-slots use ordinary KV key `mirk-jobs-active:` plus canonical JSON `[jobsCollection,queue,key]`, with
-a job-ID string value. This record version and namespace do not replace or bump the core marker.
-See the [jobs contract](../packages/jobs/README.md) for lifecycle and receipt rules.
+slots use ordinary KV key `mirk-queue-active:` plus canonical JSON `[queueCollection,queue,key]`, with
+an item-ID string value. This record version and namespace do not replace or bump the core marker.
+See the [queue contract](../packages/queue/README.md) for lifecycle and receipt rules.
 
 The immutable fixtures cover recognized unversioned legacy, both evidenced historical version-2
 receipt layouts, version 3, and version 4. Each includes KV, ordered collection records, search docs

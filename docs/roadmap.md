@@ -46,7 +46,7 @@ still open.
 | MR-34 | Immediate fenced lease acquisition | `@mirk/store/coordination/core`, Python coordination | unreleased |
 | MR-35 | Transactional memory leases, KV, and log | `@mirk/store/transaction`, memory coordinator | unreleased |
 | MR-36 | Injected coordinator clock and scheduling | TypeScript and Python coordination | unreleased |
-| MR-37 | Keyed durable jobs, indexed lookup, and claim renewal | `@mirk/jobs`, `mirk-jobs` | unreleased |
+| MR-37 | Keyed durable queue items, indexed lookup, and claim renewal | `@mirk/queue`, `mirk-queue` | unreleased |
 
 "Shipped" means implemented and tested on the default branch. "Unreleased" means that
 the source and tests contain the feature without a release entry for it yet. Published

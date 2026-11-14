@@ -20,7 +20,7 @@ pnpm audit:dependencies  # public-registry dependency advisories
 The Python workspace pins managed CPython 3.12.15. Use uv 0.13.5 or later to download this build.
 
 The Python port is a uv workspace at `python/` with members `store`, `fixtures`, `artifact`,
-`store-markdown`, `artifact-opendal`, `vector-qdrant`, `jobs`, and `sqlite-vec-native`.
+`store-markdown`, `artifact-opendal`, `vector-qdrant`, `queue`, and `sqlite-vec-native`.
 Run each member's gates from inside it:
 
 ```bash
