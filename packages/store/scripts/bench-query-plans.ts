@@ -46,7 +46,7 @@ function weighted<T extends readonly (readonly [string, number])[]>(table: T): s
   const total = table.reduce((sum, [, weight]) => sum + weight, 0);
   let roll = random() * total;
   for (const [name, weight] of table) if ((roll -= weight) <= 0) return name;
-  return table[0][0];
+  return table[0]![0];
 }
 
 const dir = mkdtempSync(join(tmpdir(), "mirk-bench-plans-"));
