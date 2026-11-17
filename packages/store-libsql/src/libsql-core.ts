@@ -59,6 +59,8 @@ import {
   validateAtomicRequest,
 } from "@mirk/store/atomic";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
+import { resolveRefreshStatisticsAfterChanges, type StatisticsRefresh } from "@mirk/store/sql";
+import { LibsqlStatistics, type StatisticsConnection } from "./libsql-statistics.js";
 // Pure SQL-string builders shared with @mirk/store/sqlite — one definition so the
 // two SQLite-dialect adapters can't drift in filter semantics.
 import {
@@ -165,6 +167,12 @@ export interface LibsqlAdapterOptions {
    *  idempotency receipts. Defaults to the database's clock, so every host
    *  writing to the database agrees on a receipt's age. */
   now?: () => number;
+  /** Mirk keeps the database's query statistics fresh. A refresh runs inside
+   *  a write transaction the adapter already holds: when the store opens, after
+   *  \`ensureIndex\`, and once this adapter has changed this many rows since the
+   *  last refresh. Defaults to 1,000. 0 turns the automatic refreshes off;
+   *  \`refreshStatistics()\` still works. */
+  refreshStatisticsAfterChanges?: number;
 }
 
 export type LibsqlClientFactory = (config: {
@@ -190,7 +198,13 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     this.client = client;
     this.ownsClient = ownsClient;
     const names = tableNames(opts.tablePrefix ?? "");
-    this.database = new LibsqlDatabase(client, opts.url, names.sequence, opts.busyTimeoutMs ?? 30_000);
+    this.database = new LibsqlDatabase(
+      client,
+      opts.url,
+      names.sequence,
+      opts.busyTimeoutMs ?? 30_000,
+      new LibsqlStatistics(resolveRefreshStatisticsAfterChanges(opts.refreshStatisticsAfterChanges)),
+    );
     const local = client.protocol === "file";
     this.kv = new LibsqlKvFacet(
       this.database,
@@ -215,6 +229,22 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     this.database.transactions.afterCommit(notify);
   }
 
+  /** Rebuild the database's query statistics for every table that needs it,
+   *  in one write transaction. Mirk does this by itself; call it after a bulk
+   *  import that should be fast before the next automatic refresh. Throws if
+   *  the refresh fails. */
+  refreshStatistics(): Promise<StatisticsRefresh> {
+    return this.transaction(() =>
+      this.database.inTransaction((open) => this.database.statistics.run(statisticsConnection(open), "request")),
+    );
+  }
+
+  /** The last statistics refresh, automatic or requested: why it ran, which
+   *  tables it analyzed, how long it took, or why it was skipped. */
+  get lastStatisticsRefresh(): StatisticsRefresh | undefined {
+    return this.database.statistics.last;
+  }
+
   /** Close the underlying connection (shared by both facets). No-op for a client
    *  the caller passed in via `opts.client`. */
   close(): void {
@@ -227,6 +257,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     await this.transaction(async () => {
       await (this.kv as LibsqlKvFacet).init(versionIdentity);
       await (this.vector as LibsqlVectorFacet).init();
+      this.database.statistics.request("open");
     });
   }
 }
@@ -424,6 +455,7 @@ class LibsqlDatabase {
     url: string,
     private readonly sequenceTable: string,
     private readonly busyTimeoutMs: number,
+    readonly statistics: LibsqlStatistics,
   ) {
     this.local = client.protocol === "file";
     const writers = this.local ? fileWriters(url) : undefined;
@@ -432,6 +464,8 @@ class LibsqlDatabase {
     this.transactions = new AsyncTransactionCoordinator<OpenTransaction>({
       begin: () => this.begin(),
       commit: async (open) => {
+        const refresh = this.statistics.due();
+        if (refresh !== undefined) await this.statistics.run(statisticsConnection(open), refresh);
         await this.commitOpen(open);
         if (this.floor <= open.minted) this.floor = 0;
       },
@@ -544,10 +578,10 @@ class LibsqlDatabase {
           }
         });
         const open: OpenTransaction = {
-          execute: (stmt) => this.client.execute(stmt),
+          execute: async (stmt) => this.counted(await this.client.execute(stmt)),
           batch: async (stmts) => {
             const results: ResultSet[] = [];
-            for (const stmt of stmts) results.push(await this.client.execute(stmt));
+            for (const stmt of stmts) results.push(this.counted(await this.client.execute(stmt)));
             return results;
           },
           minted,
@@ -577,13 +611,18 @@ class LibsqlDatabase {
         throw error;
       }
       return {
-        execute: (stmt) => stream.execute(stmt),
-        batch: (stmts) => stream.batch(stmts),
+        execute: async (stmt) => this.counted(await stream.execute(stmt)),
+        batch: async (stmts) => (await stream.batch(stmts)).map((result) => this.counted(result)),
         minted,
         stream,
         release: undefined,
       };
     });
+  }
+
+  private counted(result: ResultSet): ResultSet {
+    this.statistics.noteChanges(result.rowsAffected);
+    return result;
   }
 
   private async commitOpen(open: OpenTransaction): Promise<void> {
@@ -631,6 +670,10 @@ class LibsqlDatabase {
       }
     }
   }
+}
+
+function statisticsConnection(open: OpenTransaction): StatisticsConnection {
+  return { execute: (sql) => guard(open.execute(sql)) };
 }
 
 type FailureCode = "busy" | "transaction-expired" | "connection-lost";
@@ -1053,6 +1096,7 @@ class LibsqlKvFacet implements LibsqlKvStore {
     const table = await this.ensureTable(collection);
     await this.write(async () => {
       await this.db.execute(buildEnsureIndexSql(table, field));
+      this.db.statistics.request("index");
     });
   }
 
