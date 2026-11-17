@@ -491,12 +491,8 @@ export function isTableRegistryConflict(error: unknown): boolean {
 
 export {
   DEFAULT_REFRESH_STATISTICS_AFTER_CHANGES,
-  LEGACY_ANALYSIS_LIMIT,
-  TOTAL_CHANGES_SQL,
-  engineOptimizeIsBounded,
   resolveRefreshStatisticsAfterChanges,
   statisticsRefresh,
-  tablesFromOptimizePlan,
   type StatisticsOutcome,
   type StatisticsRefresh,
   type StatisticsRefreshReason,

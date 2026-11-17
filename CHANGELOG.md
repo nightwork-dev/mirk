@@ -28,6 +28,9 @@ Fast reads without knowing the query planner.
   joined key such as `product|kind` by hand. An empty list throws `StoreFilterError` with code
   `invalid-index-fields`. A one-field list is the same index as the field alone.
 - `@mirk/store/sql` exports the shared statistics rule (`statisticsRefresh`) and `indexFields`.
+- If you implement `SyncStoreIndexes` or `AsyncStoreIndexes` yourself, `ensureIndex` may now
+  receive a list of fields. TypeScript still accepts a `field: string` implementation, so check
+  for a list at run time; `indexFields` from `@mirk/store/sql` turns either form into a list.
 
 ### libSQL
 
