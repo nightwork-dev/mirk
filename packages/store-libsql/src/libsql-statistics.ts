@@ -70,6 +70,9 @@ export class LibsqlStatistics {
       }
     } catch (error) {
       if (reason === "request") throw error;
+      // Wait for another `afterChanges` rows before trying again, so a refresh
+      // that keeps failing does not run inside every commit.
+      this.changes = 0;
       this.lastRefresh = {
         reason,
         tables: [],

@@ -58,14 +58,27 @@ export class SqliteStatistics {
     }
     this.pending = undefined;
     const started = performance.now();
+    let failure: unknown;
     try {
       this.db.pragma("busy_timeout = 0");
-      try {
-        this.run(reason);
-      } finally {
-        this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
-      }
+      this.run(reason);
     } catch (error) {
+      failure = error;
+    }
+    try {
+      this.db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
+    } catch (error) {
+      failure ??= error;
+    }
+    if (failure !== undefined) {
+      const error = failure;
+      // Wait for another `afterChanges` rows before trying again, so a refresh
+      // that keeps failing does not run after every commit.
+      try {
+        this.changesAtRefresh = this.totalChanges();
+      } catch {
+        /* the connection may be closed */
+      }
       this.lastRefresh = {
         reason,
         tables: [],

@@ -13,6 +13,7 @@ runs a bounded ANALYZE on the tables that need it.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import sqlite3
 import time
@@ -164,16 +165,22 @@ class SqliteStatistics:
             return
         self._pending = None
         started = time.perf_counter()
+        failure: sqlite3.Error | None = None
         try:
             self._db.execute("PRAGMA busy_timeout = 0")
-            try:
-                self._run(reason)
-            finally:
-                self._db.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
+            self._run(reason)
         except sqlite3.Error as error:
-            self.last = StatisticsRefresh(
-                reason, (), (time.perf_counter() - started) * 1000, str(error)
-            )
+            failure = error
+        try:
+            self._db.execute(f"PRAGMA busy_timeout = {self._busy_timeout_ms}")
+        except sqlite3.Error as error:
+            failure = failure or error
+        if failure is not None:
+            # Wait for another after_changes rows before trying again.
+            with contextlib.suppress(sqlite3.Error):
+                self._changes_at_refresh = self._db.total_changes
+            elapsed = (time.perf_counter() - started) * 1000
+            self.last = StatisticsRefresh(reason, (), elapsed, str(failure))
 
     def after_write(self) -> None:
         if self._after_changes == 0 or self._db.in_transaction:
