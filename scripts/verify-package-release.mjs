@@ -378,7 +378,7 @@ async function verifyPackage(packageInfo, workspacePackages, options) {
     evidence.packedFiles = packedFiles;
     evidence.publicExports = exportKeys(packedManifest.exports);
 
-    checkPackedPaths(packedFiles);
+    checkPackedPaths(packedFiles, packageInfo.manifest.files);
     const attribution = buildPackedInputAttribution(
       packageInfo,
       extracted,
@@ -785,7 +785,10 @@ function checkPackageMetadata(manifest) {
   }
 }
 
-function checkPackedPaths(files) {
+/** A path under `test/` or `src/` is development-only unless the manifest's
+ *  `files` names that exact file, which says the package ships it on purpose. */
+function checkPackedPaths(files, declared = []) {
+  const named = new Set(Array.isArray(declared) ? declared.filter((entry) => typeof entry === "string") : []);
   for (const file of files) {
     if (
       !file ||
@@ -795,7 +798,7 @@ function checkPackedPaths(files) {
     ) {
       throw new Error(`unsafe packed path: ${file}`);
     }
-    if (PACKED_PATH_BLOCKLIST.some((pattern) => pattern.test(file))) {
+    if (!named.has(file) && PACKED_PATH_BLOCKLIST.some((pattern) => pattern.test(file))) {
       throw new Error(`development-only file leaked into tarball: ${file}`);
     }
   }
