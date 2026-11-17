@@ -99,7 +99,7 @@ const targets: string[] = [];
       }
     }, "immediate");
   }
-  out({ phase: "load", links: LINKS, membership: MEMBERSHIP, ms: Math.round(performance.now() - started) });
+  out({ phase: "load", links: LINKS, membership: MEMBERSHIP, ms: Math.round(performance.now() - started), lastRefresh: (adapter as { lastStatisticsRefresh?: unknown }).lastStatisticsRefresh });
   adapter.close();
 }
 
@@ -108,6 +108,7 @@ const scope = ["p40", "p41", "p42", "p43"];
 function measure(phase: string): void {
   const { raw, adapter } = open();
   const kv = adapter.kv;
+  out({ phase, openRefresh: (adapter as { lastStatisticsRefresh?: unknown }).lastStatisticsRefresh });
   const stat = raw.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'sqlite_stat1'").get() as { n: number };
   const statRows = stat.n ? (raw.prepare("SELECT count(*) AS n FROM sqlite_stat1").get() as { n: number }).n : 0;
 
@@ -155,6 +156,17 @@ function measure(phase: string): void {
 }
 
 measure("opened");
+
+{
+  const { adapter } = open();
+  const refresh = (adapter as { refreshStatistics?: () => unknown }).refreshStatistics;
+  if (refresh) {
+    const started = performance.now();
+    const report = refresh.call(adapter);
+    out({ phase: "refreshStatistics", ms: +(performance.now() - started).toFixed(2), report });
+  }
+  adapter.close();
+}
 
 {
   const raw = new DatabaseSync(path);

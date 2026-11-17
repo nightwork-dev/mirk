@@ -43,7 +43,16 @@ store.close()
 on. It is idempotent; call it on every start. On `SqliteStore` it creates the
 same expression index as the TypeScript adapter, under the same name, so either
 language sees the other's index as present. `InMemoryStore` accepts it and does
-nothing. A `where` value made only of `gt`, `gte`, `lt` and `lte` bounds is a
+nothing. A list of fields, such as `store.ensureIndex("membership", ["product",
+"kind"])`, declares one index over them in that order, for queries that filter
+on those fields together.
+
+`SqliteStore` keeps SQLite's query statistics fresh with `PRAGMA optimize`, as
+the TypeScript adapters do: when it opens, after `ensureIndex`, once the
+connection has changed `refresh_statistics_after_changes` rows (default 1,000;
+0 turns it off) since the last refresh, and at close. An automatic refresh
+never waits for another writer. `store.refresh_statistics()` refreshes on
+request, and `store.last_statistics_refresh` reports the last refresh. A `where` value made only of `gt`, `gte`, `lt` and `lte` bounds is a
 range, with the TypeScript semantics: a number bound matches only numbers, a
 string bound only strings by code point, and `None` or a missing field never
 matches. A NaN or infinite number in a filter raises `StoreFilterError`
