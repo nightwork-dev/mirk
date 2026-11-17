@@ -32,7 +32,7 @@ import {
   validateAtomicRequest,
 } from "../atomic.js";
 import { compareCodePoints, sortAndPageStoreItems } from "../order.js";
-import { assertInValues, assertWhere, inRange, whereCondition } from "../sql.js";
+import { assertInValues, assertWhere, indexFields, inRange, whereCondition } from "../sql.js";
 
 let nextMemoryStoreId = 1;
 
@@ -167,8 +167,9 @@ export class InMemoryStore
     return applyFilter(items, filter);
   }
 
-  /** Accepted and a no-op: the reference scans in memory. */
-  ensureIndex(collection: string, _field: string): void {
+  /** Validated, then a no-op: the reference scans in memory. */
+  ensureIndex(collection: string, fields: string | readonly string[]): void {
+    indexFields(fields);
     this.ensureCollection(collection);
   }
 

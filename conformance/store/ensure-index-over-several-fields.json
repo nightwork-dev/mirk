@@ -1,0 +1,203 @@
+{
+  "id": "store/ensure-index-over-several-fields",
+  "title": "an index over several fields is idempotent, takes a one-field list, and leaves every query's answer alone",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [
+    "listWhereIn"
+  ],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        [
+          "kind",
+          "state"
+        ]
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        [
+          "kind",
+          "state"
+        ]
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        [
+          "kind"
+        ]
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        [
+          "kind",
+          "kind",
+          "at"
+        ]
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "1",
+          "kind": "a",
+          "state": "open",
+          "at": 3
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "2",
+          "kind": "b",
+          "state": "open",
+          "at": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "3",
+          "kind": "a",
+          "state": "done",
+          "at": 2
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "4",
+          "kind": "a",
+          "state": "open",
+          "at": 1
+        }
+      ]
+    },
+    {
+      "op": "put",
+      "args": [
+        "items",
+        {
+          "id": "5",
+          "kind": "a",
+          "at": 5
+        }
+      ]
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "kind": "a",
+            "state": "open"
+          }
+        }
+      ],
+      "expect": {
+        "ids": [
+          "1",
+          "4"
+        ]
+      }
+    },
+    {
+      "op": "list",
+      "args": [
+        "items",
+        {
+          "where": {
+            "state": "open",
+            "kind": "a"
+          },
+          "sortBy": "at",
+          "sortDir": "desc"
+        }
+      ],
+      "expect": {
+        "ids": [
+          "1",
+          "4"
+        ]
+      }
+    },
+    {
+      "op": "count",
+      "args": [
+        "items",
+        {
+          "where": {
+            "kind": "a",
+            "state": "open",
+            "at": {
+              "gte": 2
+            }
+          }
+        }
+      ],
+      "expect": {
+        "value": 1
+      }
+    },
+    {
+      "op": "listWhereIn",
+      "args": [
+        "items",
+        "kind",
+        [
+          "a",
+          "b"
+        ],
+        {
+          "where": {
+            "state": "open"
+          },
+          "sortBy": "at",
+          "limit": 2
+        }
+      ],
+      "expect": {
+        "ids": [
+          "2",
+          "4"
+        ]
+      }
+    }
+  ]
+}

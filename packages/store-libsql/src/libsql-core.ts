@@ -69,6 +69,7 @@ import {
   buildLimitOffset,
   buildInClause,
   buildEnsureIndexSql,
+  indexFields,
   COLLECTION_TABLE_KIND,
   COLLECTION_TABLE_PREFIX,
   INSERT_REGISTERED_TABLE_SQL,
@@ -1092,10 +1093,11 @@ class LibsqlKvFacet implements LibsqlKvStore {
     return rs.rows.map((r) => JSON.parse(r.data as string) as T);
   }
 
-  async ensureIndex(collection: string, field: string): Promise<void> {
+  async ensureIndex(collection: string, fields: string | readonly string[]): Promise<void> {
+    const declared = indexFields(fields);
     const table = await this.ensureTable(collection);
     await this.write(async () => {
-      await this.db.execute(buildEnsureIndexSql(table, field));
+      await this.db.execute(buildEnsureIndexSql(table, declared));
       this.db.statistics.request("index");
     });
   }

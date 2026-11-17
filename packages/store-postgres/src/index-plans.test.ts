@@ -93,6 +93,42 @@ describePostgres("PostgreSQL query plans with declared indexes", { timeout: 120_
     }
   });
 
+  it("serves a filter on several fields from one index declared over them", async () => {
+    const schema = `mirk_plans_${randomUUID().replaceAll("-", "")}`;
+    schemas.push(schema);
+    const log: Executed[] = [];
+    const adapter = await PostgresAdapter.open({ pool: recording(pool, log), schema });
+    try {
+      for (const field of ["product", "kind", "state"]) await adapter.kv.ensureIndex("members", field);
+      await adapter.kv.ensureIndex("members", ["product", "kind", "state"]);
+      expect(adapter.lastStatisticsRefresh?.reason).toBe("index");
+      await adapter.transaction(async () => {
+        for (let i = 0; i < 6000; i += 1) {
+          await adapter.kv.put("members", { id: `m${i}`, product: `p${i % 100}`, kind: ["problem", "story", "task"][i % 3], state: ["open", "done"][i % 2], score: i });
+        }
+      });
+      const refresh = await adapter.refreshStatistics();
+      expect(refresh.reason).toBe("request");
+      expect(refresh.tables).toContain(`"${schema}".records`);
+      const reads: [string, () => Promise<unknown>][] = [
+        ["where on all three", () => adapter.kv.list("members", { where: { product: "p7", kind: "story", state: "done" } })],
+        ["listWhereIn on the first with where on the rest", () =>
+          adapter.kv.listWhereIn("members", "product", ["p1", "p2", "p3"], { where: { kind: "problem", state: "open" } })],
+      ];
+      for (const [label, read] of reads) {
+        log.length = 0;
+        await read();
+        expect(log, label).toHaveLength(1);
+        const explained = await pool.query<{ "QUERY PLAN": string }>(`EXPLAIN ${log[0]!.sql}`, log[0]!.values);
+        const plan = explained.rows.map((row) => row["QUERY PLAN"]).join("\n");
+        expect(plan, `${label}\n${plan}`).toMatch(/(?:Index Scan using|Index Only Scan using|Bitmap Index Scan on) records_c_/);
+      }
+      expect((await adapter.kv.list<{ id: string }>("members", { where: { product: "p7", kind: "story", state: "done" } })).map((m) => m.id).slice(0, 2)).toEqual(["m7", "m307"]);
+    } finally {
+      await adapter.close();
+    }
+  });
+
   it("uses no field index when none is declared", async () => {
     for (const [label, plan] of await plans(false)) expect(plan, label).not.toMatch(/records_[fs]_/);
   });

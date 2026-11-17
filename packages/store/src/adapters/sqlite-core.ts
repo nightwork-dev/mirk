@@ -692,7 +692,7 @@ export class SqliteAdapterCore {
       list: (collection, filter) => run(() => lifted.list(collection, filter)),
       listWhereIn: (collection, field, values, filter) =>
         run(() => lifted.listWhereIn(collection, field, values, filter)),
-      ensureIndex: (collection, field) => run(() => lifted.ensureIndex(collection, field)),
+      ensureIndex: (collection, fields) => run(() => lifted.ensureIndex(collection, fields)),
       getById: (collection, id) => run(() => lifted.getById(collection, id)),
       put: (collection, item) => run(() => lifted.put(collection, item)),
       remove: (collection, id) => run(() => lifted.remove(collection, id)),
@@ -1039,8 +1039,8 @@ class SqliteKvFacet
     return rows.map((r) => JSON.parse(r.data) as T);
   }
 
-  ensureIndex(collection: string, field: string): void {
-    this.db.exec(buildEnsureIndexSql(this.ensureTable(collection), field));
+  ensureIndex(collection: string, fields: string | readonly string[]): void {
+    this.db.exec(buildEnsureIndexSql(this.ensureTable(collection), fields));
     this.afterIndex();
   }
 

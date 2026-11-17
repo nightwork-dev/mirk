@@ -16,6 +16,7 @@ from .types import StoreFilter
 
 __all__ = [
     "FILTER_SCALAR_MESSAGE",
+    "INVALID_INDEX_FIELDS_MESSAGE",
     "INVALID_RANGE_BOUND_MESSAGE",
     "IN_SCALAR_MESSAGE",
     "MAX_IN_VALUES",
@@ -28,6 +29,7 @@ __all__ = [
     "apply_filter",
     "dumps_json",
     "in_range",
+    "index_fields",
     "json_equal",
     "matches_where",
     "normalize_json_numbers",
@@ -52,6 +54,7 @@ StoreFilterErrorCode = Literal[
     "invalid-range-bound",
     "non-finite-number",
     "too-many-in-values",
+    "invalid-index-fields",
 ]
 
 RANGE_OPERATORS = ("gt", "gte", "lt", "lte")
@@ -67,6 +70,27 @@ class StoreFilterError(ValueError):
     def __init__(self, code: StoreFilterErrorCode, message: str) -> None:
         super().__init__(message)
         self.code: StoreFilterErrorCode = code
+
+
+INVALID_INDEX_FIELDS_MESSAGE = "ensureIndex takes a field name or a non-empty list of field names."
+
+
+def index_fields(fields: object) -> list[str]:
+    """The fields one ``ensureIndex`` call declares, in index order, as in TypeScript.
+
+    A string is one field. A field named twice keeps its first place. An empty
+    list, or one holding anything but strings, is ``invalid-index-fields``.
+    """
+    items: list[object]
+    if isinstance(fields, str):
+        items = [fields]
+    elif isinstance(fields, (list, tuple)):
+        items = list(cast("list[object] | tuple[object, ...]", fields))
+    else:
+        items = []
+    if not items or not all(isinstance(field, str) for field in items):
+        raise StoreFilterError("invalid-index-fields", INVALID_INDEX_FIELDS_MESSAGE)
+    return list(dict.fromkeys(cast("list[str]", items)))
 
 
 _MAX_SAFE_INTEGER = 2**53

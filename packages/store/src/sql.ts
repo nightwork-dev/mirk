@@ -45,7 +45,8 @@ export type StoreFilterErrorCode =
   | "non-scalar-in-value"
   | "invalid-range-bound"
   | "non-finite-number"
-  | "too-many-in-values";
+  | "too-many-in-values"
+  | "invalid-index-fields";
 
 /** Thrown for a `where` or IN value that is not a JSON scalar or a range, a
  *  number that is not finite, a range bound that is not a finite number or a
@@ -182,24 +183,46 @@ export function buildWhereClause(filter?: StoreFilter): { clause: string; params
   return { clause: ` WHERE ${conditions.join(" AND ")}`, params };
 }
 
-/** The name of the expression index `ensureIndex` declares on one collection
- *  table: `ix_<table>_<hex of the UTF-8 of the field's path label>`. For most
- *  fields the label is the field itself. The label escapes lone surrogates,
- *  which UTF-8 cannot carry, so distinct fields keep distinct names. The hex
- *  holds no `_`, so the last `_` splits the name back into table and label:
- *  two declarations never share a name. The Python port derives the same name,
- *  so each language sees the other's index as already present. */
-export function indexNameFor(table: string, field: string): string {
-  let hex = "";
-  for (const byte of new TextEncoder().encode(jsonPath(field).slice(3, -1))) hex += byte.toString(16).padStart(2, "0");
-  return `ix_${table}_${hex}`;
+export const INVALID_INDEX_FIELDS_MESSAGE = "ensureIndex takes a field name or a non-empty list of field names.";
+
+/** The fields one `ensureIndex` call declares, in index order. A string is one
+ *  field. A field named twice keeps its first place, since a second index
+ *  column on the same field adds nothing. An empty list, or a list holding
+ *  anything but strings, is `invalid-index-fields`. */
+export function indexFields(fields: string | readonly string[]): readonly string[] {
+  const list: unknown[] = typeof fields === "string" ? [fields] : Array.isArray(fields) ? fields : [];
+  if (list.length === 0 || !list.every((field) => typeof field === "string")) {
+    throw new StoreFilterError("invalid-index-fields", INVALID_INDEX_FIELDS_MESSAGE);
+  }
+  return [...new Set(list as string[])];
 }
 
-/** The one idempotent statement behind `ensureIndex(collection, field)`: an
+function labelHex(field: string): string {
+  let hex = "";
+  for (const byte of new TextEncoder().encode(jsonPath(field).slice(3, -1))) hex += byte.toString(16).padStart(2, "0");
+  return hex;
+}
+
+/** The name of the expression index `ensureIndex` declares on one collection
+ *  table: `ix_<table>_<label>`, where the label is the hex of the UTF-8 of each
+ *  field's path label, joined by `x` for an index over several fields. For most
+ *  fields the path label is the field itself. It escapes lone surrogates, which
+ *  UTF-8 cannot carry, so distinct fields keep distinct names. Neither hex nor
+ *  `x` is `_`, so the last `_` splits the name back into table and label, and
+ *  `x` is not a hex digit, so the label splits back into fields: two
+ *  declarations never share a name. The Python port derives the same name, so
+ *  each language sees the other's index as already present. */
+export function indexNameFor(table: string, fields: string | readonly string[]): string {
+  return `ix_${table}_${indexFields(fields).map(labelHex).join("x")}`;
+}
+
+/** The one idempotent statement behind `ensureIndex(collection, fields)`: an
  *  expression index over the same `json_extract(data, <literal>)` that where,
- *  listWhereIn and sortBy write. */
-export function buildEnsureIndexSql(table: string, field: string): string {
-  return `CREATE INDEX IF NOT EXISTS ${indexNameFor(table, field)} ON ${table} (json_extract(data, ${jsonPathLiteral(field)}))`;
+ *  listWhereIn and sortBy write, one column per field in the order given. */
+export function buildEnsureIndexSql(table: string, fields: string | readonly string[]): string {
+  const list = indexFields(fields);
+  const columns = list.map((field) => `json_extract(data, ${jsonPathLiteral(field)})`).join(", ");
+  return `CREATE INDEX IF NOT EXISTS ${indexNameFor(table, list)} ON ${table} (${columns})`;
 }
 
 /** `jsonPath(field)` as a quoted SQL string literal, for SQL that must name the

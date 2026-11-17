@@ -1,0 +1,32 @@
+{
+  "id": "store/ensure-index-rejects-an-empty-field-list",
+  "title": "ensureIndex rejects an empty list of fields",
+  "ports": [
+    "collection"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        []
+      ],
+      "expect": {
+        "throws": "ensureIndex takes a field name or a non-empty list of field names."
+      }
+    },
+    {
+      "op": "ensureIndex",
+      "args": [
+        "items",
+        [
+          1
+        ]
+      ],
+      "expect": {
+        "throws": "ensureIndex takes a field name or a non-empty list of field names."
+      }
+    }
+  ]
+}

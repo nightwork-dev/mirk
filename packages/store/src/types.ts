@@ -50,17 +50,19 @@ export interface AsyncStoreInQuery {
   ): Promise<T[]>;
 }
 
-/** Optional collection capability: declare that queries filter or sort on one
- *  field, so the backend can index it. Idempotent and safe to call on every
- *  start. Backends with no query planner accept it and do nothing, so portable
- *  code can always call it. */
+/** Optional collection capability: declare that queries filter or sort on a
+ *  field, or on several fields together, so the backend can index them. A list
+ *  is one index over those fields in that order: it serves a `where` on its
+ *  leading fields, then a range or `sortBy` on the next one. Idempotent and safe
+ *  to call on every start. Backends with no query planner accept it and do
+ *  nothing, so portable code can always call it. */
 export interface SyncStoreIndexes {
-  ensureIndex(collection: string, field: string): void;
+  ensureIndex(collection: string, fields: string | readonly string[]): void;
 }
 
 /** Async twin of SyncStoreIndexes. */
 export interface AsyncStoreIndexes {
-  ensureIndex(collection: string, field: string): Promise<void>;
+  ensureIndex(collection: string, fields: string | readonly string[]): Promise<void>;
 }
 
 /**

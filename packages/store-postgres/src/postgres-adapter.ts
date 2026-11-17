@@ -27,7 +27,7 @@ import {
   resolveReceiptRetention,
   validateAtomicRequest,
 } from "@mirk/store/atomic";
-import { assertInValues, whereCondition, type StoreRangeOperator } from "@mirk/store/sql";
+import { assertInValues, indexFields, whereCondition, type StatisticsRefresh, type StatisticsRefreshReason, type StoreRangeOperator } from "@mirk/store/sql";
 import { AsyncTransactionCoordinator } from "@mirk/store/transaction";
 
 export type PostgresAdapterErrorCode =
@@ -278,6 +278,20 @@ export class PostgresAdapter implements AsyncStoreTransactions {
     this.transactions.afterCommit(notify);
   }
 
+  /** Rebuild PostgreSQL's planner statistics for this schema's tables with
+   *  `ANALYZE`. The server's autovacuum already does this as tables grow, and
+   *  `ensureIndex` does it when it creates an index; call this after a bulk
+   *  import that should be fast before autovacuum next runs. */
+  refreshStatistics(): Promise<StatisticsRefresh> {
+    return (this.kv as PostgresStoreFacet).refreshStatistics("request");
+  }
+
+  /** The last statistics refresh this adapter ran. Autovacuum's own runs are
+   *  in `pg_stat_user_tables`. */
+  get lastStatisticsRefresh(): StatisticsRefresh | undefined {
+    return (this.kv as PostgresStoreFacet).lastStatisticsRefresh;
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -296,6 +310,8 @@ class PostgresStoreFacet implements PostgresStore {
   private readonly versionSequence: string;
   /** One statement that consumes the next version token. */
   private readonly mint: string;
+  private readonly schema: string;
+  lastStatisticsRefresh: StatisticsRefresh | undefined;
 
   constructor(
     private readonly database: Queryable,
@@ -306,6 +322,7 @@ class PostgresStoreFacet implements PostgresStore {
     private readonly now: (() => number) | undefined,
   ) {
     const quotedSchema = quoteIdentifier(schema);
+    this.schema = schema;
     this.kvTable = `${quotedSchema}.kv`;
     this.recordsTable = `${quotedSchema}.records`;
     this.receiptsTable = `${quotedSchema}.atomic_receipts`;
@@ -448,19 +465,41 @@ class PostgresStoreFacet implements PostgresStore {
     return result.rows.map((row) => row.data);
   }
 
-  /** Two expression indexes, created in one round trip: `data -> field` serves
-   *  equality, listWhereIn and number ranges; `(data ->> field) COLLATE "C"`
-   *  serves string ranges in code point order on any server locale. */
-  async ensureIndex(collection: string, field: string): Promise<void> {
-    if (field.includes("\u0000")) return;
-    const name = createHash("sha256").update(`${collection}\u0000${field}`).digest("hex").slice(0, 32);
-    const key = `E'${field.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
-    await this.write(() =>
-      this.database.query(
-        `CREATE INDEX IF NOT EXISTS records_f_${name} ON ${this.recordsTable} (collection, (data -> ${key}));`
-          + ` CREATE INDEX IF NOT EXISTS records_s_${name} ON ${this.recordsTable} (collection, ((data ->> ${key}) COLLATE "C"))`,
-      ),
+  /** One field: two expression indexes, created in one round trip. `data ->
+   *  field` serves equality, listWhereIn and number ranges; `(data ->> field)
+   *  COLLATE "C"` serves string ranges in code point order on any server
+   *  locale. Several fields: one index over `data -> field` for each, in order,
+   *  which serves equality on its leading fields and a number range on the
+   *  next. */
+  async ensureIndex(collection: string, fields: string | readonly string[]): Promise<void> {
+    const declared = indexFields(fields);
+    if (declared.some((field) => field.includes("\u0000"))) return;
+    const name = createHash("sha256").update([collection, ...declared].join("\u0000")).digest("hex").slice(0, 32);
+    const key = (field: string) => `E'${field.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+    const statements = declared.length === 1
+      ? `CREATE INDEX IF NOT EXISTS records_f_${name} ON ${this.recordsTable} (collection, (data -> ${key(declared[0]!)}));`
+        + ` CREATE INDEX IF NOT EXISTS records_s_${name} ON ${this.recordsTable} (collection, ((data ->> ${key(declared[0]!)}) COLLATE "C"))`
+      : `CREATE INDEX IF NOT EXISTS records_c_${name} ON ${this.recordsTable} (collection, ${declared.map((field) => `(data -> ${key(field)})`).join(", ")})`;
+    const index = declared.length === 1 ? `records_f_${name}` : `records_c_${name}`;
+    const existed = await this.database.query(
+      "SELECT 1 FROM pg_indexes WHERE schemaname = $1 AND indexname = $2",
+      [this.schema, index],
     );
+    await this.write(() => this.database.query(statements));
+    // A new expression index has no statistics until ANALYZE reads its
+    // expression, and autovacuum analyzes only after rows change.
+    if (existed.rowCount === 0) await this.refreshStatistics("index");
+  }
+
+  async refreshStatistics(reason: StatisticsRefreshReason): Promise<StatisticsRefresh> {
+    const started = performance.now();
+    await this.database.query(`ANALYZE ${this.recordsTable}, ${this.kvTable}`);
+    this.lastStatisticsRefresh = {
+      reason,
+      tables: [this.recordsTable, this.kvTable],
+      durationMs: performance.now() - started,
+    };
+    return this.lastStatisticsRefresh;
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {

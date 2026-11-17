@@ -655,6 +655,42 @@ export const scenarios = [
   }),
 
   defineScenario({
+    id: "store/ensure-index-over-several-fields",
+    title: "an index over several fields is idempotent, takes a one-field list, and leaves every query's answer alone",
+    ports: ["collection"],
+    capabilities: ["listWhereIn"],
+    steps: [
+      { op: "ensureIndex", args: ["items", ["kind", "state"]], expect: { value: true } },
+      { op: "ensureIndex", args: ["items", ["kind", "state"]], expect: { value: true } },
+      { op: "ensureIndex", args: ["items", ["kind"]], expect: { value: true } },
+      { op: "ensureIndex", args: ["items", ["kind", "kind", "at"]], expect: { value: true } },
+      { op: "put", args: ["items", { id: "1", kind: "a", state: "open", at: 3 }] },
+      { op: "put", args: ["items", { id: "2", kind: "b", state: "open", at: 1 }] },
+      { op: "put", args: ["items", { id: "3", kind: "a", state: "done", at: 2 }] },
+      { op: "put", args: ["items", { id: "4", kind: "a", state: "open", at: 1 }] },
+      { op: "put", args: ["items", { id: "5", kind: "a", at: 5 }] },
+      { op: "list", args: ["items", { where: { kind: "a", state: "open" } }], expect: { ids: true } },
+      { op: "list", args: ["items", { where: { state: "open", kind: "a" }, sortBy: "at", sortDir: "desc" }], expect: { ids: true } },
+      { op: "count", args: ["items", { where: { kind: "a", state: "open", at: { gte: 2 } } }], expect: { value: true } },
+      {
+        op: "listWhereIn",
+        args: ["items", "kind", ["a", "b"], { where: { state: "open" }, sortBy: "at", limit: 2 }],
+        expect: { ids: true },
+      },
+    ],
+  }),
+
+  defineScenario({
+    id: "store/ensure-index-rejects-an-empty-field-list",
+    title: "ensureIndex rejects an empty list of fields",
+    ports: ["collection"],
+    steps: [
+      { op: "ensureIndex", args: ["items", []], expect: { throws: true } },
+      { op: "ensureIndex", args: ["items", [1]], expect: { throws: true } },
+    ],
+  }),
+
+  defineScenario({
     id: "store/list-where-in-with-range-filter",
     title: "listWhereIn applies a range in its filter and rejects an invalid bound",
     ports: ["collection"],

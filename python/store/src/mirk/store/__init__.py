@@ -32,6 +32,7 @@ from .memory import InMemoryStore
 from .namespace import NamespacedStore, NamespaceError, NamespaceErrorCode, namespace_store
 from .search import SearchInputError, SearchInputErrorCode
 from .sqlite import SqliteAdapterError, SqliteAdapterErrorCode, SqliteStore, hash_name
+from .sqlite_statistics import StatisticsRefresh
 from .types import (
     Json,
     JsonObject,
@@ -68,6 +69,7 @@ __all__ = [
     "SqliteAdapterError",
     "SqliteAdapterErrorCode",
     "SqliteStore",
+    "StatisticsRefresh",
     "StoreFilter",
     "StoreFilterError",
     "StoreFilterErrorCode",

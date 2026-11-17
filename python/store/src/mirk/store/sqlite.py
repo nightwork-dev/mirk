@@ -12,7 +12,7 @@ import json
 import re
 import sqlite3
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from types import TracebackType
 from typing import Any, Literal
@@ -38,10 +38,16 @@ from .filter import (
     IN_SCALAR_MESSAGE,
     StoreFilterError,
     dumps_json,
+    index_fields,
     is_scalar,
     normalize_json_numbers,
     validate_in_values,
     where_range,
+)
+from .sqlite_statistics import (
+    SqliteStatistics,
+    StatisticsRefresh,
+    resolve_refresh_statistics_after_changes,
 )
 from .types import JsonObject, StoreFilter, StoreMeta
 
@@ -213,17 +219,21 @@ def build_order_by(filter: StoreFilter | None = None) -> tuple[str, list[SqlPara
     return (f" ORDER BY json_extract(data, {path}) {direction} NULLS LAST, rowid", [])
 
 
-def index_name_for(table: str, field: str) -> str:
-    """``ix_<table>_<hex of the path label's UTF-8>``, the name TypeScript derives too."""
-    return f"ix_{table}_{_path_label(field).encode('utf-8').hex()}"
+def index_name_for(table: str, fields: str | Sequence[str]) -> str:
+    """``ix_<table>_<label>``, the name TypeScript derives too.
+
+    The label is the hex of each field's path label in UTF-8, joined by ``x`` for
+    an index over several fields.
+    """
+    labels = (_path_label(field).encode("utf-8").hex() for field in index_fields(fields))
+    return f"ix_{table}_{'x'.join(labels)}"
 
 
-def build_ensure_index_sql(table: str, field: str) -> str:
+def build_ensure_index_sql(table: str, fields: str | Sequence[str]) -> str:
     """The one idempotent statement behind ``ensureIndex``, as in TypeScript."""
-    return (
-        f"CREATE INDEX IF NOT EXISTS {index_name_for(table, field)} "
-        f"ON {table} (json_extract(data, {json_path_literal(field)}))"
-    )
+    declared = index_fields(fields)
+    columns = ", ".join(f"json_extract(data, {json_path_literal(field)})" for field in declared)
+    return f"CREATE INDEX IF NOT EXISTS {index_name_for(table, declared)} ON {table} ({columns})"
 
 
 def build_limit_offset(filter: StoreFilter | None = None) -> str:
@@ -560,11 +570,20 @@ class SqliteStore:
         atomic_limits: AtomicMutationLimits | dict[str, Any] | None = None,
         receipt_retention_ms: int | None = None,
         now: Callable[[], float] | None = None,
+        refresh_statistics_after_changes: int | None = None,
     ) -> None:
         """``receipt_retention_ms`` keeps each idempotency receipt that long; a
         request whose key matches only an expired receipt is applied as new.
         ``None`` keeps receipts forever. ``now`` is the clock, in milliseconds
-        since the epoch, that stamps and expires receipts."""
+        since the epoch, that stamps and expires receipts.
+
+        The store keeps SQLite's query statistics fresh with ``PRAGMA optimize``:
+        when it opens, after ``ensureIndex``, once this connection has changed
+        ``refresh_statistics_after_changes`` rows (default 1,000) since the last
+        refresh, and at close. 0 turns the automatic refreshes off."""
+        refresh_after_changes = resolve_refresh_statistics_after_changes(
+            refresh_statistics_after_changes
+        )
         if busy_timeout_ms < 0:
             raise SqliteAdapterError(
                 "invalid-busy-timeout",
@@ -615,6 +634,8 @@ class SqliteStore:
                 " ON _mirk_atomic_receipts (created_at)"
             )
         self._version_prefix: str = row[0]
+        self._statistics = SqliteStatistics(self._db, refresh_after_changes, busy_timeout_ms)
+        self._statistics.auto("open")
 
     @property
     def meta(self) -> StoreMeta:
@@ -636,7 +657,18 @@ class SqliteStore:
         row = self._db.execute("PRAGMA busy_timeout").fetchone()
         return int(row[0])
 
+    def refresh_statistics(self) -> StatisticsRefresh:
+        """Rebuild query statistics for every table that needs it, as Mirk does by
+        itself. Waits for the write lock like any write and raises on failure."""
+        return self._statistics.refresh()
+
+    @property
+    def last_statistics_refresh(self) -> StatisticsRefresh | None:
+        """The last refresh, automatic or requested: reason, tables, time, or why it was skipped."""
+        return self._statistics.last
+
     def close(self) -> None:
+        self._statistics.auto("close")
         if self._owns_connection:
             self._db.close()
 
@@ -661,6 +693,9 @@ class SqliteStore:
             raise
         else:
             self._db.execute("COMMIT")
+            statistics = getattr(self, "_statistics", None)
+            if statistics is not None:
+                statistics.after_write()
 
     @contextmanager
     def _write_scope(self) -> Generator[sqlite3.Connection]:
@@ -789,11 +824,13 @@ class SqliteStore:
         rows = self._db.execute(sql, (*where_params, *in_params, *order_params)).fetchall()
         return [json.loads(row[0]) for row in rows]
 
-    def ensureIndex(self, collection: str, field: str) -> None:
-        """Declare an expression index on one field, as TypeScript does. Idempotent."""
+    def ensureIndex(self, collection: str, fields: str | Sequence[str]) -> None:
+        """Declare an expression index on one field or several, as TypeScript does. Idempotent."""
+        declared = index_fields(fields)
         table = self._ensure_table(collection)
         with self._write():
-            self._db.execute(build_ensure_index_sql(table, field))
+            self._db.execute(build_ensure_index_sql(table, declared))
+        self._statistics.auto("index")
 
     def getById(self, collection: str, id: str) -> Any:
         table = self._ensure_table(collection)

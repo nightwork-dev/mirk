@@ -8,6 +8,7 @@ string directly onto the port object with no translation table.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
@@ -84,10 +85,10 @@ class SyncStoreInQuery(Protocol):
 
 @runtime_checkable
 class SyncStoreIndexes(Protocol):
-    """Optional collection capability: declare a field that queries filter or sort on.
+    """Optional collection capability: declare fields that queries filter or sort on.
 
-    Idempotent and safe on every start. Backends with no query planner accept it
-    and do nothing.
+    A list is one index over those fields in that order. Idempotent and safe on
+    every start. Backends with no query planner accept it and do nothing.
     """
 
-    def ensureIndex(self, collection: str, field: str) -> None: ...
+    def ensureIndex(self, collection: str, fields: str | Sequence[str]) -> None: ...

@@ -120,6 +120,58 @@ describe.each(DRIVERS)("SQLite query plans with declared indexes (%s)", (_name, 
     for (const [label, plan] of plans(false)) expect(plan, label).not.toMatch(/USING INDEX ix_/);
   });
 
+  it("serves a filter on several fields from one index declared over them", () => {
+    const { raw, open } = connect();
+    const log: Executed[] = [];
+    const adapter = open(log);
+    try {
+      for (const field of ["product", "kind", "state", "score"]) adapter.kv.ensureIndex("members", field);
+      adapter.kv.ensureIndex("members", ["product", "kind", "state"]);
+      adapter.transaction(() => {
+        for (let i = 0; i < 3000; i += 1) {
+          adapter.kv.put("members", { id: `m${i}`, product: `p${i % 50}`, kind: ["problem", "story", "task"][i % 3], state: ["open", "done"][i % 2], score: i });
+        }
+      });
+      const composite = `ix_\\w+_${hex("product")}x${hex("kind")}x${hex("state")}\\b`;
+      const reads: [string, () => unknown][] = [
+        ["where on all three", () => adapter.kv.list("members", { where: { product: "p7", kind: "story", state: "open" } })],
+        ["where on the leading two", () => adapter.kv.count("members", { where: { kind: "story", product: "p7" } })],
+        ["listWhereIn on the first with where on the rest, sorted page", () =>
+          adapter.kv.listWhereIn("members", "product", ["p1", "p2", "p3"], { where: { kind: "problem", state: "open" }, sortBy: "score", sortDir: "desc", limit: 10 })],
+      ];
+      for (const [label, read] of reads) {
+        log.length = 0;
+        read();
+        expect(log, label).toHaveLength(1);
+        const rows = raw.prepare(`EXPLAIN QUERY PLAN ${log[0]!.sql}`).all(...log[0]!.params) as { detail: string }[];
+        expect(rows.map((row) => row.detail).join(" | "), label).toMatch(new RegExp(`USING INDEX ${composite}`));
+      }
+      expect(
+        adapter.kv.list<{ id: string }>("members", { where: { product: "p7", kind: "story", state: "done" } }).map((m) => m.id).slice(0, 3),
+      ).toEqual(["m7", "m157", "m307"]);
+    } finally {
+      adapter.close();
+    }
+  });
+
+  it("names a one-field list the same index as the field alone", () => {
+    const { raw, open } = connect();
+    const adapter = open([]);
+    try {
+      adapter.kv.ensureIndex("sightings", "seenAt");
+      adapter.kv.ensureIndex("sightings", ["seenAt"]);
+      adapter.kv.ensureIndex("sightings", ["seenAt", "seenAt"]);
+      adapter.kv.ensureIndex("sightings", ["seenAt", "rank"]);
+      const names = (raw.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_%' ORDER BY name").all() as { name: string }[]).map((row) => row.name);
+      expect(names).toHaveLength(2);
+      expect(names[0]).toMatch(new RegExp(`_${hex("seenAt")}$`));
+      expect(names[1]).toMatch(new RegExp(`_${hex("seenAt")}x${hex("rank")}$`));
+      expect(() => adapter.kv.ensureIndex("sightings", [])).toThrow(/non-empty list/);
+    } finally {
+      adapter.close();
+    }
+  });
+
   it("declares the index once however often ensureIndex runs", () => {
     const { raw, open } = connect();
     const adapter = open([]);
