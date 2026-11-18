@@ -5,11 +5,37 @@ distribution carries the same version and is bumped together, so "mirk 0.12.0" m
 thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
 This file records each release and repository-wide contract changes.
 
-## 0.15.0 — unreleased
+## 0.16.0 — unreleased
 
-Fast reads without knowing the query planner.
+Two lines of work ship together as 0.16.0. No 0.15.0 is published: the work prepared for it is
+part of this release. Two new packages join the set, `@mirk/queue` and `@mirk/sqlite-vec-native`,
+with Python distributions `mirk-queue` and `mirk-sqlite-vec-native`.
 
-### Store
+### Breaking changes
+
+- **SQLite files move to format 4 when they open.** Both SQLite adapters, the libSQL adapter and
+  the Python store upgrade an older file (format 2 or 3) on open by default. The upgrade is one
+  way: an older Mirk release cannot open the file afterwards. Pass `migration: "explicit"` to fail
+  with `migration-required` and upgrade with `SqliteAdapter.migrate(options)` (or
+  `NodeSqliteAdapter.migrate`), or `migration: "refuse"` to never upgrade. `backupPath` writes a consistent copy before the upgrade. Stop other clients of
+  the file before it upgrades, and reopen them afterwards. `docs/format.md` describes every format.
+- **Vectors live in named spaces.** A document holds a `vectors` map, one vector per space, and
+  each space has its own dimensions. Declare a space with `ensureSpace(name, { dimensions })` and
+  name it when searching: `search(collection, { space, vector }, options)`. Upgrading a file moves
+  its old vectors into one space (named `default` unless you choose another). The libSQL, Qdrant
+  and Surreal vector adapters take the same shape.
+- **Log readers pass a cursor.** `list(stream, { after })` takes a `{ generation, sequence }`
+  cursor, not a bare sequence number; `lastCursor(stream)` returns the tail. Deleting a stream
+  removes its history, and recreating it starts a new generation, so an old cursor throws
+  `stale-cursor`.
+- **Coordination import paths.** The native-free contract is `@mirk/store/coordination/core`;
+  SQLite coordination is `@mirk/store/coordination/sqlite` and memory coordination
+  `@mirk/store/coordination/memory`. `@mirk/store/coordination` still works but is deprecated,
+  and it loads the optional SQLite peer.
+
+### From the 0.15.0 work: fast reads without knowing the query planner
+
+#### Store
 
 - The SQLite adapters keep SQLite's query statistics fresh by themselves. Before, they never ran
   `ANALYZE`, so on a filter over two indexed fields SQLite could read the index that matches most of
@@ -32,33 +58,58 @@ Fast reads without knowing the query planner.
   receive a list of fields. TypeScript still accepts a `field: string` implementation, so check
   for a list at run time; `indexFields` from `@mirk/store/sql` turns either form into a list.
 
-### libSQL
+#### libSQL
 
 - The same statistics refresh, run in a savepoint inside a write transaction the adapter already
   holds. libSQL's engine is SQLite 3.45, so the adapter runs a bounded `ANALYZE` on the tables that
   need it rather than relying on that engine's `PRAGMA optimize`.
 
-### PostgreSQL
+#### PostgreSQL
 
 - `ensureIndex` with a list creates one index over `(collection, data -> each field)`. A newly
   created index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's tables.
   Autovacuum still refreshes statistics as tables grow.
 
-### Memory, IndexedDB and Surreal
+#### Memory, IndexedDB and Surreal
 
 - `ensureIndex` accepts a list, checks it, and does nothing, as before.
 
-### Fixtures
+#### Fixtures
 
 - `loadRaw(ref).provenance.fields` names the layer and source field that won each resolved field.
 - A Godot addon (`godot/addons/mirk_data`) and the Python `mirk.data` module ship the authored-data
   text edits, diffs and merge policies, with shared test cases.
 
-### Python
+#### Python
 
 - `mirk-store` gains index lists for `ensureIndex` and the same statistics refresh on `SqliteStore`
-  (`refresh_statistics()`, `last_statistics_refresh`, `refresh_statistics_after_changes`). All Python
-  distributions move to 0.15.0 with the version set.
+  (`refresh_statistics()`, `last_statistics_refresh`, `refresh_statistics_after_changes`).
+
+### From the 0.16.0 line: storage for queues, vectors and long-lived files
+
+- **`@mirk/queue`** stores durable queue items over a Mirk atomic store and its transactions:
+  enqueue, fenced claims with renewal, checkpoints, completion, failure, cancellation, blocked
+  recovery and idempotent commands. `start` admits one active item per key. `list` filters by
+  queue, subject, kind and state through indexes. It runs no workers and holds no retry or provider
+  policy; the job model belongs to Gonk. It was called `@mirk/jobs` before it was ever published,
+  so no published package is renamed.
+- **`@mirk/sqlite-vec-native`** is an optional companion for `@mirk/store/sqlite-vec`. It runs
+  exact cosine search inside SQLite with sqlite-vec and keeps the float64 result contract. It
+  compiles when installed, never during a query. Without it, search uses the ordinary exact engine
+  and reports `accelerated: false`.
+- **Shared transactions in memory.** The in-memory KV, log and leases that you attach can share one
+  transaction, with savepoints and rollback. A rolled-back lease cannot regain its authority.
+- **Coordination.** `tryAcquire` makes one immediate attempt. Coordinators take an injected clock
+  for waits and expiry.
+- **Independent readers.** `docs/format.md` is the normative SQLite format. Fixed sample files for
+  every format, and readers in Node, Python and Rust that do not use Mirk, check it.
+- The shared conformance corpus has 510 scenarios, replayed by TypeScript and Python.
+
+### Python
+
+The Python distributions move to 0.16.0 with the version set and gain the same behaviour:
+statistics refresh and indexes over several fields in `mirk-store`, format 4, named vector spaces,
+log cursors, and the new `mirk-queue` and `mirk-sqlite-vec-native`.
 
 ## 0.14.0 — 2026-10-23
 
