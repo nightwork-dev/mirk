@@ -16,7 +16,9 @@ import type {
   LibsqlClientFactory,
   LibsqlKvStore,
 } from "./libsql-types.js";
-import { LibsqlDatabase } from "./libsql-database.js";
+import { LibsqlDatabase, statisticsConnection } from "./libsql-database.js";
+import { resolveRefreshStatisticsAfterChanges, type StatisticsRefresh } from "@mirk/store/sql";
+import { LibsqlStatistics } from "./libsql-statistics.js";
 import { tableNames } from "./libsql-registry.js";
 import { LibsqlKvFacet } from "./libsql-kv.js";
 export { LibsqlAdapterError } from "./libsql-errors.js";
@@ -53,6 +55,7 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
       opts.url,
       names.sequence,
       opts.busyTimeoutMs ?? 30_000,
+      new LibsqlStatistics(resolveRefreshStatisticsAfterChanges(opts.refreshStatisticsAfterChanges)),
     );
     const local = client.protocol === "file";
     this.kv = new LibsqlKvFacet(
@@ -86,6 +89,22 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
     this.database.transactions.afterCommit(notify);
   }
 
+  /** Rebuild the database's query statistics for every table that needs it,
+   *  in one write transaction. Mirk does this by itself; call it after a bulk
+   *  import that should be fast before the next automatic refresh. Throws if
+   *  the refresh fails. */
+  refreshStatistics(): Promise<StatisticsRefresh> {
+    return this.transaction(() =>
+      this.database.inTransaction((open) => this.database.statistics.run(statisticsConnection(open), "request")),
+    );
+  }
+
+  /** The last statistics refresh, automatic or requested: why it ran, which
+   *  tables it analyzed, how long it took, or why it was skipped. */
+  get lastStatisticsRefresh(): StatisticsRefresh | undefined {
+    return this.database.statistics.last;
+  }
+
   /** Close the underlying connection (shared by both facets). No-op for a client
    *  the caller passed in via `opts.client`. */
   close(): void {
@@ -109,8 +128,10 @@ export class LibsqlAdapterCore implements AsyncStoreTransactions {
         backup,
         explicitInvocation,
       );
-      if (!explicitInvocation)
+      if (!explicitInvocation) {
         await (this.kv as LibsqlKvFacet).init(versionIdentity);
+        this.database.statistics.request("open");
+      }
     });
   }
 }

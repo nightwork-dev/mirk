@@ -1,6 +1,6 @@
 import { StoreFilterError, compareCodePoints } from "@mirk/store";
 import type { AsyncStore, AsyncStoreIndexes, StoreFilter, StoreMeta } from "@mirk/store";
-import { assertWhere, inRange, whereCondition } from "@mirk/store/sql";
+import { assertWhere, indexFields, inRange, whereCondition } from "@mirk/store/sql";
 import type {
   AsyncAtomicMutationStore,
   AsyncReceiptPruning,
@@ -392,8 +392,9 @@ export class IndexedDbAdapter implements IndexedDbStore {
 
   /** Accepted and a no-op: records are filtered after one collection-index
    *  read, so a field index would serve nothing. */
-  async ensureIndex(collection: string, _field: string): Promise<void> {
+  async ensureIndex(collection: string, fields: string | readonly string[]): Promise<void> {
     assertCollectionName(collection);
+    indexFields(fields);
   }
 
   async getById<T>(collection: string, id: string): Promise<T | null> {

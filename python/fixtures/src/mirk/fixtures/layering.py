@@ -8,7 +8,7 @@ to hold it too.
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from .types import (
@@ -109,15 +109,18 @@ def merge_with_strategy(
     existing: Any,
     incoming: Any,
     ctx: MergeContext,
+    replaced: Callable[[str, Any], None] | None = None,
 ) -> Any:
     if callable(strategy):
         return strategy(existing, incoming, ctx)
     if strategy is None or strategy == "replace":
+        if replaced:
+            replaced("", incoming)
         return clone_jsonish(incoming)
     if strategy == "deep":
-        return _deep_merge(existing, incoming)
+        return _deep_merge(existing, incoming, replaced)
     if strategy == "array-replace":
-        return _shallow_object_merge(existing, incoming)
+        return _shallow_object_merge(existing, incoming, replaced)
     raise ValueError(f"unknown merge strategy: {strategy!r}")
 
 
@@ -134,29 +137,44 @@ def provenance_ctx(layers: Sequence[FixtureProvenanceLayer]) -> list[dict[str, A
     ]
 
 
-def _deep_merge(existing: Any, incoming: Any) -> Any:
+def _deep_merge(
+    existing: Any, incoming: Any,
+    replaced: Callable[[str, Any], None] | None = None, path: str = "",
+) -> Any:
     """Recursive object merge. Arrays, `null` and scalars replace at every depth."""
     if not is_plain_object(existing) or not is_plain_object(incoming):
+        if replaced:
+            replaced(path, incoming)
         return clone_jsonish(incoming)
 
     out: dict[str, Any] = {}
     for key, value in js_entries(existing):
         out[key] = clone_jsonish(value)
     for key, value in js_entries(incoming):
-        out[key] = _deep_merge(existing[key], value) if key in existing else clone_jsonish(value)
+        out[key] = _deep_merge(existing.get(key), value, replaced, f"{path}/{pointer_part(key)}")
     return out
 
 
-def _shallow_object_merge(existing: Any, incoming: Any) -> Any:
+def _shallow_object_merge(
+    existing: Any, incoming: Any, replaced: Callable[[str, Any], None] | None = None,
+) -> Any:
     """Top-level keys from `incoming` win wholesale; nothing recurses."""
     if not is_plain_object(existing) or not is_plain_object(incoming):
+        if replaced:
+            replaced("", incoming)
         return clone_jsonish(incoming)
     out: dict[str, Any] = {}
     for key, value in js_entries(existing):
         out[key] = clone_jsonish(value)
     for key, value in js_entries(incoming):
+        if replaced:
+            replaced(f"/{pointer_part(key)}", value)
         out[key] = clone_jsonish(value)
     return out
+
+
+def pointer_part(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
 
 
 def is_plain_object(value: Any) -> bool:

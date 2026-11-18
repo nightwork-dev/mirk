@@ -17,6 +17,7 @@ from typing import Any, NamedTuple, cast
 from mirk.store.filter import normalize_json_numbers
 
 from .errors import FixtureError, FixtureValidationError, diagnostics_from_error
+from .field_provenance import field_recorder, field_snapshot
 from .layering import (
     NormalizedLayeredSource,
     is_patch_document,
@@ -24,6 +25,7 @@ from .layering import (
     merge_with_strategy,
     normalize_layers,
     patch_body,
+    pointer_part,
     provenance_ctx,
 )
 from .reference_graph import GraphBuildEntry, build_reference_graph
@@ -31,6 +33,7 @@ from .refs import is_canonical_ref, is_explicit_ref, parse_ref
 from .types import (
     Diagnostic,
     ExtractedReference,
+    FixtureFieldProvenance,
     FixtureProvenanceLayer,
     FixtureSource,
     FixtureSourceEntry,
@@ -93,6 +96,7 @@ class _ParsedLayer(NamedTuple):
     id: str
     parsed: Any
     sourcePath: str
+    injectedId: str | None = None
 
 
 class FixtureLoader:
@@ -403,6 +407,9 @@ class FixtureLoader:
                     identifier,
                     value,
                     f"{candidate.entry['relativePath']}#{identifier}",
+                    id_field
+                    if id_field and isinstance(raw_value, dict) and id_field not in raw_value
+                    else None,
                 )
             )
         return layers
@@ -575,6 +582,7 @@ class FixtureLoader:
             )
 
         base_layer = parsed_layers[base_idx]
+        base_snapshot = field_snapshot(base_layer.parsed)
         current = self._validate_against_schema(
             ref, base_layer.layered.source.id, base_layer.sourcePath, base_layer.parsed, definition
         )
@@ -601,6 +609,18 @@ class FixtureLoader:
             }
         )
 
+        fields: dict[str, FixtureFieldProvenance] = {}
+
+        def prefix(layer: _ParsedLayer) -> str:
+            return "/" + pointer_part(layer.id) if definition.get("document") else ""
+
+        field_recorder(fields, provenance[-1], prefix(base_layer))("", base_layer.parsed)
+        if base_layer.injectedId:
+            fields.pop("/" + pointer_part(base_layer.injectedId), None)
+            fields.pop("", None)
+        if base_snapshot is None or field_snapshot(current) != base_snapshot:
+            fields.clear()
+
         for layer in parsed_layers[base_idx + 1 :]:
             if not is_patch_document(layer.parsed):
                 continue
@@ -616,15 +636,25 @@ class FixtureLoader:
                 )
                 continue
 
+            origin: FixtureProvenanceLayer = {
+                "sourceId": layer.layered.source.id, "layer": layer.layered.layer,
+                "priority": layer.layered.priority, "path": layer.sourcePath, "kind": "patch",
+            }
+            if callable(definition.get("mergeStrategy")):
+                fields.clear()
             merged = merge_with_strategy(
                 definition.get("mergeStrategy"),
                 current,
                 patch_body(layer.parsed),
                 {"fixture": ref, "layers": provenance_ctx(provenance)},
+                field_recorder(fields, origin, prefix(layer)),
             )
+            merged_snapshot = field_snapshot(merged)
             current = self._validate_against_schema(
                 ref, layer.layered.source.id, layer.sourcePath, merged, definition
             )
+            if merged_snapshot is None or field_snapshot(current) != merged_snapshot:
+                fields.clear()
             provenance.append(
                 {
                     "sourceId": layer.layered.source.id,
@@ -640,7 +670,7 @@ class FixtureLoader:
             "type": type_name,
             "id": identifier,
             "value": current,
-            "provenance": {"finalRef": ref, "layers": provenance},
+            "provenance": {"finalRef": ref, "layers": provenance, "fields": fields},
         }
         if can_cache:
             self._raw_cache[ref] = loaded

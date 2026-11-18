@@ -42,16 +42,18 @@ export function mergeWithStrategy(
   existing: unknown,
   incoming: unknown,
   ctx: MergeContext,
+  replaced?: (path: string, value: unknown) => void,
 ): unknown {
   if (typeof strategy === "function") return strategy(existing, incoming, ctx);
 
   switch (strategy ?? "replace") {
     case "replace":
+      replaced?.("", incoming);
       return cloneJsonish(incoming);
     case "deep":
-      return deepMerge(existing, incoming);
+      return deepMerge(existing, incoming, replaced);
     case "array-replace":
-      return shallowObjectMerge(existing, incoming);
+      return shallowObjectMerge(existing, incoming, replaced);
   }
 }
 
@@ -64,26 +66,37 @@ export function provenanceCtx(layers: ReadonlyArray<FixtureProvenanceLayer>): Me
   }));
 }
 
-function deepMerge(existing: unknown, incoming: unknown): unknown {
-  if (!isPlainObject(existing) || !isPlainObject(incoming)) return cloneJsonish(incoming);
+export function pointerPart(value: string): string {
+  return value.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function deepMerge(existing: unknown, incoming: unknown, replaced?: (path: string, value: unknown) => void, path = ""): unknown {
+  if (!isPlainObject(existing) || !isPlainObject(incoming)) {
+    replaced?.(path, incoming);
+    return cloneJsonish(incoming);
+  }
 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(existing)) {
     out[key] = cloneJsonish(value);
   }
   for (const [key, value] of Object.entries(incoming)) {
-    out[key] = key in existing ? deepMerge(existing[key], value) : cloneJsonish(value);
+    out[key] = deepMerge(existing[key], value, replaced, `${path}/${pointerPart(key)}`);
   }
   return out;
 }
 
-function shallowObjectMerge(existing: unknown, incoming: unknown): unknown {
-  if (!isPlainObject(existing) || !isPlainObject(incoming)) return cloneJsonish(incoming);
+function shallowObjectMerge(existing: unknown, incoming: unknown, replaced?: (path: string, value: unknown) => void): unknown {
+  if (!isPlainObject(existing) || !isPlainObject(incoming)) {
+    replaced?.("", incoming);
+    return cloneJsonish(incoming);
+  }
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(existing)) {
     out[key] = cloneJsonish(value);
   }
   for (const [key, value] of Object.entries(incoming)) {
+    replaced?.(`/${pointerPart(key)}`, value);
     out[key] = cloneJsonish(value);
   }
   return out;

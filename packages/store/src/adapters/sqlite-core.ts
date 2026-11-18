@@ -2,7 +2,7 @@ import type { SqliteMigrationOptions } from "../sql.js";
 import { ensureMirkFormat } from "./sqlite-format.js";
 import { SqliteVectorFacet } from "./sqlite-vector.js";
 import type { SqliteVectorEngine } from "./sqlite-vector-engine.js";
-import { type SqliteDb } from "./sqlite-driver.js";
+import { type SqliteDb, type SqliteTransaction } from "./sqlite-driver.js";
 import type {
   AsyncStore,
   AsyncStoreInQuery,
@@ -29,6 +29,8 @@ import {
 } from "../atomic.js";
 import type { VectorStore } from "../vector/types.js";
 import { runSqliteBusyRetry } from "../sqlite-busy.js";
+import { resolveRefreshStatisticsAfterChanges, type StatisticsRefresh } from "../sql-statistics.js";
+import { SqliteStatistics } from "./sqlite-statistics.js";
 import type { SearchStore } from "../search/types.js";
 import type { AsyncLogStore, LogStore } from "../log/types.js";
 import { toAsyncLog } from "../log/to-async-log.js";
@@ -118,6 +120,8 @@ async function acquireAsyncFile(
 
 /** Rejects synchronous use of a connection while awaitable work owns its file. */
 class GuardedSqliteDb implements SqliteDb {
+  /** Called after each outermost transaction commits. */
+  afterCommit: () => void = () => {};
   constructor(
     private readonly inner: SqliteDb,
     private readonly check: () => void,
@@ -134,9 +138,18 @@ class GuardedSqliteDb implements SqliteDb {
     this.check();
     return this.inner.pragma(sql);
   }
-  transaction<T, A>(work: (arg: A) => T) {
+  transaction<T, A>(work: (arg: A) => T): SqliteTransaction<T, A> {
     this.check();
-    return this.inner.transaction<T, A>(work);
+    const inner = this.inner.transaction<T, A>(work);
+    const settled = (value: T): T => {
+      if (!this.inner.inTransaction) this.afterCommit();
+      return value;
+    };
+    const tx = ((arg: A) => settled(inner(arg))) as SqliteTransaction<T, A>;
+    tx.deferred = (arg: A) => settled(inner.deferred(arg));
+    tx.immediate = (arg: A) => settled(inner.immediate(arg));
+    tx.exclusive = (arg: A) => settled(inner.exclusive(arg));
+    return tx;
   }
   get inTransaction(): boolean {
     return this.inner.inTransaction;
@@ -219,6 +232,12 @@ export interface SqliteAdapterCoreOptions extends SqliteMigrationOptions {
   /** The clock, in milliseconds since the epoch, that stamps and expires
    *  idempotency receipts. Defaults to `Date.now`. */
   now?: () => number;
+  /** Mirk keeps SQLite's query statistics fresh with the engine's own
+   *  `PRAGMA optimize`: when the adapter opens, after `ensureIndex`, when this
+   *  connection has changed this many rows since the last refresh, and when it
+   *  closes. Defaults to 1,000. 0 turns the automatic refreshes off;
+   *  `refreshStatistics()` still works. */
+  refreshStatisticsAfterChanges?: number;
 }
 
 export type SqliteTransactionMode = "deferred" | "immediate" | "exclusive";
@@ -266,6 +285,7 @@ export class SqliteAdapterCore {
   /** Depth of queued awaitable store calls currently executing. */
   private asyncCallDepth = 0;
   private syncSavepoints = 0;
+  private statistics!: SqliteStatistics;
   readonly kv!: SyncStore &
     SyncStoreInQuery &
     SyncStoreIndexes &
@@ -288,6 +308,7 @@ export class SqliteAdapterCore {
   constructor(opts: SqliteAdapterCoreOptions) {
     const ownsDb = opts.ownsDb;
     validateSqliteBusyTimeout(opts.busyTimeoutMs);
+    const refreshAfterChanges = resolveRefreshStatisticsAfterChanges(opts.refreshStatisticsAfterChanges);
     this.dbPath = opts.path;
     this.rawDb = opts.db;
     const fileKey = asyncFileKeyFor(opts.path);
@@ -299,7 +320,9 @@ export class SqliteAdapterCore {
         "Open SQLite adapters before starting asynchronous work on the same file.",
       );
     }
-    this.db = new GuardedSqliteDb(opts.db, () => this.assertSyncAccess());
+    const guarded = new GuardedSqliteDb(opts.db, () => this.assertSyncAccess());
+    guarded.afterCommit = () => this.statistics?.afterWrite();
+    this.db = guarded;
     this.asyncTransactions = new AsyncTransactionCoordinator<() => void>({
       begin: async () => {
         const release = await acquireAsyncFile(this.asyncKey, this);
@@ -313,7 +336,10 @@ export class SqliteAdapterCore {
         }
         return release;
       },
-      commit: () => this.rawDb.exec("COMMIT"),
+      commit: () => {
+        this.rawDb.exec("COMMIT");
+        this.statistics.afterWrite();
+      },
       rollback: () => {
         if (!this.rawDb.inTransaction) return;
         try {
@@ -356,6 +382,7 @@ export class SqliteAdapterCore {
             opts.versionIdentity,
             resolveReceiptRetention(opts.receiptRetentionMs),
             opts.now ?? Date.now,
+            () => this.statistics.auto("index"),
           );
           vector = new SqliteVectorFacet(
             this.db,
@@ -375,6 +402,8 @@ export class SqliteAdapterCore {
       this.log = log!;
       this.asyncKv = this.serializedAsyncStore(toAsync(kv!), kv!);
       this.asyncLog = this.serializedAsyncLog(toAsyncLog(log!));
+      this.statistics = new SqliteStatistics(this.rawDb, refreshAfterChanges, busyTimeoutMs);
+      this.statistics.auto("open");
     } catch (err) {
       // A facet constructor can throw. Don't leak the
       // connection we opened — but never close a db handle the caller passed in.
@@ -527,8 +556,8 @@ export class SqliteAdapterCore {
       list: (collection, filter) => run(() => lifted.list(collection, filter)),
       listWhereIn: (collection, field, values, filter) =>
         run(() => lifted.listWhereIn(collection, field, values, filter)),
-      ensureIndex: (collection, field) =>
-        run(() => lifted.ensureIndex(collection, field)),
+      ensureIndex: (collection, fields) =>
+        run(() => lifted.ensureIndex(collection, fields)),
       getById: (collection, id) => run(() => lifted.getById(collection, id)),
       put: (collection, item) => run(() => lifted.put(collection, item)),
       remove: (collection, id) => run(() => lifted.remove(collection, id)),
@@ -650,8 +679,27 @@ export class SqliteAdapterCore {
     };
   }
 
-  /** Close the underlying connection (shared by both facets). */
+  /** Rebuild SQLite's query statistics for every table that needs it, using
+   *  the engine's `PRAGMA optimize` (a bounded `ANALYZE` on engines older than
+   *  3.46). Mirk does this by itself; call it after a bulk import that should
+   *  be fast before the next automatic refresh. Waits for the write lock and
+   *  throws if the refresh fails. */
+  refreshStatistics(): StatisticsRefresh {
+    this.assertSyncAccess();
+    return this.statistics.refresh();
+  }
+
+  /** The last statistics refresh, automatic or requested: why it ran, which
+   *  tables it analyzed, how long it took, or why it was skipped. */
+  get lastStatisticsRefresh(): StatisticsRefresh | undefined {
+    return this.statistics.last;
+  }
+
+  /** Refresh statistics as SQLite recommends for a closing connection, then
+   *  close the underlying connection (shared by every facet). */
   close(): void {
+    this.assertSyncAccess();
+    this.statistics.auto("close");
     this.db.close();
   }
 }

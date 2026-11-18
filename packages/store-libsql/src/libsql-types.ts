@@ -46,6 +46,12 @@ export interface LibsqlAdapterOptions extends SqliteMigrationOptions {
    *  idempotency receipts. Defaults to the database's clock, so every host
    *  writing to the database agrees on a receipt's age. */
   now?: () => number;
+  /** Mirk keeps the database's query statistics fresh. A refresh runs inside
+   *  a write transaction the adapter already holds: when the store opens, after
+   *  `ensureIndex`, and once this adapter has changed this many rows since the
+   *  last refresh. Defaults to 1,000. 0 turns the automatic refreshes off;
+   *  `refreshStatistics()` still works. */
+  refreshStatisticsAfterChanges?: number;
 }
 
 export type LibsqlClientFactory = (config: {

@@ -12,6 +12,7 @@ import {
   classifyFailure,
   failure,
 } from "./libsql-errors.js";
+import type { LibsqlStatistics, StatisticsConnection } from "./libsql-statistics.js";
 
 // ─── Connection and transactions ─────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export class LibsqlDatabase {
     url: string,
     private readonly sequenceTable: string,
     private readonly busyTimeoutMs: number,
+    readonly statistics: LibsqlStatistics,
   ) {
     this.local = client.protocol === "file";
     const writers = this.local ? fileWriters(url) : undefined;
@@ -76,6 +78,8 @@ export class LibsqlDatabase {
     this.transactions = new AsyncTransactionCoordinator<OpenTransaction>({
       begin: () => this.begin(),
       commit: async (open) => {
+        const refresh = this.statistics.due();
+        if (refresh !== undefined) await this.statistics.run(statisticsConnection(open), refresh);
         await this.commitOpen(open);
         if (this.floor <= open.minted) this.floor = 0;
       },
@@ -203,11 +207,11 @@ export class LibsqlDatabase {
           }
         });
         const open: OpenTransaction = {
-          execute: (stmt) => this.client.execute(stmt),
+          execute: async (stmt) => this.counted(await this.client.execute(stmt)),
           batch: async (stmts) => {
             const results: ResultSet[] = [];
             for (const stmt of stmts)
-              results.push(await this.client.execute(stmt));
+              results.push(this.counted(await this.client.execute(stmt)));
             return results;
           },
           minted,
@@ -237,13 +241,18 @@ export class LibsqlDatabase {
         throw error;
       }
       return {
-        execute: (stmt) => stream.execute(stmt),
-        batch: (stmts) => stream.batch(stmts),
+        execute: async (stmt) => this.counted(await stream.execute(stmt)),
+        batch: async (stmts) => (await stream.batch(stmts)).map((result) => this.counted(result)),
         minted,
         stream,
         release: undefined,
       };
     });
+  }
+
+  private counted(result: ResultSet): ResultSet {
+    this.statistics.noteChanges(result.rowsAffected);
+    return result;
   }
 
   private async commitOpen(open: OpenTransaction): Promise<void> {
@@ -303,4 +312,9 @@ export class LibsqlDatabase {
       }
     }
   }
+}
+
+/** The open transaction, as the statistics refresh runs its statements. */
+export function statisticsConnection(open: OpenTransaction): StatisticsConnection {
+  return { execute: (sql) => guard(open.execute(sql)) };
 }

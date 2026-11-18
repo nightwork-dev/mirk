@@ -9,7 +9,7 @@ import { test } from "node:test";
 const script = fileURLToPath(new URL("./verify-package-release.mjs", import.meta.url));
 const environment = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("GIT_")));
 
-function fixture() {
+function fixture(files = ["dist"]) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "mirk-release-boundary-")));
   const scripts = join(root, "scripts");
   const packageRoot = join(root, "packages/store-libsql");
@@ -22,7 +22,7 @@ function fixture() {
     type: "module", packageManager: project.packageManager }));
   writeFileSync(join(root, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n');
   writeFileSync(join(packageRoot, "package.json"), JSON.stringify({
-    name: "@mirk/store-libsql", version: "0.0.0", type: "module", license: "Apache-2.0", files: ["dist"],
+    name: "@mirk/store-libsql", version: "0.0.0", type: "module", license: "Apache-2.0", files,
     main: "./dist/index.js", types: "./dist/index.d.ts",
     exports: {
       ".": { types: "./dist/index.d.ts", import: "./dist/index.js" },
@@ -36,7 +36,7 @@ function fixture() {
   execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Release test",
     "-c", "user.email=release-test@example.com", "commit", "--allow-empty", "--no-gpg-sign", "--quiet", "-m", "fixture"],
     { cwd: root, env: environment });
-  return { root, dist };
+  return { root, dist, packageRoot };
 }
 
 function verify(root) {
@@ -96,5 +96,22 @@ test("rejects a package that omits its configured remote export", () => {
     assert.match(result.stderr, /remote export is missing/);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ships a file under test/ that the manifest names exactly, and rejects one shipped by directory", () => {
+  for (const [files, passes] of [[["dist", "test/cases.json"], true], [["dist", "test"], false]]) {
+    const { root, dist, packageRoot } = fixture(files);
+    try {
+      writeFileSync(join(dist, "remote.js"), 'export { createClient } from "@libsql/client/web";\n');
+      mkdirSync(join(packageRoot, "test"), { recursive: true });
+      writeFileSync(join(packageRoot, "test/cases.json"), "[]\n");
+      execFileSync("git", ["add", "-A"], { cwd: root, env: environment });
+      const result = verify(root);
+      if (passes) assert.equal(result.status, 0, result.stderr);
+      else assert.match(result.stderr, /development-only file leaked into tarball: test\/cases\.json/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });

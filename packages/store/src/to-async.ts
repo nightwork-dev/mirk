@@ -55,8 +55,8 @@ class AsyncStoreAdapter
       ): Promise<T[]> => runMemoryOperation(sync, () => sync.listWhereIn<T>(collection, field, values, filter));
     }
     if (hasEnsureIndex(sync)) {
-      this.ensureIndex = async (collection: string, field: string) =>
-        runMemoryOperation(sync, () => sync.ensureIndex(collection, field));
+      this.ensureIndex = async (collection: string, fields: string | readonly string[]) =>
+        runMemoryOperation(sync, () => sync.ensureIndex(collection, fields));
     }
     if (supportsAtomicMutation(sync)) {
       // Lifting to async changes nothing about what the request may contain.

@@ -1,7 +1,7 @@
 import { compareCodePoints } from "@mirk/store";
 import { sortAndPageStoreItems } from "@mirk/store/kv";
 import type { AsyncStore, AsyncStoreInQuery, AsyncStoreIndexes, StoreFilter, StoreMeta } from "@mirk/store/kv";
-import { assertInValues, inRange, whereCondition, type WhereCondition } from "@mirk/store/sql";
+import { assertInValues, indexFields, inRange, whereCondition, type WhereCondition } from "@mirk/store/sql";
 
 import { KV_TABLE, assertSafeTableIdentifier, collectionTable } from "./internal/identifiers.js";
 import { cloneJson } from "./internal/clone-json.js";
@@ -138,7 +138,8 @@ export class SurrealStoreAdapter implements AsyncStore, AsyncStoreInQuery, Async
   }
 
   /** Accepted and a no-op: this adapter declares no field indexes. */
-  async ensureIndex(collection: string, _field: string): Promise<void> {
+  async ensureIndex(collection: string, fields: string | readonly string[]): Promise<void> {
+    indexFields(fields);
     await this.ensureCollection(collection);
   }
 

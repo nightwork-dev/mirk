@@ -112,7 +112,26 @@ The in-memory and SQLite stores are the reference. Compared with them:
 Filters, ranges, `listWhereIn`, `sortBy` and `ensureIndex` use the same SQL as `@mirk/store/sqlite`,
 so a declared index serves the same queries (see
 [Indexes and query plans](../store/README.md#indexes-and-query-plans)). On a server with a
-`tablePrefix`, the index name starts with `ix_` followed by the prefixed table name.
+`tablePrefix`, the index name starts with `ix_` followed by the prefixed table name. A list of fields
+declares one index over them, as in `@mirk/store`.
+
+### Query statistics
+
+The adapter keeps the database's query statistics fresh, so SQLite picks the selective index for a
+filter over several fields. libSQL's engine is SQLite 3.45, whose `PRAGMA optimize` only analyzes
+tables the current connection has queried, so the adapter applies Mirk's own rule from
+`@mirk/store/sql`: a bounded `ANALYZE` (`analysis_limit` 1,000) of each indexed table whose indexes
+have no statistics, or of every indexed table once this adapter has changed as many rows as the
+statistics describe.
+
+The refresh runs inside a write transaction the adapter already holds, in a savepoint just before
+it commits, so it never takes the write lock a second time and runs on the same connection or
+server stream. It runs when the store opens, after `ensureIndex`, and at the first commit after this
+adapter has changed 1,000 rows since the last refresh (`refreshStatisticsAfterChanges`; `0` turns it
+off). A refresh that fails is rolled back to its savepoint, reported in
+`adapter.lastStatisticsRefresh.skipped`, and leaves the transaction's own work to commit.
+`await adapter.refreshStatistics()` refreshes on request in its own transaction and throws if it
+fails. Statistics stay in the database, so one refresh serves every later connection.
 
 ## Engine-free remote entry
 

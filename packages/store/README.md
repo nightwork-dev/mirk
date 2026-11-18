@@ -168,14 +168,30 @@ kv.keys("user:"); // key-value keys starting with "user:", in code point order
 `kv.ensureIndex(collection, field)` declares that queries filter or sort on `field`. Call it on
 every start; it is idempotent and runs one statement. It changes no query's result. The SQLite,
 libSQL and PostgreSQL adapters create an index that serves equality, `listWhereIn`, ranges and (on
-SQLite and libSQL) `sortBy` on that field. The in-memory reference and IndexedDB accept the call and
-do nothing, so portable code can always make it. The capability is typed as `SyncStoreIndexes` and
-`AsyncStoreIndexes`, and `toAsync` lifts it.
+SQLite and libSQL) `sortBy` on that field. The in-memory reference, IndexedDB and Surreal accept the
+call and do nothing, so portable code can always make it. The capability is typed as
+`SyncStoreIndexes` and `AsyncStoreIndexes`, and `toAsync` lifts it.
 
 ```ts
 for (const field of ["sourceRecordId", "seenAt"]) kv.ensureIndex("sightings", field);
 kv.list("sightings", { where: { seenAt: { gte: since } } });
 ```
+
+A filter on two fields reads one field's index and checks the other field on every row that index
+returns. When queries filter on fields together, pass them as a list. That declares one index over
+those fields, in that order:
+
+```ts
+kv.ensureIndex("membership", ["product", "kind", "state"]);
+kv.list("membership", { where: { product: "p7", kind: "problem", state: "open" } });
+kv.listWhereIn("membership", "product", scope, { where: { kind: "problem", state: "open" }, sortBy: "score" });
+```
+
+The index serves a `where` on its leading fields: all three, or `product` and `kind`, but not `kind`
+alone. Put the fields you test for equality first. On SQLite and libSQL a range or `sortBy` on the
+field after them also uses it. There is no need to build a joined key such as `` `${product}|${kind}` ``
+by hand. A one-field list is the same index as the field alone, a field named twice keeps its first
+place, and an empty list throws `StoreFilterError` with code `invalid-index-fields`.
 
 ### Namespaces
 
@@ -388,6 +404,7 @@ Both adapters take the same options; only the type of `db` differs.
 | `versionIdentity` | `string`                        | Prefix for atomic version tokens, written once when the file is first set up; a file that already has one keeps it. Defaults to a random UUID.                 |
 | `receiptRetentionMs` | `number`                     | How long an idempotency receipt is kept. Off by default: receipts are kept forever. See [Receipt expiry](#receipt-expiry).                                    |
 | `now`             | `() => number`                  | The clock, in milliseconds since the epoch, that stamps and expires receipts. Defaults to `Date.now`.                                                         |
+| `refreshStatisticsAfterChanges` | `number`          | Rows this connection may change before Mirk refreshes query statistics. Defaults to 1,000; `0` turns automatic refreshes off. See [Query statistics](#query-statistics). |
 
 Every connection the adapter opens or receives is switched to WAL mode with foreign keys on.
 
@@ -412,7 +429,37 @@ the SQL text, not as a bound parameter, so the index matches. `jsonPathLiteral` 
 `@mirk/store/sql` returns that literal. With the index, `EXPLAIN QUERY PLAN` shows `SEARCH … USING
 INDEX` for equality, `listWhereIn` and ranges, and `SCAN … USING INDEX` for `sortBy`. Sorting puts
 missing values last with `NULLS LAST`. A range term carries an `unlikely()` hint, because without
-`ANALYZE` statistics SQLite would otherwise scan the table in insertion order to skip a sort.
+statistics SQLite would otherwise scan the table in insertion order to skip a sort.
+
+An index over several fields is `ix_<table>_<hex>x<hex>…`, one hex label per field joined by `x`,
+with one `json_extract` column per field.
+
+### Query statistics
+
+SQLite chooses an index from statistics that `ANALYZE` stores in the file. Without them it guesses.
+On a filter over two indexed fields it can pick the field that matches most of the table: on 300,000
+links, a `{ to, type }` read took 23 ms with no statistics and 0.05 ms with them.
+
+The adapter keeps the statistics fresh by itself, with SQLite's own `PRAGMA optimize`. It runs it
+when the adapter opens, after `ensureIndex`, after any transaction that brings the rows this
+connection has changed since the last refresh to 1,000, and when the adapter closes. SQLite then
+analyzes a table only when one of its indexes has no statistics or its row count has changed
+tenfold, and limits how much of each index it reads. On 900,000 records with five indexes, a refresh
+that had to analyze everything took 174 ms; one that found nothing to do took 0.05 ms.
+
+- An automatic refresh never waits for another connection's write lock. If the lock is held, it is
+  skipped and the next trigger tries again.
+- `adapter.lastStatisticsRefresh` reports the last refresh: why it ran (`open`, `index`, `writes`,
+  `close` or `request`), which tables it analyzed, how long it took, or why it was skipped.
+- `adapter.refreshStatistics()` refreshes now and returns the same report. It waits for the write
+  lock like any write and throws if the refresh fails. Mirk's own triggers make it optional; call
+  it when a bulk import must be fast before the next trigger.
+- The `refreshStatisticsAfterChanges` option sets the row count (default 1,000). `0` turns the
+  automatic refreshes off.
+
+On an engine older than SQLite 3.46, whose `PRAGMA optimize` does less, the adapter runs a bounded
+`ANALYZE` on the tables that need it instead. Node's built-in SQLite and the better-sqlite3 13
+build are newer than that.
 
 ### Transactions
 
@@ -455,6 +502,14 @@ batch), never as lost data. Keep write transactions short and free of network or
 callbacks, and bound your own retries. This suits a modest number of cooperating processes. For
 sustained concurrent writers, use [`@mirk/store-postgres`](../store-postgres). For critical sections
 that must await external IO, use [async coordination](#async-coordination).
+
+Both SQLite adapters are synchronous, so a query holds its thread until it finishes. In a server,
+one slow query delays every request on that thread. Measured on 300,000 records, a 75 ms scan every
+400 ms pushed other reads' worst wait to 84 ms. Readers on other connections are not delayed: open
+a second adapter on the same file in a worker thread, or in another process, for slow reads such as
+large lists and totals. With the scan in a worker thread, the main thread's worst wait was 1.4 ms;
+four reader processes beside a writer and a scanning process kept their worst wait at 5 ms. Each
+adapter has its own connection, and WAL lets all of them read while one writes.
 
 ### Inspection, checkpoints, and backups
 

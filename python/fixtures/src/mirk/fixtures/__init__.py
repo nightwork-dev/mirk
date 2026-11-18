@@ -39,6 +39,7 @@ from .registry import FixtureRegistry, create_fixture_registry
 from .types import (
     Diagnostic,
     ExtractedReference,
+    FixtureFieldProvenance,
     FixtureProvenance,
     FixtureProvenanceLayer,
     FixtureSource,
@@ -59,6 +60,7 @@ __all__ = [
     "Diagnostic",
     "ExtractedReference",
     "FixtureError",
+    "FixtureFieldProvenance",
     "FixtureLoader",
     "FixtureProvenance",
     "FixtureProvenanceLayer",

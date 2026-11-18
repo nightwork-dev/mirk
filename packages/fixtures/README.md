@@ -604,3 +604,39 @@ path, never by absolute local path.
 - Not a hot-reload service. It exposes invalidation; file watching belongs above it.
 - Not a migration engine. It loads current authored data; versioned migrations are separate.
 - Not a domain framework. No kind of content is special to the core.
+
+## Godot authored-data adapter
+
+`godot/addons/mirk_data/data.gd` ships with this package. Copy `godot/addons/mirk_data`
+into the host project's `addons/` folder. The addon has no autoload or native dependency.
+It provides ordered JSON text edits (`find_value`, `number_text`, `patch_number_text`,
+`put_text`), value diffs, path access and mutation, and two explicit merge policies.
+Filesystem writes, undo groups and game-specific field names stay with the host.
+
+`merge_layers(base, over, append_keys)` deep-copies both inputs, recursively merges objects,
+replaces arrays, and concatenates arrays only at keys supplied in `append_keys`.
+`merge_overlay(base, over)` recursively merges objects and joins arrays after removing
+base records whose `id` appears in the incoming array; unchanged and incoming branches
+retain their references. Neither policy changes the fixture loader's existing strategies.
+`set_at` accepts a dotted path or an array of keys/indexes, creates missing object keys,
+and returns false for an invalid array index or traversal into a scalar. A numeric write
+to an existing integer object field keeps that field an integer; array writes take the
+supplied type. Existing JSON escapes and formatting outside an edit remain unchanged.
+The text editor preserves its existing literal-key lookup and append layout behavior;
+it does not validate or repair malformed input.
+
+`test/authored-data-cases.json` is shared with the Python adapter's tests. A host can
+run `test/authored-data.gd` headlessly with that fixture's absolute path after `--`.
+
+### Field origins
+
+`loadRaw(ref).provenance.fields` maps JSON pointers in the resolved record to the
+winning `FixtureProvenanceLayer` plus `fieldPath`, a JSON pointer in that layer's
+source document. Map documents include the escaped entry key in `fieldPath`;
+`path` keeps the existing `file#key` form. Writes replace origins even when the
+value is unchanged. Replacing an array replaces every element's origin.
+Containers whose children come from several writes have no single origin.
+Injected map ids have no authored field origin. Custom merge outputs and schema
+transformations clear field origins: the loader cannot prove their source.
+Materialization and domain composition must map their own output fields to raw
+fixture pointers.

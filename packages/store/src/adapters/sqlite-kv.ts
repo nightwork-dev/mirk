@@ -32,6 +32,7 @@ export class SqliteKvFacet
     versionIdentity?: string,
     receiptRetentionMs?: number,
     now: () => number = Date.now,
+    private readonly afterIndex: () => void = () => {},
   ) {
     super(db, atomicLimits, versionIdentity, receiptRetentionMs, now);
     this.db.pragma("foreign_keys = ON");
@@ -173,8 +174,9 @@ export class SqliteKvFacet
     return rows.map((r) => JSON.parse(r.data) as T);
   }
 
-  ensureIndex(collection: string, field: string): void {
-    this.db.exec(buildEnsureIndexSql(this.ensureTable(collection), field));
+  ensureIndex(collection: string, fields: string | readonly string[]): void {
+    this.db.exec(buildEnsureIndexSql(this.ensureTable(collection), fields));
+    this.afterIndex();
   }
 
   getById<T>(collection: string, id: string): T | null {

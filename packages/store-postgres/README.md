@@ -166,12 +166,28 @@ CREATE INDEX IF NOT EXISTS records_f_<hash> ON "<schema>".records (collection, (
 CREATE INDEX IF NOT EXISTS records_s_<hash> ON "<schema>".records (collection, ((data ->> 'field') COLLATE "C"));
 ```
 
-`<hash>` is the first 32 hex digits of the SHA-256 of the collection name, a NUL, and the field.
+A list of fields declares one index over them, in that order, which serves equality on its leading
+fields and a number range on the next one:
+
+```sql
+CREATE INDEX IF NOT EXISTS records_c_<hash> ON "<schema>".records (collection, (data -> 'a'), (data -> 'b'));
+```
+
+`<hash>` is the first 32 hex digits of the SHA-256 of the collection name and each field, joined by
+NULs. A one-field list is the same as the field alone.
 The first index serves equality, `listWhereIn` and number ranges; the second serves string ranges.
 `sortBy` orders by type, then by value, and no index serves that order. The indexes are built with
 a plain `CREATE INDEX`, which blocks writes to `records` while it runs: declare them at startup,
 before the table is large, or create them yourself with `CREATE INDEX CONCURRENTLY` under the same
 names.
+
+### Query statistics
+
+PostgreSQL's autovacuum refreshes planner statistics by itself as a table changes. A new expression
+index has none until `ANALYZE` reads its expression, and autovacuum only analyzes after rows
+change, so `ensureIndex` runs `ANALYZE` on the schema's tables when it creates an index.
+`await postgres.refreshStatistics()` runs the same `ANALYZE` on request, for example straight after
+a bulk import, and `postgres.lastStatisticsRefresh` reports the last one the adapter ran.
 
 ### Atomic writes and versions
 

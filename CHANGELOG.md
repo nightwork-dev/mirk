@@ -5,6 +5,61 @@ distribution carries the same version and is bumped together, so "mirk 0.12.0" m
 thing in every package and both languages. Releases up to 2026-09-22 were versioned independently.
 This file records each release and repository-wide contract changes.
 
+## 0.15.0 — unreleased
+
+Fast reads without knowing the query planner.
+
+### Store
+
+- The SQLite adapters keep SQLite's query statistics fresh by themselves. Before, they never ran
+  `ANALYZE`, so on a filter over two indexed fields SQLite could read the index that matches most of
+  the table. On 300,000 links a `{ to, type }` read took 23 ms instead of 0.05 ms, and a write that
+  read links first took 74 ms instead of 1.2 ms. The adapter now runs SQLite's own
+  `PRAGMA optimize` when it opens, after `ensureIndex`, after 1,000 changed rows, and at close.
+  SQLite analyzes only the tables that need it and limits the work. An automatic refresh never
+  waits for another writer; if the lock is held it is skipped and tried again later.
+- `adapter.refreshStatistics()` refreshes on request and `adapter.lastStatisticsRefresh` reports
+  the last refresh: why, which tables, how long, or why it was skipped. The
+  `refreshStatisticsAfterChanges` option changes the row count; `0` turns automatic refreshes off.
+- `ensureIndex(collection, ["a", "b"])` declares one index over several fields, in that order. It
+  serves a `where` on the leading fields and, on SQLite and libSQL, a range or `sortBy` on the next.
+  On 600,000 membership rows a ranked page filtered on three fields took 85 ms before, 13 ms with
+  fresh statistics, and 0.3 ms with an index over the three fields. Apps no longer need to build a
+  joined key such as `product|kind` by hand. An empty list throws `StoreFilterError` with code
+  `invalid-index-fields`. A one-field list is the same index as the field alone.
+- `@mirk/store/sql` exports the shared statistics rule (`statisticsRefresh`) and `indexFields`.
+- If you implement `SyncStoreIndexes` or `AsyncStoreIndexes` yourself, `ensureIndex` may now
+  receive a list of fields. TypeScript still accepts a `field: string` implementation, so check
+  for a list at run time; `indexFields` from `@mirk/store/sql` turns either form into a list.
+
+### libSQL
+
+- The same statistics refresh, run in a savepoint inside a write transaction the adapter already
+  holds. libSQL's engine is SQLite 3.45, so the adapter runs a bounded `ANALYZE` on the tables that
+  need it rather than relying on that engine's `PRAGMA optimize`.
+
+### PostgreSQL
+
+- `ensureIndex` with a list creates one index over `(collection, data -> each field)`. A newly
+  created index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's tables.
+  Autovacuum still refreshes statistics as tables grow.
+
+### Memory, IndexedDB and Surreal
+
+- `ensureIndex` accepts a list, checks it, and does nothing, as before.
+
+### Fixtures
+
+- `loadRaw(ref).provenance.fields` names the layer and source field that won each resolved field.
+- A Godot addon (`godot/addons/mirk_data`) and the Python `mirk.data` module ship the authored-data
+  text edits, diffs and merge policies, with shared test cases.
+
+### Python
+
+- `mirk-store` gains index lists for `ensureIndex` and the same statistics refresh on `SqliteStore`
+  (`refresh_statistics()`, `last_statistics_refresh`, `refresh_statistics_after_changes`). All Python
+  distributions move to 0.15.0 with the version set.
+
 ## 0.14.0 — 2026-10-23
 
 Indexed collection queries.

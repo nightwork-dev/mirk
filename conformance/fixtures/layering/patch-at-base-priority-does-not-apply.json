@@ -72,7 +72,25 @@
               "path": "themes/dark.json",
               "kind": "shadowed"
             }
-          ]
+          ],
+          "fields": {
+            "": {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 5,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": ""
+            },
+            "/name": {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 5,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": "/name"
+            }
+          }
         }
       }
     }

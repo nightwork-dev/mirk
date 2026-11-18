@@ -192,9 +192,14 @@ class FixtureProvenanceLayer(TypedDict):
     kind: FixtureProvenanceLayerKind
 
 
+class FixtureFieldProvenance(FixtureProvenanceLayer):
+    fieldPath: str
+
+
 class FixtureProvenance(TypedDict):
     finalRef: str
     layers: list[FixtureProvenanceLayer]
+    fields: dict[str, FixtureFieldProvenance]
 
 
 class LoadedFixture(TypedDict):

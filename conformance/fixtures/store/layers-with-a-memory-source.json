@@ -78,7 +78,25 @@
               "path": "themes/dark.json",
               "kind": "patch"
             }
-          ]
+          ],
+          "fields": {
+            "/name": {
+              "sourceId": "files",
+              "layer": "files",
+              "priority": 0,
+              "path": "themes/dark.json",
+              "kind": "base",
+              "fieldPath": "/name"
+            },
+            "/accent": {
+              "sourceId": "db",
+              "layer": "db",
+              "priority": 1,
+              "path": "themes/dark.json",
+              "kind": "patch",
+              "fieldPath": "/accent"
+            }
+          }
         }
       }
     }

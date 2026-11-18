@@ -1,0 +1,139 @@
+{
+  "id": "fixtures/provenance/field-writes-array-replace",
+  "title": "winning fields track writes, equal values, array replacement, and shadowed records",
+  "ports": [
+    "fixtures"
+  ],
+  "capabilities": [],
+  "steps": [
+    {
+      "op": "configure",
+      "args": [
+        {
+          "types": [
+            {
+              "type": "thing",
+              "directory": "things",
+              "jsonSchema": true,
+              "mergeStrategy": "array-replace",
+              "document": {
+                "kind": "map",
+                "idField": "id"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "kind": "memory",
+              "name": "old",
+              "priority": 0,
+              "files": {
+                "things/all.json": "{\"a\":{\"gone\":1}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "base",
+              "priority": 1,
+              "files": {
+                "things/all.json": "{\"a\":{\"same\":1,\"nested\":{\"keep\":2,\"set\":3},\"list\":[1,2],\"x/y~\":5}}"
+              }
+            },
+            {
+              "kind": "memory",
+              "name": "edit",
+              "priority": 2,
+              "files": {
+                "things/all.json": "{\"a\":{\"$patch\":\"thing:a\",\"same\":1,\"nested\":{\"set\":4},\"list\":[1]}}"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "op": "explain",
+      "args": [
+        "thing:a"
+      ],
+      "expect": {
+        "value": {
+          "finalRef": "thing:a",
+          "layers": [
+            {
+              "sourceId": "old",
+              "layer": "old",
+              "priority": 0,
+              "path": "things/all.json#a",
+              "kind": "replace"
+            },
+            {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 1,
+              "path": "things/all.json#a",
+              "kind": "base"
+            },
+            {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch"
+            }
+          ],
+          "fields": {
+            "/x~1y~0": {
+              "sourceId": "base",
+              "layer": "base",
+              "priority": 1,
+              "path": "things/all.json#a",
+              "kind": "base",
+              "fieldPath": "/a/x~1y~0"
+            },
+            "/same": {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch",
+              "fieldPath": "/a/same"
+            },
+            "/nested": {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch",
+              "fieldPath": "/a/nested"
+            },
+            "/nested/set": {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch",
+              "fieldPath": "/a/nested/set"
+            },
+            "/list": {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch",
+              "fieldPath": "/a/list"
+            },
+            "/list/0": {
+              "sourceId": "edit",
+              "layer": "edit",
+              "priority": 2,
+              "path": "things/all.json#a",
+              "kind": "patch",
+              "fieldPath": "/a/list/0"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 from .atomic import (
@@ -25,6 +25,7 @@ from .atomic import wall_clock_ms as _wall_clock_ms
 from .filter import (
     apply_filter,
     dumps_json,
+    index_fields,
     json_equal,
     normalize_json_numbers,
     validate_in_values,
@@ -146,10 +147,11 @@ class InMemoryStore:
         items = list(self._collection(collection).values())
         return [copy_json(item) for item in apply_filter(items, filter)]
 
-    def ensureIndex(self, collection: str, field: str) -> None:
+    def ensureIndex(self, collection: str, fields: str | Sequence[str]) -> None:
+        """Validated, then a no-op: the reference scans in memory."""
         if self._transaction_domain is not None:
             self._transaction_domain.check()
-        """Accepted and a no-op: the reference scans in memory."""
+        index_fields(fields)
         self._collection(collection)
 
     def getById(self, collection: str, id: str) -> Any:

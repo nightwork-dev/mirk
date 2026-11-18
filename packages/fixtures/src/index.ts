@@ -14,6 +14,7 @@ export type {
   FixtureLoaderOptions,
   FixtureMapDocument,
   FixtureProvenance,
+  FixtureFieldProvenance,
   FixtureProvenanceLayer,
   FixtureProvenanceLayerKind,
   FixturePurpose,

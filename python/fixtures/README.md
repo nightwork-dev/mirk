@@ -240,3 +240,28 @@ language pins those with its own tests.
 
 The shared fixture scenarios run against the memory and SQLite backends in both
 languages. Contributor setup and test commands are in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+
+## Standalone authored-data merges
+
+`from mirk.data import merge_overlay, merge_layers` imports only the dependency-free
+namespace module shipped in this distribution. `merge_overlay(base, over)` recursively
+merges objects and joins lists, removing base records whose `id` is overridden by an
+incoming record. Unchanged and incoming branches retain their references.
+`merge_layers(base, over, append_keys=())` deep-copies both inputs, recursively merges
+objects, replaces lists, and concatenates lists at explicitly supplied keys.
+These functions do not change the fixture loader's merge strategies.
+
+The Godot addon shipped in `@mirk/fixtures` runs the same merge cases from
+`packages/fixtures/test/authored-data-cases.json`. The namespace module can be loaded
+from source by a Python 3.9 host without importing the fixture loader; the installable
+`mirk-fixtures` distribution and its full loader still require Python 3.12 or later.
+
+### Field origins
+
+`loadRaw(ref)["provenance"]["fields"]` maps resolved-record JSON pointers to the
+winning layer plus `fieldPath`, a JSON pointer into the source document. Map
+entries prefix this pointer with their escaped key. Equal-value writes still
+replace origins; replacing lists replaces all element origins. Mixed containers
+and injected ids have no single authored origin. Custom merges and schema
+transformations clear origins because their source cannot be proven. Domain
+materializers own the mapping from their outputs to these raw fixture pointers.
