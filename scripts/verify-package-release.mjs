@@ -652,11 +652,14 @@ async function packPackage(packageInfo, tempRoot) {
 
 async function packReleaseTrain(packageInfos, tempRoot) {
   if (packageInfos.length === 0) return [];
-  const trainRoot = join(tempRoot, "release-train");
+  // pnpm names a store index file after the whole tarball path, and a file
+  // name over 255 bytes fails with ENAMETOOLONG, so the train folders are
+  // numbered rather than named after each package.
+  const trainRoot = join(tempRoot, "t");
   mkdirSync(trainRoot, { recursive: true });
   const packed = [];
-  for (const packageInfo of packageInfos) {
-    const packageRoot = join(trainRoot, safeName(packageInfo.manifest.name));
+  for (const [index, packageInfo] of packageInfos.entries()) {
+    const packageRoot = join(trainRoot, String(index));
     mkdirSync(packageRoot, { recursive: true });
     const tarball = await packPackage(packageInfo, packageRoot);
     await validateTarballMembers(tarball);
@@ -804,14 +807,36 @@ function checkPackedPaths(files, declared = []) {
   }
 }
 
+/** Vendored upstream files, by packed path: a file listed in a packed
+ *  `provenance.json` beside it, with the checksums pinned there. Such a file
+ *  is the upstream release byte for byte (its own docs may show example
+ *  paths such as SQLite's `file:/home/fred/data.db`), so the leak check
+ *  skips it only while its bytes match. */
+function pinnedUpstreamFiles(extracted, files) {
+  const pinned = new Map();
+  for (const file of files) {
+    if (!/(?:^|\/)provenance\.json$/.test(file)) continue;
+    const manifest = JSON.parse(readFileSync(join(extracted, ...file.split("/")), "utf8"));
+    const dir = file.slice(0, file.length - "provenance.json".length);
+    for (const [name, sum] of Object.entries(manifest.files ?? {})) {
+      const sums = new Set([sum]);
+      if (typeof manifest.patched_sha256 === "string") sums.add(manifest.patched_sha256);
+      pinned.set(`${dir}${name}`, sums);
+    }
+  }
+  return pinned;
+}
+
 function checkLeakage(extracted, files, forbiddenNames, packageName) {
   const names = forbiddenNames
     .map((name) => name.trim())
     .filter((name) => name && name.toLowerCase() !== packageName.toLowerCase());
+  const pinned = pinnedUpstreamFiles(extracted, files);
   for (const file of files) {
     const absolute = join(extracted, ...file.split("/"));
     const bytes = readFileSync(absolute);
     if (bytes.includes(0)) continue;
+    if (pinned.get(file)?.has(sha256(bytes))) continue;
     const text = bytes.toString("utf8");
     for (const { pattern, label } of LEAK_PATTERNS) {
       if (pattern.test(text)) {

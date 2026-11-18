@@ -4,6 +4,8 @@
   "type": "module",
   "description": "Pinned sqlite-vec with ordered float64 cosine for Mirk SQLite adapters.",
   "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

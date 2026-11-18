@@ -4,10 +4,12 @@ A synchronous named-vector store over a host-owned official `QdrantClient`. Requ
 and qdrant-client 1.19.1+. The stored format is shared with `@mirk/vector-qdrant`.
 
 ```python
+import os
+
 from qdrant_client import QdrantClient
 from mirk.vector_qdrant import QdrantVectorStore
 
-client = QdrantClient(url="http://127.0.0.1:6333")
+client = QdrantClient(url=os.environ["QDRANT_URL"])
 vectors = QdrantVectorStore(client, collection_name="app_vectors", namespace="default")
 vectors.ensureSpace("text", {"dimensions": 3})
 vectors.ensureSpace("image", {"dimensions": 2})

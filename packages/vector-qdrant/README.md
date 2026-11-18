@@ -8,7 +8,7 @@ logical collections and vector namespaces share it without sharing document iden
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { QdrantVectorStore } from "@mirk/vector-qdrant";
 
-const client = new QdrantClient({ url: "http://127.0.0.1:6333" });
+const client = new QdrantClient({ url: process.env.QDRANT_URL });
 const vectors = await QdrantVectorStore.open(client, {
   collectionName: "app_vectors",
   namespace: "default", // optional
