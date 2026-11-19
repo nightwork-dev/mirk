@@ -8,7 +8,7 @@
 > links between things, authored content, and generated files. Start with a single file on disk,
 > and move to a bigger database later without rewriting your app.
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff) ![black october](https://img.shields.io/badge/updated%20for-Black%20October-0b0b0b)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![status](https://img.shields.io/badge/status-pre--1.0-orange) ![stack](https://img.shields.io/badge/TypeScript-pnpm%20%C2%B7%20vitest-3178c6) ![module](https://img.shields.io/badge/ESM-only-2bd4ff)
 
 ## Why
 
