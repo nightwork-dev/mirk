@@ -7,9 +7,9 @@ This file records each release and repository-wide contract changes.
 
 ## 0.16.0 — unreleased
 
-Two lines of work ship together as 0.16.0. No 0.15.0 is published: the work prepared for it is
-part of this release. Two new packages join the set, `@mirk/queue` and `@mirk/sqlite-vec-native`,
-with Python distributions `mirk-queue` and `mirk-sqlite-vec-native`.
+There is no 0.15.0 release; its changes are part of 0.16.0. Two packages are new:
+`@mirk/queue` and `@mirk/sqlite-vec-native`, with the Python distributions `mirk-queue` and
+`mirk-sqlite-vec-native`.
 
 ### Breaking changes
 
@@ -17,103 +17,86 @@ with Python distributions `mirk-queue` and `mirk-sqlite-vec-native`.
   the Python store upgrade an older file (format 2 or 3) on open by default. The upgrade is one
   way: an older Mirk release cannot open the file afterwards. Pass `migration: "explicit"` to fail
   with `migration-required` and upgrade with `SqliteAdapter.migrate(options)` (or
-  `NodeSqliteAdapter.migrate`), or `migration: "refuse"` to never upgrade. `backupPath` writes a consistent copy before the upgrade. Stop other clients of
-  the file before it upgrades, and reopen them afterwards. `docs/format.md` describes every format.
+  `NodeSqliteAdapter.migrate`), or `migration: "refuse"` to never upgrade. `backupPath` writes a
+  consistent copy before the upgrade. Stop other clients of the file before it upgrades, and
+  reopen them afterwards. `docs/format.md` describes every format.
 - **Vectors live in named spaces.** A document holds a `vectors` map, one vector per space, and
   each space has its own dimensions. Declare a space with `ensureSpace(name, { dimensions })` and
   name it when searching: `search(collection, { space, vector }, options)`. Upgrading a file moves
   its old vectors into one space (named `default` unless you choose another). The libSQL, Qdrant
   and Surreal vector adapters take the same shape.
 - **Log readers pass a cursor.** `list(stream, { after })` takes a `{ generation, sequence }`
-  cursor, not a bare sequence number; `lastCursor(stream)` returns the tail. Deleting a stream
-  removes its history, and recreating it starts a new generation, so an old cursor throws
+  cursor, not a bare sequence number; `lastCursor(stream)` returns the end of the stream. Deleting
+  a stream removes its history, and recreating it starts a new generation, so an old cursor throws
   `stale-cursor`.
 - **Coordination import paths.** The native-free contract is `@mirk/store/coordination/core`;
   SQLite coordination is `@mirk/store/coordination/sqlite` and memory coordination
   `@mirk/store/coordination/memory`. `@mirk/store/coordination` still works but is deprecated,
   and it loads the optional SQLite peer.
 
-### From the 0.15.0 work: fast reads without knowing the query planner
+### New packages
 
-#### Store
+- **`@mirk/queue`** keeps a durable work queue in a Mirk atomic store: enqueue, claims with
+  renewable leases that a stale holder cannot use, checkpoints, completion, failure, cancellation,
+  recovery of expired claims, and a command key on every change so a retry returns the first
+  answer. `start` admits one active item per key. `list` filters by queue, subject, kind and state
+  through indexes. It runs no workers and has no retry or scheduling policy.
+- **`@mirk/sqlite-vec-native`** is an optional companion for `@mirk/store/sqlite-vec`. It runs
+  exact cosine search inside SQLite with sqlite-vec and returns the same results as the built-in
+  search. It compiles when installed, never during a query. Without it, search uses the built-in
+  engine and reports `accelerated: false`.
 
-- The SQLite adapters keep SQLite's query statistics fresh by themselves. Before, they never ran
-  `ANALYZE`, so on a filter over two indexed fields SQLite could read the index that matches most of
-  the table. On 300,000 links a `{ to, type }` read took 23 ms instead of 0.05 ms, and a write that
-  read links first took 74 ms instead of 1.2 ms. The adapter now runs SQLite's own
-  `PRAGMA optimize` when it opens, after `ensureIndex`, after 1,000 changed rows, and at close.
-  SQLite analyzes only the tables that need it and limits the work. An automatic refresh never
-  waits for another writer; if the lock is held it is skipped and tried again later.
-- `adapter.refreshStatistics()` refreshes on request and `adapter.lastStatisticsRefresh` reports
+### Faster queries
+
+- **The SQLite adapters keep SQLite's query statistics fresh.** Before, they never ran `ANALYZE`,
+  so on a filter over two indexed fields SQLite could pick the index that matches most of the
+  table. On 300,000 rows a two-field read took 23 ms instead of 0.05 ms. The adapter now runs
+  SQLite's own `PRAGMA optimize` when it opens, after `ensureIndex`, after 1,000 changed rows, and
+  at close. SQLite analyzes only the tables that need it and limits the work. An automatic refresh
+  never waits for another writer; if the lock is held, it is skipped and tried again later.
+- `adapter.refreshStatistics()` refreshes on request, and `adapter.lastStatisticsRefresh` reports
   the last refresh: why, which tables, how long, or why it was skipped. The
   `refreshStatisticsAfterChanges` option changes the row count; `0` turns automatic refreshes off.
-- `ensureIndex(collection, ["a", "b"])` declares one index over several fields, in that order. It
-  serves a `where` on the leading fields and, on SQLite and libSQL, a range or `sortBy` on the next.
-  On 600,000 membership rows a ranked page filtered on three fields took 85 ms before, 13 ms with
-  fresh statistics, and 0.3 ms with an index over the three fields. Apps no longer need to build a
-  joined key such as `product|kind` by hand. An empty list throws `StoreFilterError` with code
-  `invalid-index-fields`. A one-field list is the same index, under the same name, as the field
-  alone, so indexes declared under 0.14.0 are reused, not built twice.
+- **Indexes over several fields.** `ensureIndex(collection, ["a", "b"])` declares one index over
+  those fields, in that order. It serves a `where` on the leading fields and, on SQLite and libSQL,
+  a range or `sortBy` on the next. On 600,000 rows, a sorted page filtered on three fields took
+  85 ms before, 13 ms with fresh statistics, and 0.3 ms with an index over the three fields. An
+  empty list throws `StoreFilterError` with code `invalid-index-fields`. A one-field list is the
+  same index, under the same name, as the field alone, so indexes declared under 0.14.0 are reused.
 - `@mirk/store/sql` exports the shared statistics rule (`statisticsRefresh`) and `indexFields`.
 - If you implement `SyncStoreIndexes` or `AsyncStoreIndexes` yourself, `ensureIndex` may now
   receive a list of fields. TypeScript still accepts a `field: string` implementation, so check
   for a list at run time; `indexFields` from `@mirk/store/sql` turns either form into a list.
-
-#### libSQL
-
-- The same statistics refresh, run in a savepoint inside a write transaction the adapter already
+- **libSQL:** the same statistics refresh, run inside a write transaction the adapter already
   holds. libSQL's engine is SQLite 3.45, so the adapter runs a bounded `ANALYZE` on the tables that
-  need it rather than relying on that engine's `PRAGMA optimize`. `refreshStatistics()`,
-  `lastStatisticsRefresh` and the `refreshStatisticsAfterChanges` option work as on SQLite.
+  need it. `refreshStatistics()`, `lastStatisticsRefresh` and `refreshStatisticsAfterChanges` work
+  as on SQLite.
+- **PostgreSQL:** `ensureIndex` with a list creates one index over `(collection, data -> each
+  field)`. A new index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's
+  tables, and `lastStatisticsRefresh` reports it. Autovacuum still refreshes statistics as tables
+  grow.
+- **Memory, IndexedDB and Surreal:** `ensureIndex` accepts a list and checks it (an empty list
+  throws `invalid-index-fields`, which 0.14.0 did not check), then does nothing, as before.
 
-#### PostgreSQL
+### Other changes
 
-- `ensureIndex` with a list creates one index over `(collection, data -> each field)`. A newly
-  created index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's tables,
-  and `lastStatisticsRefresh` reports it.
-  Autovacuum still refreshes statistics as tables grow.
-
-#### Memory, IndexedDB and Surreal
-
-- `ensureIndex` accepts a list and checks it (an empty list throws `invalid-index-fields`, which
-  0.14.0 did not check), then does nothing, as before.
-
-#### Fixtures
-
-- `loadRaw(ref).provenance.fields` names the layer and source field that won each resolved field.
-- A Godot addon (`godot/addons/mirk_data`) and the Python `mirk.data` module ship the authored-data
-  text edits, diffs and merge policies, with shared test cases.
-
-#### Python
-
-- `mirk-store` gains index lists for `ensureIndex` and the same statistics refresh on `SqliteStore`
-  (`refresh_statistics()`, `last_statistics_refresh`, `refresh_statistics_after_changes`).
-
-### From the 0.16.0 line: storage for queues, vectors and long-lived files
-
-- **`@mirk/queue`** stores durable queue items over a Mirk atomic store and its transactions:
-  enqueue, fenced claims with renewal, checkpoints, completion, failure, cancellation, blocked
-  recovery and idempotent commands. `start` admits one active item per key. `list` filters by
-  queue, subject, kind and state through indexes. It runs no workers and holds no retry or provider
-  policy; the job model belongs to Gonk. It was called `@mirk/jobs` before it was ever published,
-  so no published package is renamed.
-- **`@mirk/sqlite-vec-native`** is an optional companion for `@mirk/store/sqlite-vec`. It runs
-  exact cosine search inside SQLite with sqlite-vec and keeps the float64 result contract. It
-  compiles when installed, never during a query. Without it, search uses the ordinary exact engine
-  and reports `accelerated: false`.
-- **Shared transactions in memory.** The in-memory KV, log and leases that you attach can share one
-  transaction, with savepoints and rollback. A rolled-back lease cannot regain its authority.
+- **Shared transactions in memory.** The in-memory key-values, log and leases you attach can share
+  one transaction, with savepoints and rollback. A rolled-back lease cannot be used again.
 - **Coordination.** `tryAcquire` makes one immediate attempt. Coordinators take an injected clock
   for waits and expiry.
-- **Independent readers.** `docs/format.md` is the normative SQLite format. Fixed sample files for
-  every format, and readers in Node, Python and Rust that do not use Mirk, check it.
+- **Independent readers.** `docs/format.md` is the reference for the SQLite format. Fixed sample
+  files for every format, and readers in Node, Python and Rust that do not use Mirk, check it.
+- **Fixtures.** `loadRaw(ref).provenance.fields` names the layer and source field that won each
+  resolved field. A Godot addon (`godot/addons/mirk_data`) and the Python `mirk.data` module ship
+  the authored-data text edits, diffs and merge policies, with shared test cases.
 - The shared conformance corpus has 510 scenarios, replayed by TypeScript and Python.
 
 ### Python
 
 The Python distributions move to 0.16.0 with the version set and gain the same behaviour:
-statistics refresh and indexes over several fields in `mirk-store`, format 4, named vector spaces,
-log cursors, and the new `mirk-queue` and `mirk-sqlite-vec-native`.
+statistics refresh and indexes over several fields in `mirk-store` (`refresh_statistics()`,
+`last_statistics_refresh`, `refresh_statistics_after_changes`), format 4, named vector spaces, log
+cursors, and the new `mirk-queue` and `mirk-sqlite-vec-native`.
 
 ## 0.14.0 — 2026-10-23
 

@@ -72,6 +72,32 @@ interpreter with installed wheels; the harness verifies that its imports come fr
 For an existing test service, set `MIRK_QDRANT_URL` when running either adapter's tests directly.
 Each test creates and removes its own physical collection.
 
+## libSQL server tests
+
+The transaction contract, the store conformance corpus, lease-fencing tests, and failure tests run
+against a local file by default. Two settings add real servers:
+
+- `MIRK_LIBSQL_SERVER=/path/to/sqld` starts an isolated loopback `sqld` with temporary data for
+  each test file, and stops it afterward. The failure tests kill it mid-transaction.
+- `MIRK_LIBSQL_TURSO_URL` and `MIRK_LIBSQL_TURSO_TOKEN` name a disposable hosted database. Every
+  table the tests create carries a per-run `tablePrefix`, and the tests drop those tables.
+
+```bash
+MIRK_LIBSQL_SERVER=/path/to/sqld pnpm --filter @mirk/store-libsql test
+```
+
+To check the packed remote export, build the workspace, then run against a libSQL server
+executable:
+
+```bash
+MIRK_LIBSQL_SERVER=/path/to/sqld pnpm --filter @mirk/store-libsql test:remote
+```
+
+The check starts an isolated loopback server with temporary data and removes it afterward. It
+exercises the published remote export over HTTP, WebSocket, and `libsql://` URLs while native
+imports are denied. It also checks generated consumer declarations and keeps a negative control for
+the native-capable root import.
+
 ## SQLite format goldens
 
 Run `pnpm test:format` on Node 24 or 26 to compare the immutable SQLite files with their expected

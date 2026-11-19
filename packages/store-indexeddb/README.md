@@ -101,8 +101,7 @@ receipts in its own transaction, and `pruneExpiredReceipts()` deletes the rest, 
 batch, and returns how many it deleted. The browser's clock decides a receipt's age.
 **The window must be longer than the longest time a caller may retry or reconcile a
 request**: a retry after it applies the mutation again. A host that reconciles old receipts
-after an expired job lease, as the example app does, should leave expiry off or use a window
-of days.
+after an expired job lease should leave expiry off or use a window of days.
 
 ## Reference
 

@@ -17,7 +17,8 @@ served to someone? If a job retries, do we get two copies?
 - **Provenance.** Each file gets a record with a stable `id`, media type, optional producer
   (which system, operation, and job made it), and **lineage**: which other artifacts it was made from.
 - **All or nothing.** A file becomes visible only after its bytes are stored and checked and its
-  record is saved. If anything fails on the way, no record exists, and leftover bytes are deleted or, if that fails, left for maintenance to find.
+  record is saved. If anything fails on the way, no record exists, and leftover bytes are deleted or, if that fails, left for
+  maintenance to find.
 - **Safe retries.** An `idempotencyKey` makes a repeated write return the original artifact instead
   of making a second one.
 
@@ -45,15 +46,6 @@ Use the Node filesystem backend through its explicit subpath:
 ```ts
 import { FileObjectStore } from "@mirk/artifact/fs";
 ```
-
-## Exports
-
-| Import                       | What it gives you                                                                                                             | Native deps         |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `@mirk/artifact`             | `ArtifactCoordinator`, in-memory object/repository references, object-store and artifact types, digest and validation helpers | none                |
-| `@mirk/artifact/store`       | `StoreArtifactRepository`, backed by any `AsyncStore` from `@mirk/store/kv`                                                   | none                |
-| `@mirk/artifact/fs`          | `FileObjectStore`, backed by local disk bytes plus sidecar metadata                                                           | Node built-ins only |
-| `@mirk/artifact/maintenance` | read-only audits and explicit conditional repair plans                                                                        | none                |
 
 ## A first look
 
@@ -92,7 +84,16 @@ for await (const chunk of read.bytes) {
 console.log(text); // hello
 ```
 
-## Records and Identity
+## Exports
+
+| Import                       | What it gives you                                                                                                             | Native deps         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `@mirk/artifact`             | `ArtifactCoordinator`, in-memory object/repository references, object-store and artifact types, digest and validation helpers | none                |
+| `@mirk/artifact/store`       | `StoreArtifactRepository`, backed by any `AsyncStore` from `@mirk/store/kv`                                                   | none                |
+| `@mirk/artifact/fs`          | `FileObjectStore`, backed by local disk bytes plus sidecar metadata                                                           | Node built-ins only |
+| `@mirk/artifact/maintenance` | read-only audits and explicit conditional repair plans                                                                        | none                |
+
+## Records and identity
 
 An artifact exists only after its bytes are stored and verified. Every artifact has:
 
@@ -105,7 +106,7 @@ An artifact exists only after its bytes are stored and verified. Every artifact 
 
 The object-store key is infrastructure. Coordinator results are `ArtifactDescriptor`s, which never contain `objectKey`; only repository, adapter, and maintenance surfaces see it. Do not persist or construct object keys. Read through `artifacts.read(id)`.
 
-## Write and Failure Protocol
+## Writing, and what happens on failure
 
 `write()` behaves as one logical operation even though the object store and the metadata repository do not share a transaction:
 
@@ -128,7 +129,7 @@ A remote upload can land before its reply is lost. An object store signals that 
 
 Lineage is many-to-many. Both endpoints must exist (otherwise `ArtifactOperationError` with `code: "missing-lineage-endpoint"`), and an edge that would create a cycle is rejected with `ArtifactConflictError`. Mirk stores the `operation` string and `parameters`; it does not judge whether an operation makes sense for the media types involved. Keep prompts, provider payloads, credentials, and logs out of `parameters`; store a reference instead.
 
-## Idempotency and Concurrency
+## Retries and concurrent writers
 
 An `idempotencyKey` is scoped to the coordinator `namespace`. Repeating a completed write with the same key, metadata, and bytes returns the original artifact without writing a second one. Reusing the key with different metadata or different bytes throws `ArtifactConflictError`. Mirk computes the `mirk-artifact-finalization/v1` request digest from the bytes and every immutable field supplied at finalization; callers never provide it, and later annotation updates do not change it. For generated outputs, a key built from `(attemptId, outputSlot)` gives each attempt output its own scope.
 
@@ -141,7 +142,7 @@ Finalization concurrency is explicit:
 - `{ mode: "single-writer" }` (default) — correct for one writer. Concurrent finalizers need external exclusion; this mode does not promise multi-process idempotency.
 - `{ mode: "repository-atomic" }` — requires an `AtomicArtifactRepository`, such as `StoreArtifactRepository` over a store that implements `AsyncAtomicMutationStore`. The constructor throws an `ArtifactValidationError` (a `TypeError`) with `code: "invalid-concurrency-config"` when the repository cannot provide it. Idempotent decisions then happen in one atomic repository mutation.
 
-### Object Leases
+### Object leases
 
 When the repository also implements `ArtifactLeaseRepository` (as `StoreArtifactRepository` does over an atomic store), writers and repair cooperate through repository-owned leases on each object:
 
@@ -157,7 +158,7 @@ Leases are a cooperative protocol inside the repository, not a distributed trans
 
 `repository.list(query)` filters by `mediaType`, `mediaTypePrefix`, `kind`, `producerSystem`, `producerJobId`, `producerAttemptId`, `producerOutputSlot`, `createdAfter`, and `createdBefore`. Order is always `createdAt` descending, then `id` descending. `limit` defaults to 50 and is capped at 500; pass `nextCursor` back as `cursor` to continue.
 
-## Deletion and Retention
+## Deletion and retention
 
 Mirk cannot know whether your application still references an artifact, so:
 
@@ -165,7 +166,7 @@ Mirk cannot know whether your application still references an artifact, so:
 - `artifacts.delete(id)` removes the record and every lineage edge that touches it, then deletes the bytes only if no other record references the same object. If the metadata is gone but the byte delete fails, it throws.
 - Retention, reachability, approval, and attachment decisions belong to the caller. Treat direct deletion as an infrastructure primitive and decide above Mirk whether anything still needs the artifact.
 
-## Maintenance and Repair
+## Maintenance and repair
 
 `@mirk/artifact/maintenance` provides `ArtifactMaintenance` (and the `auditArtifacts()` shortcut, also exported from the root).
 
@@ -187,7 +188,7 @@ const results = await maintenance.applyRepair(plan);
 - Deleting an unreferenced object requires the exclusive-delete lease and re-verifies the audited size, digest, and ETag first. A repository without lease support gets `lease-unavailable` instead of a best-effort delete.
 - Repair never recreates bytes, invents lineage, accepts a new digest for corrupted bytes, deletes by age, or infers application reachability.
 
-## Persist Metadata With `@mirk/store`
+## Keep records in `@mirk/store`
 
 `StoreArtifactRepository` stores artifact metadata and lineage in any async Mirk KV implementation. For local sync stores, lift with `toAsync()`.
 
@@ -218,7 +219,7 @@ console.log(
 );
 ```
 
-## Store Bytes On Local Disk
+## Keep bytes on local disk
 
 `FileObjectStore` is Node-only and lives behind `@mirk/artifact/fs` so browser and edge imports of the root package do not load `node:fs`.
 
@@ -243,7 +244,7 @@ await rm(root, { recursive: true, force: true });
 
 The filesystem layout stores bytes at `<key>.bin` and portable metadata at `<key>.sidecar.json`. `head()` falls back to file size if a sidecar is missing or corrupt.
 
-## ObjectStore Contract
+## The `ObjectStore` contract
 
 An `ObjectStore` stores physical bytes by portable relative keys:
 
@@ -273,7 +274,7 @@ Rules every adapter must follow:
 
 `InMemoryObjectStore` and `InMemoryArtifactRepository` are reference implementations, not mocks: they copy bytes on the way in and out, order deterministically, and enforce the same conflict and lineage-cycle rules as `StoreArtifactRepository`. Test a new adapter against them.
 
-## Security and Trust
+## Security and trust
 
 - Treat `mediaType`, `filename`, annotations, and backend metadata as untrusted input. Escape `filename` before putting it in an HTTP header.
 - An artifact ID or object key is not an authorization. Authorization belongs to your application.
@@ -281,7 +282,7 @@ Rules every adapter must follow:
 - The coordinator `namespace` prefixes object keys and idempotency keys, and `StoreArtifactRepository`'s `namespace` prefixes its metadata collections. Use distinct namespaces to isolate tenants that share a bucket or store.
 - The package never executes, renders, unpacks, or transcodes artifact bytes.
 
-## What It Does Not Do
+## What it does not do
 
 - No job queue, retries, scheduling, progress, cancellation, or provider registry.
 - No approval, publication, or application attachment state. A successful write is not acceptance.
@@ -292,4 +293,4 @@ Rules every adapter must follow:
 
 ## License
 
-Apache-2.0
+Apache-2.0.

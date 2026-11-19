@@ -1,8 +1,34 @@
 # @mirk/vector-qdrant
 
-Mirk's named-vector storage on a host-owned Qdrant client. Requires Qdrant 1.18 or later and
-`@qdrant/js-client-rest` 1.19 or later. The adapter owns one dedicated physical collection;
-logical collections and vector namespaces share it without sharing document identities.
+> **Mirk's vector search on a Qdrant server.** The same named-space vector interface as
+> [`@mirk/store`](../store), stored in Qdrant, for vector sets that should live on a dedicated
+> search server.
+
+## Why
+
+`@mirk/store` keeps vectors in a SQLite file next to your app, which suits one machine and a modest
+number of documents. When several services search the same vectors, or the set grows large, a
+vector database such as [Qdrant](https://qdrant.tech/) is the better home. This adapter implements
+Mirk's `AsyncVectorStore` on a Qdrant client you create, so code written against Mirk's vector
+interface keeps working.
+
+Results match Mirk's other vector stores: exact cosine similarity, the same metadata filters, and
+the same order. Qdrant narrows the candidates natively, and Mirk scores them in float64.
+
+The adapter uses one Qdrant collection that you name. Mirk's logical collections and namespaces
+share it without mixing document ids. You keep control of the client and of deleting the
+collection.
+
+## Install
+
+```bash
+npm install @mirk/vector-qdrant @qdrant/js-client-rest
+```
+
+Needs Qdrant 1.18 or later and `@qdrant/js-client-rest` 1.19 or later. ESM only. Read
+[Security: override Undici](#security-override-undici) before you deploy.
+
+## A first look
 
 ```ts
 import { QdrantClient } from "@qdrant/js-client-rest";
@@ -58,8 +84,7 @@ collection. The host owns the client's lifecycle and collection deletion.
 
 Use one migration runner for each source and destination pair. Stop ordinary source and destination
 writers until that runner finishes. The completion marker is not a lock. Qdrant cannot atomically
-migrate schema and every point in place. Copy
-to a new physical collection, then switch the application's configured collection after success:
+migrate schema and every point in place. Copy to a new physical collection, then switch the application's configured collection after success:
 
 ```ts
 import { migrateLegacyQdrantVectors } from "@mirk/vector-qdrant";
@@ -73,19 +98,14 @@ const vectors = await migrateLegacyQdrantVectors(client, {
 
 The source remains untouched. Legacy embeddings become space `default` in namespace `default`.
 The destination carries a persisted completion marker. Malformed legacy JSON raises
-`QdrantCollectionError`. An interrupted destination cannot be opened as an ordinary store; call the same migration again to resume by idempotent replacement. Completion
-checks source and destination document counts before marking it ready. Reserve the destination for
-this migration until completion, and keep source and destination writers stopped throughout copy and resume. Run resumptions one at a time.
+`QdrantCollectionError`. An interrupted destination cannot be opened as an ordinary store; call the same migration again to resume by idempotent replacement.
+Completion checks source and destination document counts before marking it ready. Reserve the destination for
+this migration until completion, and keep source and
+destination writers stopped throughout copy and resume. Run resumptions one at a time.
 Neither adapter deletes or swaps collections automatically. TypeScript and Python share the format
 and migration marker, so either language can resume the other's interrupted copy.
 
-## Install
-
-```sh
-pnpm add @mirk/vector-qdrant @qdrant/js-client-rest
-```
-
-### Security: override Undici
+## Security: override Undici
 
 SDK `1.19.0` pins Undici `7.29.0`; SDK `1.20.0` pins `7.29.1`. Hosts using either SDK must override
 Undici to `7.30.1` or later for the
@@ -110,11 +130,15 @@ For Yarn, use a resolution:
 {"resolutions":{"@qdrant/js-client-rest/undici":"^7.30.1"}}
 ```
 
-## Exports and verification
+## Exports
 
 Exports the named vector port types, `QdrantVectorStore`, collection/protocol errors,
 `migrateLegacyQdrantVectors`, migration option/progress types, `candidateScoreBound(dimensions)`,
 and `pointIdFor(collection, id)` (the UUID helper for an encoded physical scope).
 
-Run `python3 scripts/run-qdrant-tests.py` from the repository root for the isolated native-server
-TypeScript/Python tests and cross-language exchange. Direct tests skip when `MIRK_QDRANT_URL` is unset.
+The Python package `mirk-vector-qdrant` uses the same storage format, so both languages can
+read the same collection.
+
+## License
+
+Apache-2.0.

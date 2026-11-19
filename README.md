@@ -159,12 +159,12 @@ Metadata lives in a mirk store. The bytes live on disk, on S3 and other object s
 
 ## Also in the box
 
-- **Durable queue** — [`@mirk/queue`](packages/queue) stores queue items, atomic fenced claims with renewal,
-  keyed single-active admission and idempotent commands over an injected store and transaction domain.
-  It runs no workers and holds no policy; the job model belongs to Gonk.
-- **Native SQLite vectors** — [`@mirk/sqlite-vec-native`](packages/sqlite-vec-native) is the optional
-  sqlite-vec companion for `@mirk/store/sqlite-vec`. It preserves the float64 search contract and
-  computes inside SQLite. The companion compiles during installation, never during a query.
+- **Durable queue** — [`@mirk/queue`](packages/queue) keeps a work queue in your Mirk database:
+  workers claim items with renewable leases, every change can be retried safely, and one key can
+  admit one active item at a time. It is storage only; your code runs the workers.
+- **Native SQLite vectors** — [`@mirk/sqlite-vec-native`](packages/sqlite-vec-native) is an optional
+  companion that runs vector search inside SQLite with sqlite-vec, with the same results as the
+  built-in search. It compiles when installed, never during a query.
 
 - **Moving between backends** — [`@mirk/migrate`](packages/migrate) copies data from one store to
   another and resumes where it stopped.

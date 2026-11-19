@@ -49,10 +49,10 @@ const store = new MarkdownStore({
 
 store.put("stories", {
   id: "DOC-101",
-  title: "Adopt Mirk markdown storage",
+  title: "Write the onboarding guide",
   status: "todo",
-  intent: "Retire the app-local repository.",
-  acceptanceCriteria: "- [ ] Board and text edits agree",
+  intent: "A new user can install and run the app in ten minutes.",
+  acceptanceCriteria: "- [ ] Covers install and first run",
 });
 
 store.list("stories", { where: { status: "todo" } });
@@ -63,15 +63,15 @@ That `put` writes `stories/DOC-101.md` and regenerates `stories/INDEX.md`:
 ```markdown
 ---
 id: DOC-101
-title: Adopt Mirk markdown storage
+title: Write the onboarding guide
 status: todo
 ---
 
-Retire the app-local repository.
+A new user can install and run the app in ten minutes.
 
 ## Acceptance criteria
 
-- [ ] Board and text edits agree
+- [ ] Covers install and first run
 ```
 
 ## Install

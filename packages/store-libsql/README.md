@@ -115,24 +115,6 @@ so a declared index serves the same queries (see
 `tablePrefix`, the index name starts with `ix_` followed by the prefixed table name. A list of fields
 declares one index over them, as in `@mirk/store`.
 
-### Query statistics
-
-The adapter keeps the database's query statistics fresh, so SQLite picks the selective index for a
-filter over several fields. libSQL's engine is SQLite 3.45, whose `PRAGMA optimize` only analyzes
-tables the current connection has queried, so the adapter applies Mirk's own rule from
-`@mirk/store/sql`: a bounded `ANALYZE` (`analysis_limit` 1,000) of each indexed table whose indexes
-have no statistics, or of every indexed table once this adapter has changed as many rows as the
-statistics describe.
-
-The refresh runs inside a write transaction the adapter already holds, in a savepoint just before
-it commits, so it never takes the write lock a second time and runs on the same connection or
-server stream. It runs when the store opens, after `ensureIndex`, and at the first commit after this
-adapter has changed 1,000 rows since the last refresh (`refreshStatisticsAfterChanges`; `0` turns it
-off). A refresh that fails is rolled back to its savepoint, reported in
-`adapter.lastStatisticsRefresh.skipped`, and leaves the transaction's own work to commit.
-`await adapter.refreshStatistics()` refreshes on request in its own transaction and throws if it
-fails. Statistics stay in the database, so one refresh serves every later connection.
-
 ## Engine-free remote entry
 
 When you do not need local SQLite storage, import the remote entry. It binds to
@@ -222,8 +204,7 @@ by `@mirk/store/sqlite` or an earlier release without a creation time is stamped
 time when a store with a window first prunes, so it expires one full window later.
 **The window must be longer than the longest time a caller may retry or reconcile a
 request**: a retry after it applies the mutation again. A host that reconciles old receipts
-after an expired job lease, as the example app does, should leave expiry off or use a window
-of days.
+after an expired job lease should leave expiry off or use a window of days.
 
 A standalone `mutateAtomically` reports a failure of the database as an `@mirk/store/atomic` error:
 
@@ -309,38 +290,20 @@ The local libSQL engine currently lacks published SQLite FTS5 and WAL fixes. The
 libSQL native release also lacks these fixes; an SDK upgrade alone does not resolve them. See the
 [upstream report](https://github.com/tursodatabase/libsql/issues/2271) and
 [SQLite release notes](https://sqlite.org/releaselog/3_53_2.html). For local storage, use
-`@mirk/store/node-sqlite` or the better-sqlite3 13 adapter. Format-three vector tables use the shared SQLite layout. Remote server operators remain responsible for their
-server's SQLite build.
+`@mirk/store/node-sqlite` or the better-sqlite3 13 adapter.
+Remote server operators are responsible for their server's SQLite build.
 
-### Remote integration check
+### Query statistics
 
-The transaction contract, the store conformance corpus, lease-fencing tests, and failure tests run
-against a local file by default. Two settings add real servers:
-
-- `MIRK_LIBSQL_SERVER=/path/to/sqld` starts an isolated loopback `sqld` with temporary data for
-  each test file, and stops it afterward. The failure tests kill it mid-transaction.
-- `MIRK_LIBSQL_TURSO_URL` and `MIRK_LIBSQL_TURSO_TOKEN` name a disposable hosted database. Every
-  table the tests create carries a per-run `tablePrefix`, and the tests drop those tables.
-
-```bash
-MIRK_LIBSQL_SERVER=/path/to/sqld pnpm --filter @mirk/store-libsql test
-```
-
-To check the packed remote export, build the workspace, then run against a libSQL server
-executable:
-
-```bash
-MIRK_LIBSQL_SERVER=/path/to/sqld pnpm --filter @mirk/store-libsql test:remote
-```
-
-The check starts an isolated loopback server with temporary data and removes it afterward. It
-exercises the published remote export over HTTP, WebSocket, and `libsql://` URLs while native
-imports are denied. It also checks generated consumer declarations and keeps a negative control for
-the native-capable root import.
-
-## License
-
-Apache-2.0
+The adapter keeps the database's query statistics fresh, so SQLite picks the right index for a
+filter over several fields. libSQL's engine is SQLite 3.45, so the adapter runs a bounded `ANALYZE`
+on each indexed table that needs it rather than relying on that engine's `PRAGMA optimize`. The
+refresh runs inside a write transaction the adapter already holds, just before it commits: when the
+store opens, after `ensureIndex`, and at the first commit after this adapter has changed 1,000 rows
+(`refreshStatisticsAfterChanges`; `0` turns it off). A refresh that fails is rolled back on its own,
+reported in `adapter.lastStatisticsRefresh.skipped`, and the transaction's own work still commits.
+`await adapter.refreshStatistics()` refreshes on request and throws if it fails. Statistics are
+stored in the database, so every later connection uses them.
 
 ### Migration policy and local snapshots
 
@@ -364,3 +327,7 @@ upgrade. Remote URLs, the web entry point, and memory databases reject `backupPa
 Before a format upgrade, quiesce existing clients and reopen them afterward. Existing handles can retain cached schema across a migration. Concurrent openers running the current release are tested; hot cross-version clients are outside this guarantee.
 
 Commit caller-owned transactions before requesting an upgrade backup; a second connection cannot snapshot their uncommitted state. An existing destination vector space or document identity aborts legacy-vector migration rather than merging existing named state.
+
+## License
+
+Apache-2.0

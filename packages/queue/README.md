@@ -1,80 +1,219 @@
 # @mirk/queue
 
-Portable durable queue storage over Mirk atomic KV and writer transactions: stored items, atomic fenced claims with renewal, keyed single-active admission, and idempotent commands. This package opens no connection, runs no workers and holds no policy. Provider calls, scheduling, wake notifications, retry policy, and reconciliation belong to the application. The job model (attempts, workers, providers, progress, execution evidence, dispatch) belongs to Gonk; a job system sits on top of this package by storing one item per unit of work and doing its own dispatch and policy above the claims. The name was `@mirk/jobs` on the unpublished 0.16.0 branch; see "Renamed from jobs" below.
+> **A durable work queue stored in your Mirk database.** Enqueue items, let one worker at a time
+> claim each, and record how it ended, with safe retries and no item run twice by two holders.
+
+## Why
+
+Background work (renders, exports, calls to a slow service) needs somewhere to wait, and someone
+has to take each piece and report back. A list in memory is lost on restart. A queue server is one
+more thing to run. And the hard parts are always the same: two workers must not take the same item,
+a worker that dies must not hold its item forever, and a request sent twice must not enqueue or
+finish twice.
+
+`@mirk/queue` keeps the queue as ordinary records in a [`@mirk/store`](../store) database that you
+already open, such as a SQLite file or memory in tests. Each change is one atomic write:
+
+- **Claims with leases.** `claimNext` gives one worker an item for a fixed time. The worker renews
+  the lease while it works. A claim that expires or is replaced can no longer change the item.
+- **Safe retries.** Every change takes a command key. Sending the same command again returns the
+  first answer instead of acting twice.
+- **One active item per key.** `start` admits at most one unfinished item for a key, such as "the
+  thumbnail for asset 17", and returns the existing one if it is still running.
+- **A clear end state.** Items finish as `succeeded`, `failed` or `cancelled`, with your result or
+  error stored on the item.
+
+It is storage, not a worker system. It opens no connection, runs no loops and has no retry or
+scheduling policy. Your code decides when to poll, how many workers to run, and what to do after
+a failure.
+
+## Install
+
+```bash
+npm install @mirk/queue @mirk/store
+```
+
+ESM only. Node 22.23.4+, 24.22.1+ or 26.12.1+. The SQLite example below uses `node:sqlite`, which
+needs Node 24 or later.
+
+## A first look
 
 ```ts
-import { QueueStore } from '@mirk/queue';
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
+import { QueueStore } from "@mirk/queue";
 
+const db = new NodeSqliteAdapter({ path: "app.db" });
 const queue = new QueueStore({
   store: db.asyncKv,
   transactions: {
-    transaction: work => db.asyncTransaction(work),
-    afterCommit: notify => db.afterCommit(notify),
+    transaction: (work) => db.asyncTransaction(work),
+    afterCommit: (notify) => db.afterCommit(notify),
   },
 });
-await queue.enqueue({ id: 'render-17', queue: 'renders', payload: { assetId: '17' } }, { key: 'enqueue-17' });
-const claim = await queue.claimNext('renders', { key: 'dispatch-17', leaseMs: 30000 });
+
+// A producer adds an item. The command key makes a repeated call harmless.
+await queue.enqueue(
+  { id: "render-17", queue: "renders", payload: { assetId: "17" } },
+  { key: "enqueue-render-17" },
+);
+
+// A worker claims the next item for 30 seconds, does the work, and records the result.
+const claim = await queue.claimNext("renders", { key: "worker-a:claim-1", leaseMs: 30_000 });
 if (claim) {
-  await queue.checkpoint(claim, { providerRequestId: 'remote-17' }, { key: 'checkpoint-17' });
-  await queue.complete(claim, { artifactId: 'output-17' }, { key: 'complete-17' });
+  await queue.complete(claim, { url: "/renders/17.png" }, { key: "complete-render-17" });
 }
+
+(await queue.get("render-17"))?.value.state; // "succeeded"
+db.close();
 ```
 
-## Storage and authority
+In tests, use the in-memory store with `createMemoryTransactions` from `@mirk/store/transaction`:
 
-Supply `store: AsyncAtomicStore` and `transactions: AsyncStoreTransactions` for **the same storage domain**. Its transaction must acquire writer admission before invoking work. `NodeSqliteAdapter`/`SqliteAdapter` async methods and `createMemoryTransactions` with its bound stores provide that guarantee. Arbitrary Promise wrappers do not. An optional `log` must join this domain too. The caller owns correct domain wiring; structural interfaces cannot verify connection identity. Keep transactions short and provider calls outside them.
+```ts
+import { InMemoryKv, toAsync } from "@mirk/store/kv";
+import { InMemoryLogStore } from "@mirk/store/log";
+import { createMemoryTransactions } from "@mirk/store/transaction";
 
-A queue item is the lifecycle authority. Application statuses are projections. New records have `schemaVersion: 2`, nullable `activeKey`, `subject`, and `kind` strings, ID, queue, JSON payload, state, integer priority, enqueue/availability/update epoch milliseconds, `claimCount` (how many times the item has been claimed), generation, nullable owner token and expiry, JSON checkpoint/result/error, and nullable `cancellation: {requestedAt,generation}`. Item payloads reference large inputs and artifact bytes. Enqueue accepts only its declared fields; additional application metadata belongs in payload. Malformed persisted lifecycle records and command outcomes raise `invalid-input` before use.
+const kv = new InMemoryKv();
+const log = new InMemoryLogStore();
+const queue = new QueueStore({
+  store: toAsync(kv),
+  transactions: createMemoryTransactions({ kv, log }),
+});
+```
 
-States are `queued`, `leased`, `blocked`, `succeeded`, `failed`, `cancelled`. `get(id)` returns `{value,version}` or null. `list({queue?,subject?,kind?,state?,sortBy?,sortDir?,limit?})` delegates filtering, sorting and limiting to the backing store. It requires `ensureIndex`, declares indexes for selected filters and sort field, and defaults to `updatedAt` descending. `sortBy` also accepts `enqueuedAt` or `priority`; `sortDir` accepts `asc` or `desc`. Equal sort values retain collection insertion order. This replaces the former composite priority order for inspection; `claimNext` retains priority descending, enqueue time ascending, and code-point ID ordering. SQLite uses real JSON expression indexes; the memory implementation is the semantic reference.
+## Items and states
 
-A stable claim is `{itemId,ownerToken,generation}`. Renewal and checkpoints change the KV version without changing this claim. Each worker transition reads the latest version after writer admission and checks state, ownership, generation, and `expiresAt > now`. This protected clock decision defines validity. `now` and `token` are injectable; defaults use epoch milliseconds and UUIDs. Expiry and availability boundaries are inclusive.
+An item is a record in the queue's collection (default `mirk-queue`). It holds your `id`, `queue`
+name and JSON `payload`, an integer `priority` (default 0), an `availableAt` time (default now),
+optional `subject` and `kind` labels, the lease fields, `claimCount`, and the `checkpoint`,
+`result` and `error` you store. Put large inputs and output files elsewhere, for example in
+[`@mirk/artifact`](../artifact), and keep references in the payload.
 
-## Keyed admission and logical schema
+| State | Meaning |
+| --- | --- |
+| `queued` | waiting; `claimNext` takes it once `availableAt` has passed |
+| `leased` | a worker holds a claim until `expiresAt` |
+| `blocked` | the outcome is unknown and needs a decision (for example, its lease expired) |
+| `succeeded`, `failed`, `cancelled` | finished |
 
-`start({key,id?,queue,payload,subject?,kind?,priority?,availableAt?}, {key: commandKey})` returns `{started,item}`, where `item` is versioned. The active key is scoped to `[collection,queue,key]` and is distinct from the collection-scoped command key. Within one writer transaction it returns the existing queued, leased, or blocked item with `started:false`, or creates a queued item with `started:true`. Different proposed IDs, payloads, or metadata do not replace existing active work. Cancellation-pending leased work and blocked provider uncertainty retain the key. All terminal transitions release the matching slot in the same atomic mutation as the item. Explicit requeue of a terminal record must reacquire its key and conflicts if another active item now owns it.
+`claimNext(queue, options)` takes the highest `priority` first, then the oldest, then the lowest id.
+`get(id)` returns `{ value, version }` or `null`. `list({ queue?, subject?, kind?, state?, sortBy?,
+sortDir?, limit? })` filters and sorts in the database; `sortBy` is `updatedAt` (the default),
+`enqueuedAt` or `priority`, and `sortDir` is `desc` (the default) or `asc`. Listing needs a store
+with `ensureIndex`, which every SQL adapter and the in-memory store have.
 
-The slot is an ordinary KV entry named `mirk-queue-active:` plus canonical JSON `[collection,queue,key]`, containing the item ID string. Admission never scans the collection. A pointer to a missing or terminal item is repaired in the transaction. A conflicting active pointer is rejected. Generated IDs use the injected token factory only on creation. Caller-proposed IDs must be absent; terminal IDs can be reused after explicit removal. Same-command retries return the historical start outcome even if it has since ended; call `get` for current authority. Start does not acquire a worker claim or submit a provider request.
+All times are milliseconds since the epoch. Pass `now` and `token` to the constructor to control
+the clock and the generated ids in tests.
 
-Validated logical schema-1 records normalize to schema 2 with null metadata on reads without changing storage or version tokens. The next lifecycle mutation writes schema 2. Existing receipt snapshots normalize the same way on replay, without rewriting receipts or arbitrary collections. This logical upgrade is separate from the SQLite file format.
+## Claims
 
-## Commands
+A claim is `{ itemId, ownerToken, generation }`. Every worker change checks, inside the write, that
+the item is still `leased` to that owner and generation and that the lease has not expired. A stale
+claim throws `QueueError` with code `stale-claim` and changes nothing. Renewing or checkpointing
+keeps the same claim.
 
-Every mutation requires a final `{key: string}` argument. `claim` and `claimNext` instead take `{key,leaseMs}`. Keys are scoped to the configured collection (default `mirk-queue`), across all operations. Use one key per logical caller intent. Reusing it with different arguments raises `idempotency-conflict`. Durable command outcomes commit with transitions and remain indefinitely, including after terminal removal. Replays resolve before allocating clocks/tokens. Historical replay results are snapshots; use `get` to inspect current state. Claim replay checks current ownership and expiry and never restores authority. A previously empty claim command stays empty on replay; discovery attempts need new keys.
+| Method | What it does |
+| --- | --- |
+| `claim(id, { key, leaseMs })`, `claimNext(queue, { key, leaseMs })` | Take one item, or return `null` when none is ready. |
+| `renew(claim, leaseMs, command)` | Extend the lease. |
+| `checkpoint(claim, value, command)` | Save progress on the item. |
+| `complete(claim, result, command)` | Finish as `succeeded`. |
+| `fail(claim, error, command)` | Finish as `failed`. |
+| `retry(claim, availableAt, command)` | Put the item back in the queue for later. |
+| `block(claim, checkpoint, command)` | Stop with an unknown outcome, for a person or a later check to decide. |
 
-- `enqueue({id,queue,payload,priority?,availableAt?}, command)` creates once; priority defaults to zero and availability to enqueue time.
-- `claim(id, options)` and `claimNext(queue, options)` return a claim or null for absent/ineligible work. Backend failures propagate distinctly from null.
-- `renew(claim, leaseMs, command)`, `checkpoint(claim, value, command)` preserve claim identity.
-- `complete(claim, result, command)`, `fail(claim, error, command)`, `retry(claim, availableAt, command)`, `block(claim, checkpoint, command)` perform fenced transitions and return versioned items.
-- `requestCancel(id, command)` cancels queued/blocked items immediately or records a request against the active claim. Terminal items remain terminal. Active cancellation prevents complete/fail/retry; renew/checkpoint/block remain available for orderly shutdown and reconciliation.
-- `acknowledgeCancel(claim, command)` commits cancelled state for a valid claim with a cancellation request.
-- `recoverExpired(id, expectedGeneration, command)` fences the expired claim, increments generation, and blocks it while retaining checkpoint and cancellation. Expiry never proves a remote provider stopped.
-- `resolveBlocked(id, expectedVersion, decision, command)` accepts `{state:'queued',availableAt}`, `{state:'succeeded',result}`, `{state:'failed',error}`, or `{state:'cancelled'}`. Pending cancellation permits only cancellation.
-- `removeTerminal(id, expectedVersion, command)` removes terminal records. Optional `deleteHistoryOnRemove: true` deletes the configured log stream in the same transaction; command receipts and per-ID generation markers remain. Generation markers fence old claims when an ID and an injected token are reused. The stream name is canonical JSON `[collection,id,incarnation]`. The initial incarnation is zero; after removal it is the retained generation plus one, so old history cursors do not address the new incarnation.
+A worker that holds a claim over a long call can use `runClaim` to keep the lease renewed:
 
-Worker mutations return versioned items; administration uses their versions. Rejected transitions throw `QueueError` with a stable `code`. Backend errors propagate. No operation promises exactly-once provider effects. Poll durable queued state after missed notifications. Applications must reconcile blocked items before dispatching them again.
+```ts
+import { runClaim } from "@mirk/queue";
 
-Python's `mirk-queue` uses the same record fields, method names, argument dictionaries, receipt keys, and command intent encoding. Both languages can continue the same SQLite queue items and command outcomes.
+const output = await runClaim(
+  queue,
+  claim,
+  { leaseMs: 30_000, renewEveryMs: 10_000, commandKey: "render-17:run-1" },
+  async (signal) => renderAsset("17", { signal }),
+);
+await queue.complete(claim, output, { key: "complete-render-17" });
+```
 
-Administrative consumer operations: `updateQueued(id, expectedVersion, {priority?,availableAt?}, command)` changes eligible queue metadata, and `requeueTerminal(id, expectedVersion, {availableAt?}, command)` explicitly retries a terminal item. Requeue advances generation, clears cancellation, checkpoint, result, and error, and preserves the claim count until the next claim. Both use durable command replay and conditional versions; neither permits payload mutation.
+`runClaim` renews at once and then every `renewEveryMs` (which must be less than `leaseMs`), passes
+an `AbortSignal` that fires when the claim is lost or cancellation is requested, and never returns
+a result for a claim it lost. It changes no final state: complete, fail or block the item yourself
+after it returns. It does not pick items or loop over a queue. Give each run its own `commandKey`.
 
-## One-claim renewal helper
+## Command keys
 
-TypeScript `runClaim(queue, claim, {leaseMs,renewEveryMs,commandKey,clock?,signal?}, async signal => value)` and Python `await run_claim(queue, claim, lease_ms=..., renew_every_ms=..., command_key=..., clock=..., signal=..., work=...)` operate on one already acquired claim. They renew immediately and periodically, pass a cooperative abort signal to work, detect pending cancellation or ownership loss, and remove pending sleeps and external abort listeners on every exit. Work that ignores abort must still settle; the helper cannot force it to stop. An aborted or lost claim cannot produce a successful helper return, even if work resolves successfully. The caller completes, fails, or reconciles the item after the helper returns; the helper changes no terminal state and does not submit providers. Do not finalize the claim inside the callback.
+Every change takes a final `{ key }` argument (claims take `{ key, leaseMs }`). Keys are scoped to
+the queue's collection. The first call with a key stores its outcome in the same atomic write as
+the change. A later call with the same key and the same arguments returns that stored outcome,
+even if the item has changed since; call `get` for the current state. The same key with different
+arguments throws `idempotency-conflict`. A claim replay never gives back a lease that has since
+expired, and an empty claim stays empty, so each new attempt to find work needs a new key. Stored
+outcomes are kept, even after the item is removed.
 
-Use a distinct command-key prefix for each logical helper invocation. Renewal keys include this prefix, stable claim identity, and a sequence number; a retried invocation reuses its receipts and must still hold a currently valid claim. This provides storage replay, not exactly-once callbacks or provider effects. Supply the same epoch clock used by QueueStore. `renewEveryMs` must be positive and less than `leaseMs`; cancellation polling occurs at this interval. The default clock is the native-free shared coordination clock. Python uses `CoordinationAbortSignal` and `SystemClock` from `mirk.store.coordination`; TypeScript uses native `AbortSignal`.
+## One active item per key
 
-`runClaim` is not a worker. It does not pick items, loop over a queue or dispatch anything: the caller acquires one claim and passes the code to run, and the helper only keeps that one lease renewed and reports cancellation or lost ownership. It stays here because renewal and its command keys are storage mechanics, and every consumer that holds a claim over a long call needs the same loop.
+```ts
+const { started, item } = await queue.start(
+  { key: "thumbnail:asset-17", queue: "thumbnails", payload: { assetId: "17" } },
+  { key: "request-8812" },
+);
+```
 
-## Renamed from jobs
+`start` creates a queued item and returns `started: true`, or returns the existing unfinished item
+for that key in that queue with `started: false`. A different payload or id does not replace the
+running item. When the item finishes, the key is free again in the same write. `start` does not
+claim the item.
 
-Before its first publish this package was `@mirk/jobs` (Python `mirk-jobs`), and its rows were called jobs. The job model (attempts, workers, providers, progress, execution evidence) belongs to Gonk, so the rows are queue items here. Nothing was published under the old name, so stored names changed too, with no migration. Persisted names that changed:
+## Cancellation, expiry and blocked items
 
-- default collection `mirk-jobs` is now `mirk-queue`
-- key prefixes `mirk-jobs-active:`, `mirk-jobs-generation:` and `mirk-jobs-command:` are now `mirk-queue-active:`, `mirk-queue-generation:` and `mirk-queue-command:`
-- the claim field `jobId` is now `itemId` (it is stored in command outcomes)
-- the record field `attempt` is now `claimCount`
-- the log event payload `{event, job}` is now `{event, item}`
-- the `start` outcome field `job` is now `item`
+- `requestCancel(id, command)` cancels a queued or blocked item at once. For a leased item it
+  records the request: the worker can still renew, checkpoint or block, but not complete, fail or
+  retry, and it confirms with `acknowledgeCancel(claim, command)`.
+- `recoverExpired(id, expectedGeneration, command)` takes an item whose lease has expired, ends the
+  old claim and moves the item to `blocked`, keeping its checkpoint. An expired lease does not prove
+  the outside work stopped, which is why the item is blocked and not queued again.
+- `resolveBlocked(id, expectedVersion, decision, command)` decides a blocked item: `{ state:
+  "queued", availableAt }`, `{ state: "succeeded", result }`, `{ state: "failed", error }` or
+  `{ state: "cancelled" }`. A pending cancellation allows only `cancelled`.
 
-Data written under the old names is not readable by this package. Rename the collection and keys, or start fresh.
+## Managing items
+
+These take the version from `get` or `list` and throw `conflict` if the item changed since:
+
+- `updateQueued(id, version, { priority?, availableAt? }, command)` changes a waiting item.
+- `requeueTerminal(id, version, { availableAt? }, command)` runs a finished item again. Its
+  checkpoint, result, error and cancellation are cleared; `start` keys are taken again.
+- `removeTerminal(id, version, command)` deletes a finished item. With a `log` and
+  `deleteHistoryOnRemove: true`, its history stream is deleted in the same transaction.
+
+## History
+
+Pass `log` (an async log from the same database, such as `db.asyncLog`) and each change appends
+`{ event, item }` to a stream for that item. The stream name is the canonical JSON of
+`[collection, id, incarnation]`, so an id reused after `removeTerminal` starts a new stream.
+
+## Storage requirements
+
+`store` must be an `AsyncAtomicStore`, and `transactions` an `AsyncStoreTransactions` over **the
+same database**, whose transaction takes the write lock before the work starts. The SQLite adapters'
+`asyncKv` with `asyncTransaction`, and `createMemoryTransactions` with the stores it was given, meet
+this. A plain Promise wrapper does not, and the queue cannot check it for you. An optional `log`
+must use the same database. Keep transactions short and make outside calls between them.
+
+Mirk does not promise that outside effects happen exactly once. Poll for queued items in case a
+wake-up notification was missed, and decide every blocked item before running it again. Rejected
+changes throw `QueueError` with a `code`: `invalid-input`, `not-found`, `conflict`,
+`idempotency-conflict`, `stale-claim`, `cancel-requested`, `not-blocked` or `not-terminal`. Storage
+errors pass through.
+
+The Python package `mirk-queue` uses the same records, method names and command keys, so both
+languages can work on the same SQLite queue.
+
+Records from the first item format (schema 1) are read as schema 2 and rewritten on their next
+change.
+
+## License
+
+Apache-2.0.

@@ -1,13 +1,73 @@
 # @mirk/sqlite-vec-native
 
-Optional native companion for `@mirk/store/sqlite-vec`. It builds pinned sqlite-vec 0.1.6 with an additional `vec_cosine_similarity_f64` function. The existing upstream float32 functions remain unchanged. The added function reads float32 BLOBs and accumulates products in float64, in component order. It returns similarity directly, excludes unusable stored vectors, and returns zero for a finite zero query.
+> **Native vector search for Mirk's SQLite adapters.** An optional companion to
+> [`@mirk/store`](../store) that runs cosine search inside SQLite with
+> [sqlite-vec](https://github.com/asg017/sqlite-vec), with the same results as Mirk's built-in
+> search.
 
-Installation requires a C compiler. npm/pnpm install scripts compile the bundled, checksum-verified source once. Queries never compile or download code. If scripts were disabled, run `node node_modules/@mirk/sqlite-vec-native/install.js` explicitly. `CC` selects the compiler executable. A failed build remains an installation error. Mirk itself can run without the optional companion.
+## Why
 
-`getLoadablePath()` returns a verified platform/architecture-matching binary path. Use it through `sqliteVecEngine()` in Mirk; the companion itself opens no database. Only macOS arm64 has been exercised. The Linux and Windows compiler recipes need platform testing before a supported-platform claim.
+`@mirk/store`'s SQLite adapters compute vector similarity in JavaScript. That needs nothing
+installed, but every candidate vector crosses from SQLite into JavaScript. With this package, the
+scoring, filtering, ranking and limit run on the adapter's own SQLite connection, and only the
+result ids, scores and metadata come back.
 
-The canonical vendored inputs and patch live under `native/sqlite-vec` in the Mirk repository. Package preparation verifies input and patched-source SHA-256 checksums. npm tarballs contain the prepared source, headers, patch, provenance and upstream MIT license. SQLite headers are from the public-domain SQLite 3.45.3 amalgamation. No upstream download occurs during installation.
+The results do not change. The package builds sqlite-vec 0.1.6 with one added function,
+`vec_cosine_similarity_f64`, which reads the stored float32 vectors and sums in float64, in the same
+order and with the same rules as Mirk's JavaScript search. The upstream float32 functions are
+unchanged. Search stays exact; there is no approximate index.
 
-The float64 loop uses the same component order, products, additions, square roots and final division as the memory reference. Every finite float32 product is exactly representable as float64, and float32 magnitude extremes remain within float64 range. Compiler flags disable fast-math reassociation and contraction. Returning similarity directly avoids an extra `1 - distance` cancellation. The shared vector corpus checks cutoff membership, zero queries, non-finite stored values, magnitude extremes and tie ordering.
+## Install
 
-When this optional companion or its compiled binary is absent, Mirk selects its existing ordinary exact search engine for that connection and reports `accelerated: false`. The companion path API identifies missing capability with `native-companion-unavailable`. A broken native query, malformed binary/manifest, checksum failure or version mismatch remains a visible error. No compilation runs during a search.
+```bash
+npm install @mirk/store @mirk/sqlite-vec-native
+```
+
+Installing needs a C compiler. The install script compiles the bundled source once; `CC` chooses
+the compiler. Nothing is downloaded during install, and nothing compiles during a query. If your
+package manager skips install scripts, run the build yourself:
+
+```bash
+node node_modules/@mirk/sqlite-vec-native/install.js
+```
+
+A failed build is an install error. Builds have been tested on macOS arm64; the Linux and Windows
+compiler steps exist but have not been tested yet.
+
+## Use
+
+Pass the engine from `@mirk/store/sqlite-vec` to either SQLite adapter:
+
+```ts
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
+import { sqliteVecEngine } from "@mirk/store/sqlite-vec";
+
+const db = new NodeSqliteAdapter({ path: "vectors.db", vectorEngine: sqliteVecEngine() });
+db.vector.ensureSpace("text", { dimensions: 3 });
+db.vector.upsert("docs", { id: "a", vectors: { text: new Float32Array([1, 0, 0]) } });
+db.vector.search("docs", { space: "text", vector: new Float32Array([1, 0.1, 0]) });
+```
+
+The adapter's vector `meta` reports `engine: "sqlite-vec"` and `accelerated: true`. Files are the
+same with or without this package, so you can add or remove it at any time.
+
+- **Missing package or binary.** When the package is not installed, or its binary is missing or
+  was built for another platform or architecture, the adapter uses its JavaScript search for that
+  connection and reports `accelerated: false`.
+- **Broken install.** A malformed binary or manifest, a version mismatch, or a failed native query
+  throws `SqliteVecError` from `@mirk/store/sqlite-vec`. It does not fall back quietly.
+
+The package itself opens no database. Its one function, `getLoadablePath()`, returns the path of the
+compiled extension, or throws `NativeCompanionUnavailableError` (code `native-companion-unavailable`)
+when there is none for this platform.
+
+## What is in the tarball
+
+The prepared sqlite-vec source with Mirk's patch, the SQLite 3.45.3 headers (public domain), a
+`provenance.json` with the SHA-256 of every input, and sqlite-vec's MIT license. The build checks
+those checksums before it compiles. The compiler flags turn off fast-math reordering, so the float64
+sum is computed in the written order.
+
+## License
+
+MIT, the same as sqlite-vec. See `dist/native/LICENSE`.

@@ -87,8 +87,8 @@ npm install better-sqlite3
 
 ESM only: the package has `import` entry points and no CommonJS build. Supported Node releases are
 22.23.4+, 24.22.1+, and 26.12.1+. `@mirk/store/node-sqlite` needs Node 24 or later, because it uses
-`node:sqlite`. better-sqlite3 is an optional peer, needed only by `@mirk/store/sqlite` and
-`@mirk/store/coordination`.
+`node:sqlite`. better-sqlite3 is an optional peer, needed only by `@mirk/store/sqlite` and the
+SQLite coordinator.
 
 ## What is in the package
 
@@ -106,11 +106,13 @@ Each capability is its own import, so you load only what you use.
 | `@mirk/store/graph`        | graph helpers over collections (`neighbors`, `traverse`, `traverseFrontierBatched`) plus `AsyncGraphTraversal` for native graph adapters         | none                        |
 | `@mirk/store/sql`          | SQL adapter contract types                                                                                                                       | none                        |
 | `@mirk/store/encrypted`    | WebCrypto AES-256-GCM encrypted record envelopes for caller-owned vault keys                                                                     | none                        |
-| `@mirk/store/coordination` | portable async lease contracts, guard errors, and clock types | none |
+| `@mirk/store/coordination/core` | async lease contracts, guard errors, and the system clock | none |
 | `@mirk/store/coordination/memory` | explicitly shared in-memory lease state | none |
 | `@mirk/store/coordination/sqlite` | durable SQLite leases for cooperating processes | `better-sqlite3` (peer) |
 | `@mirk/store/sqlite`       | `SqliteAdapter`, the SQLite source adapter on better-sqlite3: one connection with `.kv`, `.vector`, `.search`, and `.log`                        | `better-sqlite3` (peer)     |
 | `@mirk/store/node-sqlite`  | `NodeSqliteAdapter`, the same facets and file schema on Node's built-in `node:sqlite` `DatabaseSync`                                             | Node.js 24+ (`node:sqlite`) |
+| `@mirk/store/sqlite-vec`   | `sqliteVecEngine()`, the optional native vector engine for both SQLite adapters | `@mirk/sqlite-vec-native` (optional peer) |
+| `@mirk/store/coordination` | deprecated: the core contracts plus the SQLite coordinator; use `/coordination/core` or `/coordination/sqlite` | `better-sqlite3` (peer) |
 
 Source adapters are reached **only** through their own subpath (`/sqlite` or `/node-sqlite`). The
 root and the interface subpaths never re-export them, so importing `@mirk/store`, `/kv`,
@@ -166,32 +168,29 @@ kv.keys("user:"); // key-value keys starting with "user:", in code point order
 ### Declared indexes
 
 `kv.ensureIndex(collection, field)` declares that queries filter or sort on `field`. Call it on
-every start; it is idempotent and runs one statement. It changes no query's result. The SQLite,
-libSQL and PostgreSQL adapters create an index that serves equality, `listWhereIn`, ranges and (on
-SQLite and libSQL) `sortBy` on that field. The in-memory reference, IndexedDB and Surreal accept the
-call and do nothing, so portable code can always make it. The capability is typed as
-`SyncStoreIndexes` and `AsyncStoreIndexes`, and `toAsync` lifts it.
+every start; it is idempotent and changes no query's result. The SQLite, libSQL and PostgreSQL
+adapters create a real index that serves equality, `listWhereIn`, ranges and (on SQLite and libSQL)
+`sortBy` on that field. The in-memory reference, IndexedDB and Surreal accept the call and do
+nothing, so portable code can always make it.
 
 ```ts
-for (const field of ["sourceRecordId", "seenAt"]) kv.ensureIndex("sightings", field);
-kv.list("sightings", { where: { seenAt: { gte: since } } });
+for (const field of ["customerId", "placedAt"]) kv.ensureIndex("orders", field);
+kv.list("orders", { where: { placedAt: { gte: since } } });
 ```
 
-A filter on two fields reads one field's index and checks the other field on every row that index
-returns. When queries filter on fields together, pass them as a list. That declares one index over
+When queries filter on several fields together, pass them as a list. That declares one index over
 those fields, in that order:
 
 ```ts
-kv.ensureIndex("membership", ["product", "kind", "state"]);
-kv.list("membership", { where: { product: "p7", kind: "problem", state: "open" } });
-kv.listWhereIn("membership", "product", scope, { where: { kind: "problem", state: "open" }, sortBy: "score" });
+kv.ensureIndex("orders", ["customerId", "status", "placedAt"]);
+kv.list("orders", { where: { customerId: "c7", status: "open" }, sortBy: "placedAt" });
 ```
 
-The index serves a `where` on its leading fields: all three, or `product` and `kind`, but not `kind`
-alone. Put the fields you test for equality first. On SQLite and libSQL a range or `sortBy` on the
-field after them also uses it. There is no need to build a joined key such as `` `${product}|${kind}` ``
-by hand. A one-field list is the same index as the field alone, a field named twice keeps its first
-place, and an empty list throws `StoreFilterError` with code `invalid-index-fields`.
+The index serves a `where` on its leading fields: `customerId`, or `customerId` and `status`, but
+not `status` alone. Put the fields you test for equality first; on SQLite and libSQL a range or
+`sortBy` on the next field also uses the index. A one-field list is the same index as the field
+alone, and an empty list throws `StoreFilterError` with code `invalid-index-fields`. The capability
+is typed as `SyncStoreIndexes` and `AsyncStoreIndexes`, and `toAsync` lifts it.
 
 ### Namespaces
 
@@ -213,6 +212,63 @@ not contain U+001F. `namespaceAsyncStore()` is the same binding over an `AsyncSt
 physical keys and version tokens. Vector and search facets are not wrapped by `namespaceStore()`; partition them
 by collection name. Use separate physical databases when the data has different trust, retention,
 backup, or lifecycle needs.
+
+## Vector search
+
+Vectors live in named **spaces**. Each space has fixed dimensions, so one document can hold, for
+example, a text embedding and an image embedding of different sizes. Declare a space once, then
+write documents and search one space at a time:
+
+```ts
+import { InMemoryVectorStore } from "@mirk/store/vector";
+
+const vectors = new InMemoryVectorStore();
+vectors.ensureSpace("text", { dimensions: 3 });
+vectors.upsert("docs", {
+  id: "a",
+  vectors: { text: new Float32Array([1, 0, 0]) },
+  metadata: { lang: "en" },
+});
+vectors.search(
+  "docs",
+  { space: "text", vector: new Float32Array([1, 0.1, 0]) },
+  { topK: 5, where: { lang: "en" } },
+); // [{ id: "a", score: 0.995…, metadata: { lang: "en" } }]
+```
+
+- **Spaces.** A `Vector` is a `Float32Array`. Space names are non-empty and dimensions are positive
+  integers. A space never changes: declaring it again with the same dimensions does nothing, and
+  with other dimensions throws `space-definition-conflict`. `listSpaces()` returns every space in
+  code point order of name.
+- **Documents.** A document is `{ id, vectors, metadata? }`. Its `vectors` map names at least one
+  declared space and may leave others out. `upsert` replaces the whole document, so a space you
+  leave out is removed. `upsertMany` writes a batch all or nothing. `get` returns every vector,
+  `count` counts documents, and `remove` deletes a document with all its vectors.
+- **Search.** `search(collection, { space, vector }, options)` ranks by exact cosine similarity.
+  `where` and `whereNot` filter on metadata before ranking, `minScore` is inclusive, and equal
+  scores are ordered by id. An unknown space throws `unknown-space`. A stored vector that is all
+  zeros or holds a non-finite number stays readable but never matches.
+- **Separate from key-values.** A vector document and a collection record with the same collection
+  and id are different records. Use the adapter's `transaction()` when both must change together.
+
+The SQLite adapters compute cosine in JavaScript, summing in float64 over the float32 values, and
+report `meta.engine: "javascript"`. For search inside SQLite, install the optional
+[`@mirk/sqlite-vec-native`](../sqlite-vec-native) package and pass its engine:
+
+```ts
+import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
+import { sqliteVecEngine } from "@mirk/store/sqlite-vec";
+
+const db = new NodeSqliteAdapter({ path: "vectors.db", vectorEngine: sqliteVecEngine() });
+```
+
+The native engine returns the same results (exact cosine, the same filters and order), runs the
+ranking on the adapter's connection, and reports `meta.accelerated: true`. "Accelerated" means
+native code, not an approximate index. If the package is not installed, or its binary is missing
+or built for another platform, the adapter uses the JavaScript engine and reports
+`accelerated: false`. A malformed binary, a version mismatch or a failed native query throws
+`SqliteVecError` instead of falling back. The same file opens with either engine. The native
+package compiles when installed and needs a C compiler; it has been tested on macOS arm64.
 
 ## Full-text search
 
@@ -238,8 +294,8 @@ are lifted with `toAsyncSearch`.
 
 ## Append-only log
 
-`LogStore` keeps immutable JSON records in named streams. Each entry carries its stream
-incarnation's `generation` and its per-stream `sequence`. `append` returns the numeric sequence.
+`LogStore` keeps immutable JSON records in named streams, numbered from 1 with no gaps. Use it for
+history, audit trails and change feeds that a reader works through and resumes later.
 
 ```ts
 import { InMemoryLogStore, toAsyncLog, type LogCursor } from "@mirk/store/log";
@@ -251,46 +307,35 @@ const first = log.list("deliveries", { limit: 1 })[0]!;
 // first: { generation: 1, sequence: 1, record: { id: "d1" } }
 log.list("deliveries", { after: first, limit: 100 }); // d2
 log.lastCursor("deliveries"); // { generation: 1, sequence: 2 }
-log.lastSequence("deliveries"); // 2
 await toAsyncLog(log).append("deliveries", { id: "d3" }); // 3
 ```
 
-To replay, omit `after`. To resume, keep the last handled entry's `{ generation, sequence }`
-as a `LogCursor`. A bare numeric `after` is refused. `lastCursor(stream)` returns the live tail,
-or `null` for an absent stream. `get(stream, sequence)` inspects a position in the current
-incarnation; it is not a resume operation.
+To replay a stream, omit `after`. To resume, keep the last entry you handled as a `LogCursor`
+(`{ generation, sequence }`) and pass it as `after`. A bare number is refused. `lastCursor(stream)`
+returns the current end of the stream, or `null` when the stream does not exist, and
+`lastSequence(stream)` returns its number (0 for an absent stream). `get(stream, sequence)` reads
+one entry.
 
-The memory reference, both SQLite adapters, and Python provide these guarantees:
+The in-memory log, both SQLite adapters and the Python port make the same guarantees:
 
-- Each stream starts at sequence 1 and has no gaps among committed appends. A failed append
-  consumes no sequence. Records and sequence allocation commit together.
-- The first append to each incarnation allocates a fresh positive safe integer generation from
-  one store-wide counter. Committed deletion and recreation never alias an old incarnation.
-- A cursor against a deleted, absent, or replaced stream throws `LogInputError` with code
-  `stale-cursor`, including with `limit: 0`. Epoch validation and entry reads use one SQLite
-  snapshot. Without a cursor, an absent stream returns `[]` and its last sequence is 0.
-- Cursor generation must be a positive safe integer; cursor sequence can be zero or a positive
-  safe integer. `get` needs a positive safe sequence, and `limit` a non-negative safe integer.
-  Invalid cursor shapes throw `invalid-cursor`. Exhausting the global safe integer counter
-  refuses new incarnations with `generation-exhausted`; it does not wrap or reuse generations.
-- An entry or cursor returned inside an uncommitted transaction is provisional. Rollback can
-  reuse both its sequence and generation. Persist a cursor only after commit. Rollback restores
-  deleted streams, their entries, and the prior counter, including delete-then-append work.
-- Records follow the strict JSON rules of atomic writes. Non-finite numbers, `undefined`, class
-  instances, sparse arrays, functions, and cycles throw `invalid-record` without writing.
-  Reads return a fresh record copy. Streams are non-empty strings compared exactly.
+- **No gaps.** Each stream starts at 1. A failed append uses no number, and a record commits
+  together with its number.
+- **Generations.** `deleteStream(stream)` removes the stream and every entry, and returns whether
+  it existed. The next append starts again at 1 under a new `generation`, so a cursor from before
+  the deletion throws `LogInputError` with code `stale-cursor` instead of reading the wrong
+  entries. Generations are never reused.
+- **Inside transactions.** An entry or cursor returned inside a transaction that has not committed
+  can be rolled back, and its number reused. Save a cursor only after the commit.
+- **Strict JSON.** Records follow the same rules as atomic writes: non-finite numbers, `undefined`,
+  class instances, sparse arrays, functions and cycles throw `invalid-record` and write nothing.
+  Reads return a fresh copy.
 
-`deleteStream(stream)` atomically removes every entry and the live registry entry. It returns
-whether the stream existed. A later append starts sequence 1 under a new generation. The
-singleton counter remains; no per-deleted-stream tombstones accumulate. SQLite can reuse freed
-pages, but deletion does not promise immediate file shrinkage.
+The log stores records; it does not deliver them. It has no consumer acknowledgements, trimming or
+wake-up. Deleting an application record never deletes its log stream, so delete both together
+when you need to.
 
-Applications explicitly delete their record and history together. Record deletion never infers
-a stream name or cascades to history. Permanent application deletion must also invalidate the
-writer's record version or job generation in that transaction. The log does not provide
-consumer acknowledgements, delivery, trimming, wake-up, or permanent writer exclusion.
-
-A transaction that reads before appending must acquire the writer lock before its first read:
+On SQLite, a transaction that reads and then appends must take the write lock before its first
+read, with `"immediate"`:
 
 ```ts
 const appended = db.transaction(() => {
@@ -302,35 +347,13 @@ const appended = db.transaction(() => {
 }, "immediate");
 ```
 
-A deferred transaction that reads before another writer commits cannot upgrade its stale
-snapshot to a writer. Its append throws `AtomicMutationBackendError` with `unavailable` and
-`retryable: true`. Retry the entire transaction. Outside a caller transaction, append and
-deletion use their own immediate transaction. Async transactions always begin immediate.
-`InMemoryLogStore.transaction(work)` gives synchronous rollback through the same checkpoints
-as shared memory transactions. Promise-returning access uses `toAsyncLog` or `.asyncLog`.
+A deferred transaction that read before another writer committed cannot become a writer. Its
+append throws `AtomicMutationBackendError` with `unavailable` and `retryable: true`; retry the
+whole transaction. Outside a transaction, each append and deletion uses its own immediate
+transaction, and async transactions always begin immediate. `InMemoryLogStore.transaction(work)`
+gives the same rollback in memory.
 
-SQLite format 4 eagerly initializes these tables. Migration assigns existing streams generations
-in BINARY name order without changing any record or sequence position.
-
-```sql
-CREATE TABLE _mirk_log (
-  stream TEXT NOT NULL,
-  sequence INTEGER NOT NULL CHECK (sequence >= 1),
-  record TEXT NOT NULL,
-  PRIMARY KEY (stream, sequence)
-) WITHOUT ROWID;
-CREATE TABLE _mirk_log_streams (
-  stream TEXT PRIMARY KEY,
-  generation INTEGER NOT NULL UNIQUE CHECK (generation >= 1 AND generation <= 9007199254740991)
-) WITHOUT ROWID;
-CREATE TABLE _mirk_log_generation (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  value INTEGER NOT NULL CHECK (value >= 0 AND value <= 9007199254740991)
-);
-```
-
-The counter has one row with `id = 1`; a fresh file starts at `value = 0`.
-`@mirk/store-postgres`, `@mirk/store-libsql`, and `@mirk/store-indexeddb` do not implement the log.
+`@mirk/store-postgres`, `@mirk/store-libsql` and `@mirk/store-indexeddb` do not implement the log.
 
 ## Graph helpers
 
@@ -366,7 +389,6 @@ reopen files the other wrote.
 ```ts
 import { SqliteAdapter } from "@mirk/store/sqlite";
 
-// Declare each embedding space before writing vectors.
 const db = new SqliteAdapter({ path: "data.db" });
 
 db.kv.set("user:1", { name: "Ada" });
@@ -379,7 +401,7 @@ db.vector.upsert("docs", { id: "a", vectors: { text: embedding } });
 db.vector.search("docs", { space: "text", vector: embedding }, { topK: 10 }); // ranked by cosine
 
 db.transaction(() => {
-  db.kv.set("jobs:next", 42);
+  db.kv.set("orders:next", 42);
   db.kv.put("audit", { id: "42", event: "allocated" });
 }, "immediate");
 
@@ -407,59 +429,6 @@ Both adapters take the same options; only the type of `db` differs.
 | `refreshStatisticsAfterChanges` | `number`          | Rows this connection may change before Mirk refreshes query statistics. Defaults to 1,000; `0` turns automatic refreshes off. See [Query statistics](#query-statistics). |
 
 Every connection the adapter opens or receives is switched to WAL mode with foreign keys on.
-
-### `listWhereIn`
-
-`kv.listWhereIn(collection, field, values, filter?)` is one statement. Strings and numbers become
-`json_extract(data, '$."field"') IN (?, …)`, with a `json_type` check that keeps a stored boolean
-from matching `1` or `0`. A boolean or `null` value adds its own term on the same expression. A
-string never matches a number. `null` matches a stored `null` and never a missing field. The libSQL
-adapter uses the same SQL. One call takes at most `MAX_IN_VALUES` (10,000) values on every backend;
-more throw `StoreFilterError` with code `too-many-in-values`. Split a longer list yourself: each
-call stays one statement.
-
-### Indexes and query plans
-
-`ensureIndex(collection, field)` runs
-`CREATE INDEX IF NOT EXISTS ix_<table>_<hex of field> ON <table> (json_extract(data, '$."field"'))`
-on the collection's table. The hex is of the UTF-8 of the path label, which is the field itself
-unless the field needs JSON escapes. The Python adapter derives the same name and the same path,
-so either language sees and uses the other's index. Every `where` term, `listWhereIn` and `sortBy` write the JSON path into
-the SQL text, not as a bound parameter, so the index matches. `jsonPathLiteral` in
-`@mirk/store/sql` returns that literal. With the index, `EXPLAIN QUERY PLAN` shows `SEARCH … USING
-INDEX` for equality, `listWhereIn` and ranges, and `SCAN … USING INDEX` for `sortBy`. Sorting puts
-missing values last with `NULLS LAST`. A range term carries an `unlikely()` hint, because without
-statistics SQLite would otherwise scan the table in insertion order to skip a sort.
-
-An index over several fields is `ix_<table>_<hex>x<hex>…`, one hex label per field joined by `x`,
-with one `json_extract` column per field.
-
-### Query statistics
-
-SQLite chooses an index from statistics that `ANALYZE` stores in the file. Without them it guesses.
-On a filter over two indexed fields it can pick the field that matches most of the table: on 300,000
-links, a `{ to, type }` read took 23 ms with no statistics and 0.05 ms with them.
-
-The adapter keeps the statistics fresh by itself, with SQLite's own `PRAGMA optimize`. It runs it
-when the adapter opens, after `ensureIndex`, after any transaction that brings the rows this
-connection has changed since the last refresh to 1,000, and when the adapter closes. SQLite then
-analyzes a table only when one of its indexes has no statistics or its row count has changed
-tenfold, and limits how much of each index it reads. On 900,000 records with five indexes, a refresh
-that had to analyze everything took 174 ms; one that found nothing to do took 0.05 ms.
-
-- An automatic refresh never waits for another connection's write lock. If the lock is held, it is
-  skipped and the next trigger tries again.
-- `adapter.lastStatisticsRefresh` reports the last refresh: why it ran (`open`, `index`, `writes`,
-  `close` or `request`), which tables it analyzed, how long it took, or why it was skipped.
-- `adapter.refreshStatistics()` refreshes now and returns the same report. It waits for the write
-  lock like any write and throws if the refresh fails. Mirk's own triggers make it optional; call
-  it when a bulk import must be fast before the next trigger.
-- The `refreshStatisticsAfterChanges` option sets the row count (default 1,000). `0` turns the
-  automatic refreshes off.
-
-On an engine older than SQLite 3.46, whose `PRAGMA optimize` does less, the adapter runs a bounded
-`ANALYZE` on the tables that need it instead. Node's built-in SQLite and the better-sqlite3 13
-build are newer than that.
 
 ### Transactions
 
@@ -573,101 +542,49 @@ Before a format upgrade, quiesce existing clients and reopen them afterward. Exi
 can retain cached schema across a migration. Concurrent openers running the current release are
 tested; hot cross-version clients are outside this guarantee.
 
-### Shared SQLite file format
+### `listWhereIn`
 
-The normative [SQLite format specification](../../docs/format.md) documents historical layouts,
-independent-reader requirements, and immutable golden files.
+`kv.listWhereIn(collection, field, values, filter?)` is one statement. Strings and numbers become
+`json_extract(data, '$."field"') IN (?, …)`, with a `json_type` check that keeps a stored boolean
+from matching `1` or `0`. A boolean or `null` value adds its own term on the same expression. A
+string never matches a number. `null` matches a stored `null` and never a missing field. The libSQL
+adapter uses the same SQL. One call takes at most `MAX_IN_VALUES` (10,000) values on every backend;
+more throw `StoreFilterError` with code `too-many-in-values`. Split a longer list yourself: each
+call stays one statement.
 
-The shared SQLite format is **4**, recorded as a decimal string in
-`_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
-are independent. Both Node drivers and Python use these tables and keys:
+### Indexes and query plans
 
-| Table | Columns and identity |
-| --- | --- |
-| `_kv` | `key` primary key, JSON text `value`, `created_at`, `updated_at` |
-| `_mirk_tables` | `kind`, logical `name`, unique `table_name`; primary key `(kind,name)` |
-| Collection tables | `id` primary key, JSON text `data`, `created_at`, `updated_at`; `rowid` preserves insertion order |
-| Declared collection indexes | Ordinary SQLite indexes over JSON expressions, named by the shared index naming function |
-| `_mirk_search_schema` | `collection` primary key, `fields_json` array; registry-resolved docs/FTS5 tables and triggers store searchable text and nullable metadata |
-| `_mirk_vector_spaces` | `namespace`, `name`, positive integer `dimensions`, `metric='cosine'`, `encoding='float32'`; primary key `(namespace,name)` |
-| `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
-| `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
-| `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
-| `_mirk_log_generation` | Singleton `id=1`, safe nonnegative `value` allocating generations |
-| `_mirk_log_streams` | `stream` primary key, unique positive safe integer `generation` |
-| `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
-| `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
-| `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
+`ensureIndex(collection, field)` runs
+`CREATE INDEX IF NOT EXISTS ix_<table>_<hex of field> ON <table> (json_extract(data, '$."field"'))`
+on the collection's table. The hex is of the UTF-8 of the path label, which is the field itself
+unless the field needs JSON escapes. The Python adapter derives the same name and the same path,
+so either language sees and uses the other's index. Every `where` term, `listWhereIn` and `sortBy` write the JSON path into
+the SQL text, not as a bound parameter, so the index matches. `jsonPathLiteral` in
+`@mirk/store/sql` returns that literal. With the index, `EXPLAIN QUERY PLAN` shows `SEARCH … USING
+INDEX` for equality, `listWhereIn` and ranges, and `SCAN … USING INDEX` for `sortBy`. Sorting puts
+missing values last with `NULLS LAST`. A range term carries an `unlikely()` hint, because without
+statistics SQLite would otherwise scan the table in insertion order to skip a sort.
 
-Vector namespaces default to `default`; collections share space declarations only inside that
-namespace. Each `vec` is exactly `dimensions * 4` bytes in little-endian IEEE float32 order.
-Metadata SQL NULL means absent, distinct from JSON `{}`. JSON uses ordinary UTF-8 JSON text with
-object/array order preserved; no language-specific object encoding is stored. Optional coordination
-tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
-`_mirk_coordination_meta` use their separately documented versioned lease format and are preserved.
+An index over several fields is `ix_<table>_<hex>x<hex>…`, one hex label per field joined by `x`,
+with one `json_extract` column per field.
 
-Open validates version metadata before schema changes. Malformed metadata and unsupported future
-versions fail. Recognized pre-registry or version-1/2/3 files migrate atomically under `BEGIN
-IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
-the `default` namespace and the selected legacy space (default `default`); raw BLOBs and nullable metadata are copied unchanged.
-Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
-creates no space. Obsolete vector tables are dropped only after successful copying; the version
-is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
-versions, receipts and log positions remain intact. Concurrent openers converge on one migration.
-A read-only connection requiring migration raises `migration-required` and never migrates.
+### Query statistics
 
-For a portable single-file handoff, use the consistent backup operation, or finish a checkpoint
-and close writers before copying. Copying the main file alone during active WAL writes omits data.
+SQLite picks an index from statistics stored in the file. The adapters keep those statistics fresh
+by themselves with SQLite's `PRAGMA optimize`: when the adapter opens, after `ensureIndex`, after
+every 1,000 changed rows, and when it closes. SQLite analyzes only the tables that need it and
+limits the work, and an automatic refresh that would wait for another writer is skipped and tried
+at the next trigger. You do not need to call anything.
 
-### Vectors
+- `adapter.refreshStatistics()` refreshes now, waits for the write lock like any write, and returns
+  a report. Call it after a bulk import that must be fast at once.
+- `adapter.lastStatisticsRefresh` reports the last refresh: why it ran (`open`, `index`, `writes`,
+  `close` or `request`), which tables it analyzed, how long it took, or why it was skipped.
+- The `refreshStatisticsAfterChanges` option sets the row count; `0` turns the automatic refresh
+  off.
 
-A `Vector` is a `Float32Array`. Declare spaces with `ensureSpace(name, { dimensions })`;
-`listSpaces()` returns `{ name, dimensions, metric: "cosine", encoding: "float32" }` in Unicode
-code-point name order. Names are nonempty and dimensions are positive integers. Definitions are
-shared by collections in the vector namespace and cannot change: an identical declaration is
-idempotent; another dimension raises `space-definition-conflict`.
-
-Documents contain `{ id, vectors: { [space]: embedding }, metadata? }`. The vector map must be
-nonempty and each space must already exist. A document may omit any space. `upsert` replaces the
-complete map and metadata, removing omitted embeddings. `upsertMany` validates and commits the
-whole batch atomically. `get` returns every embedding; `count` counts documents; `remove` deletes
-the document and all its embeddings. Vector and KV records with the same collection/ID remain
-separate facets; use the adapter transaction when both must change together.
-
-Search takes `search(collection, { space, vector }, options)`. Unknown spaces raise
-`unknown-space`; known spaces with no matching documents return `[]`. Metadata filters run before
-ranking, `whereNot` excludes a full conjunction, `minScore` is inclusive, and equal scores use
-Unicode code-point ID order. Zero or non-finite stored vectors remain readable but do not match.
-The ordinary engine computes exact cosine with float64 accumulation over float32 components.
-`meta.engine` reports `javascript`; `meta.accelerated` is false. The optional
-`@mirk/store/sqlite-vec` engine performs native computation on the existing connection and reports
-its engine name after initialization. An absent companion package or binary, or a companion built
-for another platform, selects the same ordinary exact search path on that connection.
-`compareCodePoints` is exported for adapters that need the same ordering.
-
-Install the optional `@mirk/sqlite-vec-native` companion to select native search:
-
-```ts
-import { NodeSqliteAdapter } from "@mirk/store/node-sqlite";
-import { sqliteVecEngine } from "@mirk/store/sqlite-vec";
-
-const db = new NodeSqliteAdapter({ path: "vectors.db", vectorEngine: sqliteVecEngine() });
-```
-
-The companion pins sqlite-vec 0.1.6 with an additional ordered float64 scalar. Upstream float32
-functions remain available. Native cosine, metadata filtering, ranking, and limiting run on the
-adapter's connection; only result IDs, scores, and metadata cross into JavaScript. The same file
-opens with the ordinary engine. `SqliteVecError` reports code `native-vector-engine` when loading
-or execution fails unexpectedly. Missing native capability reports `meta.engine="javascript"` and
-`meta.accelerated=false`; malformed binaries/manifests, version mismatches and executed-query
-failures raise instead of silently downgrading. Selection is independent for each connection.
-`meta.accelerated` means native computation,
-not an approximate-neighbor algorithm or a workload-independent speed guarantee.
-
-The companion requires a C compiler during installation. Its npm tarball and Python source/wheel
-paths have been exercised on macOS arm64. Other platform builds have not been exercised in this
-change. See the [companion contract](../sqlite-vec-native/README.md).
-
+On an engine older than SQLite 3.46 the adapter runs a bounded `ANALYZE` on the tables that need it
+instead. Node's built-in SQLite and better-sqlite3 13 are newer than that.
 
 ## Atomic mutations
 
@@ -777,9 +694,8 @@ option and an injectable `now` clock.
   inject their own clocks, skew between them moves the boundary by the same amount.
 
 **The window must be longer than the longest time a caller may retry or reconcile a request.** A
-retry after the window applies the mutation a second time. For example, the example app
-reconciles old receipts after a job lease expires, so a host like it should leave expiry off or use
-a window of days, not minutes.
+retry after the window applies the mutation a second time. An app that reconciles old requests
+after a job lease expires should leave expiry off or use a window of days, not minutes.
 
 ```ts
 const store = new InMemoryKv({ receiptRetentionMs: 7 * 24 * 60 * 60 * 1000 });
@@ -870,121 +786,60 @@ interleaved awaits, callbacks, and a second connection. Adapter authors implemen
 `AsyncTransactionCoordinator` from `@mirk/store/transaction`, which owns nesting, scoping across
 awaits, and callback delivery over the adapter's begin, commit, rollback, and savepoint statements.
 
-## Encrypted records
-
-`@mirk/store/encrypted` seals record bytes for vaults that your product owns, so a storage operator,
-sync server, or backup holds only ciphertext. You own account membership, device enrollment, key
-creation, recovery, and key rotation. Mirk validates the envelope and binds it to the storage
-context you expect.
-
-```ts
-import { openEncryptedRecord, sealEncryptedRecord } from "@mirk/store/encrypted";
-
-const context = {
-  tenantScope: "tenant:example",
-  vaultId: "vault:private-profile",
-  recordId: "conversation:welcome",
-  revisionId: "rev:0001",
-};
-
-const vaultKey = crypto.getRandomValues(new Uint8Array(32));
-const envelope = await sealEncryptedRecord(
-  context,
-  new TextEncoder().encode("private conversation bytes"),
-  vaultKey,
-  "epoch:alpha",
-);
-
-const opened = await openEncryptedRecord(context, envelope, vaultKey);
-```
-
-Record V1 uses built-in WebCrypto AES-256-GCM (no dependencies, the same code in browsers and Node)
-with a fresh random 96-bit nonce per seal. The additional authenticated data is the canonical JSON
-UTF-8 header: version, suite, purpose, tenant scope, vault, record, revision, and key ID. The
-JSON-safe envelope is that header plus base64url `nonce` and `ciphertext`. The header has fixed
-fields, and unknown fields are rejected. Keys are 32 raw bytes. Context fields are limited to
-1 KiB, the key ID to 256 bytes, and plaintext to 64 MiB, checked before allocation and after
-decryption.
-
-`openEncryptedRecord` takes the context the caller expects, not the one the envelope claims, so an
-envelope moved to another tenant, vault, record, or revision fails. Failures throw
-`EncryptedRecordError` with a stable `code`: `authentication-failed` (wrong key, changed bytes, or
-substituted context), `invalid-context`, `invalid-envelope`, `invalid-key`, or
-`unsupported-format`. It never returns unauthenticated plaintext. Use
-`validateEncryptedRecordEnvelope(value)` when a server needs the shared envelope parser without
-decrypting.
-
-**What this protects:** the payload's confidentiality and integrity, bound to its context, against
-anyone who holds stored envelopes but not the key, such as a storage operator, a sync server, or a
-backup. **What it does not:** identifiers, sizes, write timing, and access patterns stay visible;
-an endpoint that holds the key sees plaintext; and authentication cannot prove freshness. A server
-can withhold records or return an older valid envelope, so detect rollback in your own protocol.
-
-The caller owns:
-
-- creating random vault keys and storing them in a device keystore or an encrypted wrapper;
-- choosing the `keyId`, keeping old keys while retained revisions still need them, and
-  re-encrypting explicitly when rotating;
-- choosing a new `revisionId` for every changed plaintext, and sealing each revision once. Retries
-  must resend the exact same envelope, which keeps atomic idempotency digests stable;
-- serializing and validating the payload schema, and protecting any decrypted local indexes.
-
-Encrypted artifacts, key distribution, and sync are not provided.
-
 ## Transactions across memory stores
 
-`createMemoryTransactions({ kv, log })` from `@mirk/store/transaction` binds an existing
-`InMemoryKv` and `InMemoryLogStore` to one transaction domain. It implements
-`AsyncStoreTransactions`; synchronous calls to those supplied stores participate directly:
+`createMemoryTransactions({ kv, log })` from `@mirk/store/transaction` gives an `InMemoryKv` and an
+`InMemoryLogStore` one shared transaction, with the same `AsyncStoreTransactions` contract as the
+database adapters. Use it in tests and in-memory apps that need rollback across both stores.
+Synchronous calls to those stores inside the transaction take part directly:
 
 ```ts
+import { createMemoryTransactions } from "@mirk/store/transaction";
+
 const transactions = createMemoryTransactions({ kv, log });
 await transactions.transaction(() => {
-  kv.put("jobs", { id: "job-17", state: "queued" });
-  log.append("job/job-17", { type: "queued" });
+  kv.put("orders", { id: "o17", state: "placed" });
+  log.append("order/o17", { type: "placed" });
   transactions.afterCommit(() => notify());
 });
 ```
 
-An exception or rejection restores KV values, collections and their ordering, versions, receipts,
-and complete log streams. Nested transactions use savepoints; rolled-back scopes discard their
-notifications. Committed callbacks run in registration order after the outermost commit and unlock.
-Version allocation continues forward on rollback so an exposed rolled-back token is not reused.
-A store can belong to only one domain. During an active transaction, foreign synchronous calls
-throw; calls through the existing `toAsync` and `toAsyncLog` bridges queue until it ends. Ended
-transaction contexts reject further calls. Keep transactions limited to short storage work and
-run provider or network calls outside them. Plain memory imports remain free of native bindings
-and Node async-context imports; this factory uses the existing Node transaction engine.
+- **Rollback.** A throw or rejection restores key-values, collections and their order, versions,
+  receipts and whole log streams. Nested transactions use savepoints, and a rolled-back nested
+  transaction drops its `afterCommit` callbacks. Version tokens are never reused after a rollback.
+- **Other callers wait.** While a transaction runs, a direct synchronous call from outside it
+  throws, and calls through `toAsync` or `toAsyncLog` wait until it ends. A call through a
+  transaction that has ended is refused.
+- **One owner.** A store can belong to only one transaction group.
+- Keep transactions to short storage work, and make network calls outside them. The plain memory
+  imports stay free of native code; this factory uses Node's `async_hooks`.
 
-Memory lease state joins this same domain only when explicitly supplied:
+Memory leases join the same transaction only when you pass their state:
 
 ```ts
 const state = createMemoryCoordinationState();
 const coordinator = createMemoryCoordinator({ state });
 const transactions = createMemoryTransactions({ kv, log, coordination: state });
 await transactions.transaction(async () => {
-  const result = await coordinator.tryAcquire("job/job-17");
+  const result = await coordinator.tryAcquire("order/o17");
   if (result.status !== "acquired") throw new Error(result.status);
-  kv.put("jobs", { id: "job-17", state: "claimed" });
-  log.append("job/job-17", { type: "claimed" });
+  kv.put("orders", { id: "o17", state: "claimed" });
+  log.append("order/o17", { type: "claimed" });
 });
 ```
 
-Enlisted acquisition, renewal, and release roll back with KV and log, including nested savepoints.
-Generation allocation always advances: rollback leaves gaps rather than reusing an exposed fencing
-identity, even with a repeated injected owner token. A rolled-back acquisition invalidates its
-escaped handle. Rolling back renewal restores the previous handle expiry. Ownership-loss aborts
-caused by provisional release or failed ownership checks are delivered after commit; the check
-still throws immediately. Rollback discards those aborts and preserves a previously valid handle.
-The clock and external cancellation are not rolled back. Callers can observe provisional results;
-external work started from them cannot be undone by this transaction.
+Acquiring, renewing and releasing a lease then roll back with the key-values and the log. A
+rolled-back acquisition makes its lease handle invalid, and a rolled-back renewal restores the old
+expiry. Fencing generations still move forward on rollback, so a generation that a caller saw is
+never handed out again. When a release or a failed ownership check inside the transaction loses a
+lease, the check throws at once, but the abort reaches the lease's signal only after the commit; a
+rollback cancels it and keeps a lease that was valid before. The clock and outside cancellation are not rolled back, and work you
+started from a result inside the transaction is not undone.
 
-On enlisted state, `tryAcquire` returns `unavailable` immediately when a foreign transaction or
-nested sibling scope prevents admission, without inspecting provisional lease state. `runExclusive`
-uses its normal clock-driven retry, cancellation, and timeout loop. Renewal and release use the
-domain's admission queue; foreign synchronous `assertOwned()` and `expiresAt` access fail during
-a transaction. Without explicit enlistment,
-shared memory coordination remains independently committed. A state can belong to only one domain.
+Inside such a transaction, `tryAcquire` returns `unavailable` at once when another transaction
+holds the group, and `runExclusive` keeps its usual retry, cancel and timeout behaviour. Without
+`coordination: state`, memory leases commit on their own. A lease state can belong to only one
+transaction group.
 
 ## Async coordination
 
@@ -1059,6 +914,150 @@ Renewal and release retry transient native lock contention through the injected 
 at the current lease expiry. These retries never use a native busy wait. A busy operation does
 not by itself establish ownership loss.
 
+## Encrypted records
+
+`@mirk/store/encrypted` seals record bytes for vaults that your product owns, so a storage operator,
+sync server, or backup holds only ciphertext. You own account membership, device enrollment, key
+creation, recovery, and key rotation. Mirk validates the envelope and binds it to the storage
+context you expect.
+
+```ts
+import { openEncryptedRecord, sealEncryptedRecord } from "@mirk/store/encrypted";
+
+const context = {
+  tenantScope: "tenant:example",
+  vaultId: "vault:private-profile",
+  recordId: "conversation:welcome",
+  revisionId: "rev:0001",
+};
+
+const vaultKey = crypto.getRandomValues(new Uint8Array(32));
+const envelope = await sealEncryptedRecord(
+  context,
+  new TextEncoder().encode("private conversation bytes"),
+  vaultKey,
+  "epoch:alpha",
+);
+
+const opened = await openEncryptedRecord(context, envelope, vaultKey);
+```
+
+Record V1 uses built-in WebCrypto AES-256-GCM (no dependencies, the same code in browsers and Node)
+with a fresh random 96-bit nonce per seal. The additional authenticated data is the canonical JSON
+UTF-8 header: version, suite, purpose, tenant scope, vault, record, revision, and key ID. The
+JSON-safe envelope is that header plus base64url `nonce` and `ciphertext`. The header has fixed
+fields, and unknown fields are rejected. Keys are 32 raw bytes. Context fields are limited to
+1 KiB, the key ID to 256 bytes, and plaintext to 64 MiB, checked before allocation and after
+decryption.
+
+`openEncryptedRecord` takes the context the caller expects, not the one the envelope claims, so an
+envelope moved to another tenant, vault, record, or revision fails. Failures throw
+`EncryptedRecordError` with a stable `code`: `authentication-failed` (wrong key, changed bytes, or
+substituted context), `invalid-context`, `invalid-envelope`, `invalid-key`, or
+`unsupported-format`. It never returns unauthenticated plaintext. Use
+`validateEncryptedRecordEnvelope(value)` when a server needs the shared envelope parser without
+decrypting.
+
+**What this protects:** the payload's confidentiality and integrity, bound to its context, against
+anyone who holds stored envelopes but not the key, such as a storage operator, a sync server, or a
+backup. **What it does not:** identifiers, sizes, write timing, and access patterns stay visible;
+an endpoint that holds the key sees plaintext; and authentication cannot prove freshness. A server
+can withhold records or return an older valid envelope, so detect rollback in your own protocol.
+
+The caller owns:
+
+- creating random vault keys and storing them in a device keystore or an encrypted wrapper;
+- choosing the `keyId`, keeping old keys while retained revisions still need them, and
+  re-encrypting explicitly when rotating;
+- choosing a new `revisionId` for every changed plaintext, and sealing each revision once. Retries
+  must resend the exact same envelope, which keeps atomic idempotency digests stable;
+- serializing and validating the payload schema, and protecting any decrypted local indexes.
+
+Encrypted artifacts, key distribution, and sync are not provided.
+
+## Sync by design
+
+Embedded backends are **synchronous**. A local SQLite call finishes in microseconds, and an
+async-everywhere interface would wrap every local call in a Promise it does not need. A `SyncStore`
+lifts to the async interface with `toAsync(store)`, a `SearchStore` with
+`toAsyncSearch(search)`, and a `LogStore` with `toAsyncLog(log)`; the reverse is impossible. Use sync for embedded and local stores, and
+async only where a remote backend needs it.
+
+## File formats
+
+These sections are for tools that read Mirk files without Mirk. Application code does not need them.
+
+### SQLite file format
+
+The [SQLite format specification](https://github.com/nightwork-dev/mirk/blob/main/docs/format.md)
+is the full reference: every historical layout, what an independent reader must do, and fixed
+sample files.
+
+The shared SQLite format is **4**, recorded as a decimal string in
+`_mirk_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)` under `schema_version`. Package versions
+are independent. Both Node drivers and Python use these tables and keys:
+
+| Table | Columns and identity |
+| --- | --- |
+| `_kv` | `key` primary key, JSON text `value`, `created_at`, `updated_at` |
+| `_mirk_tables` | `kind`, logical `name`, unique `table_name`; primary key `(kind,name)` |
+| Collection tables | `id` primary key, JSON text `data`, `created_at`, `updated_at`; `rowid` preserves insertion order |
+| Declared collection indexes | Ordinary SQLite indexes over JSON expressions, named by the shared index naming function |
+| `_mirk_search_schema` | `collection` primary key, `fields_json` array; registry-resolved docs/FTS5 tables and triggers store searchable text and nullable metadata |
+| `_mirk_vector_spaces` | `namespace`, `name`, positive integer `dimensions`, `metric='cosine'`, `encoding='float32'`; primary key `(namespace,name)` |
+| `_mirk_vector_documents` | `namespace`, `collection`, `id`, nullable JSON text `metadata`; primary key `(namespace,collection,id)` |
+| `_mirk_vector_values` | `namespace`, `collection`, `id`, `space`, `vec` BLOB; primary key `(namespace,collection,id,space)`; foreign keys reference the document and space; document deletion cascades |
+| `_mirk_log` | `stream`, positive `sequence`, JSON text `record`; primary key `(stream,sequence)` |
+| `_mirk_log_generation` | Singleton `id=1`, safe nonnegative `value` allocating generations |
+| `_mirk_log_streams` | `stream` primary key, unique positive safe integer `generation` |
+| `_mirk_atomic_versions` | `kind`, `collection`, `target_key`, `version`; primary key `(kind,collection,target_key)` |
+| `_mirk_atomic_identity` / `_mirk_atomic_sequence` | Singleton `id=1`, `value`; identity prefixes opaque tokens and sequence allocates them |
+| `_mirk_atomic_receipts` | `idempotency_key` primary key, `request_digest`, JSON text `result_json`, nullable millisecond `created_at` |
+
+Vector namespaces default to `default`; collections share space declarations only inside that
+namespace. Each `vec` is exactly `dimensions * 4` bytes in little-endian IEEE float32 order.
+Metadata SQL NULL means absent, distinct from JSON `{}`. JSON uses ordinary UTF-8 JSON text with
+object/array order preserved; no language-specific object encoding is stored. Optional coordination
+tables `_mirk_coordination_generations`, `_mirk_coordination_leases`, and
+`_mirk_coordination_meta` use their separately documented versioned lease format and are preserved.
+
+Open validates version metadata before schema changes. Malformed metadata and unsupported future
+versions fail. Recognized pre-registry or version-1/2/3 files migrate atomically under `BEGIN
+IMMEDIATE`, with a version recheck after writer admission. Legacy `vectors` and `_vec_meta` move to
+the `default` namespace and the selected legacy space (default `default`); raw BLOBs and nullable metadata are copied unchanged.
+Invalid dimensions or BLOB lengths abort the migration. An empty legacy file with no dimensions
+creates no space. Obsolete vector tables are dropped only after successful copying; the version
+is written last. Rollback preserves the old format. Application tables, row order, atomic identity,
+versions, receipts and log positions remain intact. Concurrent openers converge on one migration.
+A read-only connection requiring migration raises `migration-required` and never migrates.
+
+To copy a database as one file, use the consistent backup operation, or finish a checkpoint
+and close writers before copying. Copying the main file alone during active WAL writes omits data.
+
+### Log tables
+
+The log uses three tables, created when a format 4 file is set up. Migration from format 3 gives
+existing streams generations in SQLite BINARY name order, without changing any record or sequence.
+
+```sql
+CREATE TABLE _mirk_log (
+  stream TEXT NOT NULL,
+  sequence INTEGER NOT NULL CHECK (sequence >= 1),
+  record TEXT NOT NULL,
+  PRIMARY KEY (stream, sequence)
+) WITHOUT ROWID;
+CREATE TABLE _mirk_log_streams (
+  stream TEXT PRIMARY KEY,
+  generation INTEGER NOT NULL UNIQUE CHECK (generation >= 1 AND generation <= 9007199254740991)
+) WITHOUT ROWID;
+CREATE TABLE _mirk_log_generation (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  value INTEGER NOT NULL CHECK (value >= 0 AND value <= 9007199254740991)
+);
+```
+
+The counter has one row with `id = 1`; a fresh file starts at `value = 0`.
+
 ### Coordination file format
 
 The source can open a standalone file or coexist with store tables. Its independent format is
@@ -1074,14 +1073,6 @@ release. `_mirk_coordination_leases` has the same primary key, followed by `owne
 `fencing_generation INTEGER NOT NULL`, `acquired_at_ms INTEGER NOT NULL`, `expires_at_ms INTEGER NOT NULL`,
 and `updated_at_ms INTEGER NOT NULL`. Timestamps are epoch milliseconds. A lease is expired when
 `expires_at_ms <= now`. The default namespace is `default`. TypeScript and Python use these same tables.
-
-## Sync by design
-
-Embedded backends are **synchronous**. A local SQLite call finishes in microseconds, and an
-async-everywhere interface would wrap every local call in a Promise it does not need. A `SyncStore`
-lifts to the async interface with `toAsync(store)`, a `SearchStore` with
-`toAsyncSearch(search)`, and a `LogStore` with `toAsyncLog(log)`; the reverse is impossible. Use sync for embedded and local stores, and
-async only where a remote backend needs it.
 
 ## What this package does not do
 

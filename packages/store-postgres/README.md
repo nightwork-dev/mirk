@@ -31,10 +31,10 @@ const postgres = await PostgresAdapter.open({
 
 await postgres.kv.set("settings", { theme: "dark" });
 await postgres.kv.put("projects", { id: "mirk", status: "active" });
-await postgres.kv.put("projects", { id: "gonk", status: "paused" });
+await postgres.kv.put("projects", { id: "docs", status: "paused" });
 
 const active = await postgres.kv.list("projects", { where: { status: "active" } });
-const both = await postgres.kv.listWhereIn("projects", "id", ["mirk", "gonk"]);
+const both = await postgres.kv.listWhereIn("projects", "id", ["mirk", "docs"]);
 
 await postgres.close();
 ```
@@ -227,8 +227,8 @@ receipt's age. The `now` option replaces it with a host clock, mainly for tests.
 window stamps a receipt from an earlier release with the current time when it first prunes, so it
 expires one full window later. **The window must be longer than the longest time a caller may
 retry or reconcile a request**: a retry after it applies the mutation again. A host that
-reconciles old receipts after an expired job lease, as the example app does, should leave expiry
-off or use a window of days.
+reconciles old receipts after an expired job lease should leave expiry off or use a window of
+days.
 
 ### Transactions
 
