@@ -94,6 +94,10 @@ SQLite coordinator.
 
 Each capability is its own import, so you load only what you use.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/docs/diagrams/code-split.svg" alt="The interface subpaths such as @mirk/store/kv and /vector have no native dependencies; @mirk/store/node-sqlite uses Node's built-in SQLite; only @mirk/store/sqlite needs a native optional peer, better-sqlite3. The optional @mirk/store/sqlite-vec engine with @mirk/sqlite-vec-native adds native vector search to either adapter." width="900" />
+</p>
+
 | Import                     | What it gives you                                                                                                                                | Native deps                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
 | `@mirk/store`              | the interfaces, their in-memory references, `toAsync` / `toAsyncSearch` / `toAsyncLog`, `namespaceStore` / `namespaceAsyncStore`, the `AsyncStoreTransactions` contract, graph contract types, cosine helpers | none |
@@ -383,8 +387,12 @@ hits.nodes; // ["node:b", "node:c"]: the nodes reached, not including the start 
 `SqliteAdapter` (`@mirk/store/sqlite`, on better-sqlite3) and `NodeSqliteAdapter`
 (`@mirk/store/node-sqlite`, on `node:sqlite`) are the same adapter on two drivers. Each opens one
 database and exposes `.kv` (`SyncStore`), `.vector` (`VectorStore`), `.search` (`SearchStore`), and
-`.log` (`LogStore`) over that one connection. They have the same facets, transaction modes, and schema, and each can
-reopen files the other wrote.
+`.log` (`LogStore`) over that one connection. They have the same facets, transaction modes, and
+schema, and each can reopen files the other wrote.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/docs/diagrams/source-adapter.svg" alt="SqliteAdapter and NodeSqliteAdapter are one SQLite connection, on better-sqlite3 or Node's built-in node:sqlite. The .kv, .vector, .search and .log facets all ride that connection, so one transaction covers every facet. The in-memory stores implement the same interfaces with no native code." width="820" />
+</p>
 
 ```ts
 import { SqliteAdapter } from "@mirk/store/sqlite";

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="mirk — a glowing wordmark emerging from a dark abyssal depth, with a luminous data-structure receding into the murk on the right" />
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/docs/banner.png" alt="mirk — a glowing wordmark emerging from a dark abyssal depth, with a luminous data-structure receding into the murk on the right" />
 </p>
 
 # mirk
@@ -94,14 +94,19 @@ toAsync(db.kv);              // the same store, with the async interface remote 
 ## One file, many capabilities
 
 A **source adapter** opens one connection and hangs each capability off it: `.kv`, `.vector`,
-`.search`. You do not run three libraries with three connections and three transaction scopes.
+`.search` and `.log`. You do not run four libraries with four connections and four transaction
+scopes.
 
 <p align="center">
-  <img src="docs/diagrams/source-adapter.svg" alt="SqliteAdapter is one SQLite connection; a .kv facet (key-value and collections) and a .vector facet (exact cosine) both ride that single connection. The in-memory backends implement the same interfaces with no native code." width="820" />
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/docs/diagrams/source-adapter.svg" alt="SqliteAdapter and NodeSqliteAdapter are one SQLite connection, on better-sqlite3 or Node's built-in node:sqlite. The .kv, .vector, .search and .log facets all ride that connection, so one transaction covers every facet. The in-memory stores implement the same interfaces with no native code." width="820" />
 </p>
 
 Each capability is its own import, so you load only what you use. Importing `@mirk/store/kv` loads
 no database at all.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/docs/diagrams/code-split.svg" alt="The interface subpaths such as @mirk/store/kv and /vector have no native dependencies; @mirk/store/node-sqlite uses Node's built-in SQLite; only @mirk/store/sqlite needs a native optional peer, better-sqlite3. The optional @mirk/store/sqlite-vec engine with @mirk/sqlite-vec-native adds native vector search to either adapter." width="900" />
+</p>
 
 Local stores are **synchronous**, because a local SQLite call finishes in microseconds and a
 Promise around it only adds cost. Remote backends are async, and `toAsync` gives any local store

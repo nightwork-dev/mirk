@@ -61,7 +61,7 @@
       <circle cx="0" cy="0" r="4" fill="#2bd4ff"/>
       <text class="muted" x="18" y="4">parse injected formats</text>
       <circle cx="0" cy="34" r="4" fill="#2bd4ff"/>
-      <text class="muted" x="18" y="38">validate with Standard Schema</text>
+      <text class="muted" x="18" y="38">validate against the schema</text>
       <circle cx="0" cy="68" r="4" fill="#2bd4ff"/>
       <text class="muted" x="18" y="72">choose highest-priority base</text>
       <circle cx="0" cy="102" r="4" fill="#2bd4ff"/>

@@ -280,7 +280,7 @@ and `provenance.layers` lists every document that took part, lowest priority fir
 package roots, or backend connection details, so it is safe to show in a CLI or UI.
 
 <p align="center">
-  <img src="docs/diagrams/layering-pipeline.svg" alt="Layered sources feed @mirk/fixtures, which parses, validates, applies patches, resolves references, and returns a final value plus provenance." width="900" />
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/packages/fixtures/docs/diagrams/layering-pipeline.svg" alt="Layered sources feed @mirk/fixtures, which parses, validates, applies patches, resolves references, and returns a final value plus provenance." width="900" />
 </p>
 
 ### The loading steps
@@ -402,7 +402,7 @@ from a store collection, or seed validated fixture values into ordinary store co
 `@mirk/store` knows nothing about fixtures; the dependency runs one way.
 
 <p align="center">
-  <img src="docs/diagrams/store-integration.svg" alt="Fixture sources feed @mirk/fixtures, which can seed validated records into @mirk/store/kv while also reading store-backed fixture packs." width="900" />
+  <img src="https://raw.githubusercontent.com/nightwork-dev/mirk/main/packages/fixtures/docs/diagrams/store-integration.svg" alt="Fixture sources feed @mirk/fixtures, which can seed validated records into @mirk/store/kv while also reading store-backed fixture packs." width="900" />
 </p>
 
 **Reading fixtures from a store.** Fixture documents live as items in a collection:
