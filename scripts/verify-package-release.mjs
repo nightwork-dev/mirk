@@ -23,7 +23,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
@@ -808,23 +808,36 @@ function checkPackedPaths(files, declared = []) {
 }
 
 /** Vendored upstream files, by packed path: a file listed in a packed
- *  `provenance.json` beside it, with the checksums pinned there. Such a file
- *  is the upstream release byte for byte (its own docs may show example
- *  paths such as SQLite's `file:/home/fred/data.db`), so the leak check
- *  skips it only while its bytes match. */
+ *  `provenance.json` beside it, with the upstream checksum pinned there. Such
+ *  a file is the upstream release byte for byte (its own docs may show
+ *  example paths such as SQLite's `file:/home/fred/data.db`). The leak check
+ *  skips it only while its bytes match that checksum and the packed
+ *  provenance.json is, byte for byte, one committed to this repository, so
+ *  the pin is the reviewed copy, not one written into the tarball. A patched
+ *  file is never skipped. */
 function pinnedUpstreamFiles(extracted, files) {
   const pinned = new Map();
   for (const file of files) {
     if (!/(?:^|\/)provenance\.json$/.test(file)) continue;
-    const manifest = JSON.parse(readFileSync(join(extracted, ...file.split("/")), "utf8"));
+    const text = readFileSync(join(extracted, ...file.split("/")), "utf8");
+    if (!trackedProvenance().has(text)) continue;
+    const manifest = JSON.parse(text);
     const dir = file.slice(0, file.length - "provenance.json".length);
-    for (const [name, sum] of Object.entries(manifest.files ?? {})) {
-      const sums = new Set([sum]);
-      if (typeof manifest.patched_sha256 === "string") sums.add(manifest.patched_sha256);
-      pinned.set(`${dir}${name}`, sums);
-    }
+    for (const [name, sum] of Object.entries(manifest.files ?? {})) pinned.set(`${dir}${name}`, sum);
   }
   return pinned;
+}
+
+let tracked;
+/** The committed text (at HEAD) of every provenance.json in this repository. */
+function trackedProvenance() {
+  tracked ??= new Set(
+    execFileSync("git", ["ls-files", "*provenance.json"], { cwd: root, encoding: "utf8" })
+      .split("\n")
+      .filter(Boolean)
+      .map((path) => execFileSync("git", ["show", `HEAD:${path}`], { cwd: root, encoding: "utf8" }))
+  );
+  return tracked;
 }
 
 function checkLeakage(extracted, files, forbiddenNames, packageName) {
@@ -836,7 +849,7 @@ function checkLeakage(extracted, files, forbiddenNames, packageName) {
     const absolute = join(extracted, ...file.split("/"));
     const bytes = readFileSync(absolute);
     if (bytes.includes(0)) continue;
-    if (pinned.get(file)?.has(sha256(bytes))) continue;
+    if (pinned.get(file) === sha256(bytes)) continue;
     const text = bytes.toString("utf8");
     for (const { pattern, label } of LEAK_PATTERNS) {
       if (pattern.test(text)) {

@@ -52,7 +52,8 @@ with Python distributions `mirk-queue` and `mirk-sqlite-vec-native`.
   On 600,000 membership rows a ranked page filtered on three fields took 85 ms before, 13 ms with
   fresh statistics, and 0.3 ms with an index over the three fields. Apps no longer need to build a
   joined key such as `product|kind` by hand. An empty list throws `StoreFilterError` with code
-  `invalid-index-fields`. A one-field list is the same index as the field alone.
+  `invalid-index-fields`. A one-field list is the same index, under the same name, as the field
+  alone, so indexes declared under 0.14.0 are reused, not built twice.
 - `@mirk/store/sql` exports the shared statistics rule (`statisticsRefresh`) and `indexFields`.
 - If you implement `SyncStoreIndexes` or `AsyncStoreIndexes` yourself, `ensureIndex` may now
   receive a list of fields. TypeScript still accepts a `field: string` implementation, so check
@@ -62,17 +63,20 @@ with Python distributions `mirk-queue` and `mirk-sqlite-vec-native`.
 
 - The same statistics refresh, run in a savepoint inside a write transaction the adapter already
   holds. libSQL's engine is SQLite 3.45, so the adapter runs a bounded `ANALYZE` on the tables that
-  need it rather than relying on that engine's `PRAGMA optimize`.
+  need it rather than relying on that engine's `PRAGMA optimize`. `refreshStatistics()`,
+  `lastStatisticsRefresh` and the `refreshStatisticsAfterChanges` option work as on SQLite.
 
 #### PostgreSQL
 
 - `ensureIndex` with a list creates one index over `(collection, data -> each field)`. A newly
-  created index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's tables.
+  created index is analyzed at once. `refreshStatistics()` runs `ANALYZE` on the schema's tables,
+  and `lastStatisticsRefresh` reports it.
   Autovacuum still refreshes statistics as tables grow.
 
 #### Memory, IndexedDB and Surreal
 
-- `ensureIndex` accepts a list, checks it, and does nothing, as before.
+- `ensureIndex` accepts a list and checks it (an empty list throws `invalid-index-fields`, which
+  0.14.0 did not check), then does nothing, as before.
 
 #### Fixtures
 
